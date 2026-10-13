@@ -53,6 +53,7 @@ window.SS = {
 };
 // art.js may have started loading before this object existed. Keep the same reference.
 window.SS.art = art;
+window.SS.renderer = renderer; // headless shots read info.render.triangles
 
 const priorHit = weapon.onHit;
 weapon.onHit = function onHit(info) {
