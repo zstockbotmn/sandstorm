@@ -190,6 +190,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let lastReal = 0, lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
   let stallT = 0, standT = 0, graceT = 0, runT = 0, pressure = 0;
+  let breatherTo = 0;          // no spawns until the player has walked this far (breather after WAVE CLEARED)
   let prevHold = false;       // edge-detect walk resume -> WAVE CLEARED
   let displayEngaged = 0;     // stable ENEMIES HUD: only rises on new engage, falls on death
   let contactHintShown = false;
@@ -1009,8 +1010,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const diff = difficulty();
     phaseT -= dt;
     const alive = aliveCount();
+    const dNow = window.SS ? window.SS.distance : 0;
     if (phase === 'quiet') {
-      if (phaseT <= 0) {
+      if (phaseT <= 0 && dNow >= breatherTo) { // a real 25-40 m walk after each cleared wave
         phase = 'burst';
         burstIndex += 1;
         if (window.SS) window.SS.bursting = true;
@@ -1038,7 +1040,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
     const cap = phase === 'quiet' ? quietCap : burstCap;
     spawnCd -= dt;
-    if (window.SS && window.SS.running && !CALM && alive < cap && spawnCd <= 0) {
+    if (window.SS && window.SS.running && !CALM && alive < cap && spawnCd <= 0 && dNow >= breatherTo) {
       const made = spawnOne();
       spawnCd = made ? (phase === 'burst' ? 0.45 + (1 - diff) * 0.55 : 2.2) : 0.6;
     }
@@ -1112,10 +1114,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!hold) displayEngaged = 0;
     if (running && prevHold && !hold && window.SS.hud && window.SS.hud.banner) {
       window.SS.hud.banner('WAVE CLEARED');
+      breatherTo = window.SS.distance + 25 + Math.random() * 15; phase = 'quiet'; phaseT = Math.max(phaseT, 0); window.SS.bursting = false;
     }
     prevHold = hold;
     if (window.SS) { window.SS.engaged = engagedN; if (window.SS.hud && window.SS.hud.setRemaining) window.SS.hud.setRemaining(running && hold ? displayEngaged : 0); }
-    if (window.SS) window.SS.pressure = { pressure, standT, stallT, graceT };
+    if (window.SS) { window.SS.pressure = { pressure, standT, stallT, graceT }; window.SS.breatherTo = breatherTo; }
 
     for (let i = 0; i < flashes.length; i++) {
       const f = flashes[i];
@@ -1172,6 +1175,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     phase = 'quiet';
     phaseT = 2.5;
+    breatherTo = 0;
     quietCap = 1;
     burstCap = 4;
     spawnCd = 1.2;
