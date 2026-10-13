@@ -229,7 +229,9 @@ export function createWorld(scene, seed) {
     const h = sizeY * s;
     if (h < 4.5) yMul = Math.min(1.35, 4.5 / h);
     else if (h > 11) yMul = Math.max(1 / 1.35, 11 / h);
-    model.scale.set(s, s * yMul, s);
+    // bldg3's Meshy texture has its shop sign baked mirrored ('NAIVATS'): mirror the mesh along its width so it reads forward
+    // (three.js flips the face winding for negative scale, so lighting/culling stay correct).
+    model.scale.set(name === 'bldg3' ? -s : s, s * yMul, s);
     model.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
     model.updateMatrixWorld(true);
     let box = new THREE.Box3().setFromObject(model);
