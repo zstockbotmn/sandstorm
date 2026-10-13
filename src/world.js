@@ -3,6 +3,9 @@ import { art } from './art.js';
 
 const SEG_LEN = 60;
 const SEG_COUNT = 5;
+const START_Z = 24;      // first segment starts behind the spawn so the run opens in a street, not open desert
+const DRAW_AHEAD = 140;  // segments wholly beyond this (fogged out anyway) are not drawn
+const DRAW_BEHIND = 20;
 
 function mulberry32(a) {
   a >>>= 0;
@@ -478,7 +481,7 @@ export function createWorld(scene, seed) {
     const seg = {
       id: i,
       gen: 0,
-      originZ: -i * SEG_LEN,
+      originZ: START_Z - i * SEG_LEN,
       group,
       coverPoints: [],
       owned: [],
@@ -510,6 +513,8 @@ export function createWorld(scene, seed) {
 
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
+      // distance culling: only segments overlapping [player-ahead, player+behind] are drawn
+      seg.group.visible = seg.originZ - SEG_LEN < playerZ + DRAW_BEHIND && seg.originZ > playerZ - DRAW_AHEAD;
       if (playerZ < seg.originZ - SEG_LEN - 8) {
         seg.originZ -= SEG_COUNT * SEG_LEN;
         seg.gen += 1;
@@ -522,7 +527,7 @@ export function createWorld(scene, seed) {
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
       seg.gen = 0;
-      seg.originZ = -i * SEG_LEN;
+      seg.originZ = START_Z - i * SEG_LEN;
       fill(seg);
     }
     update(playerZ == null ? 0 : playerZ);

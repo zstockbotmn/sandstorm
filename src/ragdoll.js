@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 // Rapier is a separate chunk. Load it on first need so the game module can start without it.
 let rapierPromise = null;
+export function preloadRapier() { return loadRapier().catch(() => null); }
 function loadRapier() {
   if (!rapierPromise) {
     rapierPromise = import('@dimforge/rapier3d-compat').then(async (mod) => {
