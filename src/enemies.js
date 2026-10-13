@@ -187,7 +187,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let phase = 'quiet';
   let phaseT = 2.5;
   let quietCap = 1;
-  let burstCap = 4;
+  let burstCap = 3, burstSpawned = 0;
   let spawnCd = 1.2;
   let lastReal = 0, lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
@@ -713,10 +713,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // On arrival the flanker becomes a cover fighter there (crouch, lean out, fire, hide). No standing in the open street.
       let dest = null, bd = 1e9;
       const pool = coverPool(['car', 'barrel', 'wall']);
-      for (let i = 0; i < pool.length; i++) { const c = pool[i]; if (Math.sign(c.pos.x) !== side && Math.abs(c.pos.x) > 0.5) continue;
-        const toward = c.pos.z - enemy.home.z; if (toward < 1 || toward > 18) continue; if (occupiedBy(c.pos, enemy)) continue;
-        const d = Math.abs(toward - 8) + Math.abs(c.pos.x - enemy.home.x) * 0.5; if (d < bd) { bd = d; dest = c; } }
+      for (let i = 0; i < pool.length; i++) { const c = pool[i];         const toward = c.pos.z - enemy.home.z; if (toward < 1 || toward > 18) continue; if (occupiedBy(c.pos, enemy)) continue;
+        // Visible flank: prefer cover across the street so the run crosses the player's view.
+        const d = Math.abs(toward - 8) + (Math.sign(c.pos.x) === side ? 6 : 0); if (d < bd) { bd = d; dest = c; } }
       enemy.flankCover = dest;
+      squadCall('Flanking!');
       if (dest) enemy.flankTo.copy(tuckOf(standPos(dest), dest));
       else enemy.flankTo.set(side * 5.6, 0, enemy.home.z + 2 + Math.random() * 3); // hug the facade line at the alley mouth
     }
@@ -1049,16 +1050,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
         }
         // Soften wave 2 / early bursts: fewer simultaneous enemies
         const early = burstIndex <= 2 || (window.SS && window.SS.distance < 120);
-        burstCap = early
-          ? (2 + Math.min(1, (diff * 2 + Math.random()) | 0))
-          : (3 + Math.min(3, (diff * 3 + Math.random() * 2) | 0));
+        // Tester: 2-3 enemies per wave; the last one of a 3-wave (or 1 in 2 of 2-waves) is a visible flanker.
+        burstCap = early ? 2 : (Math.random() < 0.35 + diff * 0.4 ? 3 : 2);
+        burstSpawned = 0;
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;
       }
     } else if (phaseT <= 0 || (alive === 0 && phaseT < 6)) {
       phase = 'quiet';
       if (window.SS) window.SS.bursting = false;
-      quietCap = Math.random() < 0.4 ? 0 : (Math.random() < 0.5 ? 1 : 2);
+      quietCap = 0; // waves only: no stragglers between waves
       // Breather: ~10–16 s at 3 m/s ≈ 30–48 m; floor 9 s so early game always gets a walk
       phaseT = Math.max(9, 10 + Math.random() * 6 - diff * 1);
       spawnCd = 0.8;
@@ -1067,7 +1068,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const cap = phase === 'quiet' ? quietCap : burstCap;
     spawnCd -= dt;
     if (window.SS && window.SS.running && !CALM && alive < cap && spawnCd <= 0 && dNow >= breatherTo) {
-      const made = spawnOne();
+      const flankSlot = phase === 'burst' && burstSpawned === burstCap - 1 && (burstCap === 3 || Math.random() < 0.5);
+      const made = spawnOne(flankSlot ? 'flanker' : (phase === 'burst' && burstSpawned === 0 ? 'shifter' : undefined)) || (flankSlot ? spawnOne() : null);
+      if (made && phase === 'burst') burstSpawned++;
       spawnCd = made ? (phase === 'burst' ? 0.45 + (1 - diff) * 0.55 : 2.2) : 0.6;
     }
 
@@ -1204,7 +1207,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     phaseT = 2.5;
     breatherTo = 0;
     quietCap = 1;
-    burstCap = 4;
+    burstCap = 3; burstSpawned = 0;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;

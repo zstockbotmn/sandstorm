@@ -217,6 +217,7 @@ export function createWorld(scene, seed) {
     }
   }
 
+  let sign2Mat = null;
   let signMat = null;
   function shopSign(raw) {
     if (!signMat) {
@@ -227,10 +228,23 @@ export function createWorld(scene, seed) {
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
       signMat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2 });
     }
-    const w = raw.max.x - raw.min.x, h = raw.max.y - raw.min.y;
+    if (!sign2Mat) { // second board baked as gibberish 'IVNEBIS 1961' -> readable 'CAFÉ · مقهى'
+      const c = document.createElement('canvas'); c.width = 384; c.height = 160; const g = c.getContext('2d');
+      g.fillStyle = '#d8d2c4'; g.fillRect(0, 0, 384, 160); g.strokeStyle = '#3b5e3a'; g.lineWidth = 10; g.strokeRect(5, 5, 374, 150);
+      g.fillStyle = '#2a2420'; g.textAlign = 'center'; g.font = 'bold 60px sans-serif'; g.fillText('CAFÉ', 192, 80);
+      g.font = 'bold 34px sans-serif'; g.fillText('مقهى', 192, 130);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      sign2Mat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2 });
+    }
+    const w = raw.max.x - raw.min.x, h = raw.max.y - raw.min.y, d = raw.max.z - raw.min.z;
+    const grp = new THREE.Group();
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.24, h * 0.19), signMat);
-    m.position.set(raw.min.x + w * 0.2, raw.min.y + h * 0.765, raw.max.z - (raw.max.z - raw.min.z) * 0.18);
-    return m;
+    m.position.set(raw.min.x + w * 0.2, raw.min.y + h * 0.765, raw.max.z - d * 0.18);
+    const p2 = (window.SS && window.SS.sign2) || [0.56, 0.7, 0.19, 0.17, 0.15];
+    const m2 = new THREE.Mesh(new THREE.PlaneGeometry(w * p2[3], h * p2[4]), sign2Mat);
+    m2.position.set(raw.min.x + w * p2[0], raw.min.y + h * p2[1], raw.max.z - d * p2[2]);
+    grp.add(m, m2);
+    return grp;
   }
   // Front (+Z) faces the street. Width (local X) becomes the lot length along Z.
   function placeArtBuilding(seg, rng, name, side, zCursor, lot, doors) {
