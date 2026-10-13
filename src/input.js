@@ -1,4 +1,4 @@
-const YAW_LIMIT = 70 * Math.PI / 180;
+const YAW_LIMIT = 60 * Math.PI / 180; // keep the street in view
 const PITCH_LIMIT = 35 * Math.PI / 180;
 const SENS = 0.0029; // -40% (tester: too twitchy)
 const SENS_SCOPED = 0.00114;

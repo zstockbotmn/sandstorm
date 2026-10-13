@@ -68,6 +68,9 @@ export function createWorld(scene, seed) {
 
   scene.background = new THREE.Color(0x8ec8ea);
   scene.fog = new THREE.FogExp2(0xd2c4a2, 0.016);
+  // Endless desert floor that follows the player, so side views and alley gaps never show sky below the road.
+  const desert = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), new THREE.MeshLambertMaterial({ color: 0xc8b48a }));
+  desert.rotation.x = -Math.PI / 2; desert.position.y = -0.1; desert.receiveShadow = false; scene.add(desert);
 
   const hemi = new THREE.HemisphereLight(0xb7ddf5, 0xc4a06a, 0.85);
   scene.add(hemi);
@@ -240,6 +243,7 @@ export function createWorld(scene, seed) {
   }
 
   function update(playerZ) {
+    desert.position.z = playerZ;
     sun.position.set(26, 46, playerZ + 18);
     sun.target.position.set(0, 0, playerZ - 30);
     sun.target.updateMatrixWorld();
