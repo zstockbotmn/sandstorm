@@ -35,12 +35,19 @@ export function createPlayer(camera, input, hud) {
 
   player.update = function update(dt) {
     if (!player.alive || player.health >= 100) return;
+    // No mid-fight regen: engaged enemies (or auto-cover during a halt) must be able to kill you.
+    const engaged = !!(window.SS && (window.SS.engaged | 0) > 0);
+    const fighting = engaged || !!(window.SS && window.SS.cover && window.SS.cover.state !== 'none');
+    if (fighting) {
+      if (regenDelay > 0) regenDelay -= dt;
+      return;
+    }
     if (regenDelay > 0) {
       regenDelay -= dt;
       return;
     }
     const inCover = !!(input && (input.cover || (window.SS && window.SS.cover && window.SS.cover.state === 'in')));
-    const rate = inCover ? 16 : 4; // limited: slow in the open
+    const rate = inCover ? 6 : 4; // light between-wave recover; cover no longer outpaces enemy fire
     player.health = Math.min(100, player.health + rate * dt);
     if (window.SS) window.SS.health = player.health;
     if (hud) hud.setHealth(player.health);
