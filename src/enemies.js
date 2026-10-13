@@ -689,7 +689,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.flankFrom.copy(enemy.home);
       // flankers emerge from the alley but start at the street mouth if the alley spot is deep
       enemy.flankFrom.x = Math.sign(enemy.flankFrom.x) * Math.min(Math.abs(enemy.flankFrom.x), 6.9);
-      enemy.flankTo.set(side * (1.6 + Math.random() * 1.2), 0, enemy.home.z + (Math.random() - 0.5) * 2);
+      // Flank to real cover: the nearest free car/barrel/wall on this side that is closer to the player than the alley.
+      // On arrival the flanker becomes a cover fighter there (crouch, lean out, fire, hide). No standing in the open street.
+      let dest = null, bd = 1e9;
+      const pool = coverPool(['car', 'barrel', 'wall']);
+      for (let i = 0; i < pool.length; i++) { const c = pool[i]; if (Math.sign(c.pos.x) !== side && Math.abs(c.pos.x) > 0.5) continue;
+        const toward = c.pos.z - enemy.home.z; if (toward < 1 || toward > 18) continue; if (occupiedBy(c.pos, enemy)) continue;
+        const d = Math.abs(toward - 8) + Math.abs(c.pos.x - enemy.home.x) * 0.5; if (d < bd) { bd = d; dest = c; } }
+      enemy.flankCover = dest;
+      if (dest) enemy.flankTo.copy(tuckOf(standPos(dest)));
+      else enemy.flankTo.set(side * 5.6, 0, enemy.home.z + 2 + Math.random() * 3); // hug the facade line at the alley mouth
     }
     setupLoco(enemy);
     enemy.shootCd = 0.35 + Math.random() * (0.9 - diff * 0.4);
@@ -922,10 +931,18 @@ export function createEnemies(scene, camera, world, weapon, player) {
       return;
     }
     enemy.moving = false;
+    enemy.group.position.y = 0;
+    { // arrived: fight from cover like everyone else
+      enemy.behavior = 'shifter';
+      if (enemy.flankCover) { enemy.anchor = enemy.flankCover; enemy.home = standPos(enemy.flankCover); }
+      else { enemy.anchor = { type: 'door', pos: enemy.group.position.clone() }; enemy.home = enemy.group.position.clone(); }
+      enemy.afterHide = false; enterCover(enemy, 0.3 + Math.random() * 0.4);
+      squadCall(enemy.flankCover ? 'In cover!' : 'Set!');
+      return;
+    }
     enemy.exposed = true;
     enemy.posture = 'idle';
     enemy.phase = 'fire';
-    enemy.group.position.y = 0;
     facePlayer(enemy);
     if (player.alive && window.SS.running) {
       const slow = (enemy.suppressT || 0) > 0 ? 0.55 : 1;

@@ -87,7 +87,7 @@ export function createWeapon(camera, world, scene) {
     b = new THREE.Box3().setFromObject(obj); const ctr = b.getCenter(new THREE.Vector3());
     const holder = new THREE.Group(); holder.add(obj); obj.position.sub(ctr); holder.position.set(0.02, -0.04, -0.12);
     obj.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.frustumCulled = false; if (m.material) { m.material = m.material.clone(); m.material.roughness = Math.max(0.5, m.material.roughness ?? 0.6);
-        if (!/wood/i.test(m.material.name || '')) { m.material.color.multiplyScalar(0.45); m.material.metalness = 0.35; } } // gunmetal, not toy grey } });
+        if (!/wood/i.test(m.material.name || '')) { m.material.color.multiplyScalar(0.45); m.material.metalness = 0.35; } } } }); // gunmetal, not toy grey
     rig.add(holder); boxGun.visible = false; weapon.model = holder;
   };
   const flash = new THREE.PointLight(0xffb060, 0, 3.2, 2);
