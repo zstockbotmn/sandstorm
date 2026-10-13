@@ -4,7 +4,8 @@ import { art } from './art.js';
 const SEG_LEN = 60;
 const SEG_COUNT = 5;
 const START_Z = 24;      // first segment starts behind the spawn so the run opens in a street, not open desert
-const DRAW_AHEAD = 140;  // segments wholly beyond this (fogged out anyway) are not drawn
+import { Q } from './quality.js';
+const DRAW_AHEAD = Q.drawAhead;  // segments wholly beyond this (fogged out anyway) are not drawn
 const DRAW_BEHIND = 20;
 
 function mulberry32(a) {
@@ -111,7 +112,7 @@ export function createWorld(scene, seed) {
   const ROOF_OK = { bldg1: 1, bldg2: 1, bldg3: 1 };
 
   scene.background = new THREE.Color(0x8ec8ea);
-  scene.fog = new THREE.FogExp2(0xd2c4a2, 0.016);
+  scene.fog = new THREE.FogExp2(0xd2c4a2, Q.fog);
   // Endless desert floor that follows the player, so side views and alley gaps never show sky below the road.
   const desertMat = new THREE.MeshStandardMaterial({ color: 0xc8b48a, roughness: 1, metalness: 0 });
   const desertGeo = new THREE.PlaneGeometry(800, 800);

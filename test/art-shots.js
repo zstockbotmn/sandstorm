@@ -10,7 +10,7 @@ const res = {};
  try {
   const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' });
   const p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push('console: ' + m.text()));
-  await p.goto('http://127.0.0.1:8796/?calm=1&seed=7');
+  await p.goto('http://127.0.0.1:8796/?calm=1&seed=7' + (process.env.SS_QS || ''));
   await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
   await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 40000 });
   res.art = await p.evaluate(() => ({ tier: SS.art.tier, loaded: SS.art.loaded.slice(), failed: SS.art.failed.slice() }));

@@ -9,7 +9,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
     const p = await ctx.newPage(); p.on('pageerror', e => res.errs.push('pageerror: ' + e.message + ' @ ' + (e.stack || '').split('\n').slice(0, 4).join(' | ')));
     p.on('console', m => { if (m.type() === 'error') res.errs.push('console: ' + m.text()); });
-    await p.goto('http://127.0.0.1:8798/' + (process.env.SS_Q || '?seed=7')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 120000 });
+    await p.goto('http://127.0.0.1:8798/' + (process.env.SS_Q || '?seed=7') + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 120000 });
     res.art = await p.evaluate(() => ({ tier: SS.art.tier, failed: SS.art.failed }));
     await p.tap('#play'); const t0 = Date.now();
     // first contact within ~15 s

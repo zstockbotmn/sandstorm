@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Q } from './quality.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -195,7 +196,7 @@ function staticInstance(name) {
   const lod = new THREE.LOD(); lod.addLevel(full, 0); lod.addLevel(far, /^prop_/.test(name) ? LOD_NEAR_PROP : LOD_NEAR); lod.name = name;
   return lod;
 }
-const LOD_NEAR = 38, LOD_NEAR_PROP = 22;
+const LOD_NEAR = Q.lodNear, LOD_NEAR_PROP = Q.lodNearProp;
 
 const _box = new THREE.Box3();
 const _size = new THREE.Vector3();

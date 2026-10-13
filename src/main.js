@@ -12,6 +12,7 @@ import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { preloadRapier } from './ragdoll.js';
+import { Q, QUALITY, setQuality } from './quality.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
@@ -22,18 +23,18 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 420);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, Q.far);
 camera.position.set(0, 1.7, 4);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 
 const softGL = wantLow(renderer);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5));
-renderer.shadowMap.enabled = !softGL;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5) * Q.res);
+renderer.shadowMap.enabled = !softGL && Q.shadows;
 renderer.shadowMap.type = PHONE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
 const world = createWorld(scene, 0x5a7d);
-if (softGL && world.sun) world.sun.castShadow = false;
+if ((softGL || !Q.shadows) && world.sun) world.sun.castShadow = false;
 if (PHONE && world.sun) world.sun.shadow.mapSize.set(1024, 1024);
 const post = createPostFx(renderer, scene, camera);
 const sky = createSky(scene);
@@ -155,7 +156,7 @@ function simStep(dt) {
 }
 
 // Adaptive resolution: every 2 s, if fps < 40 drop the render scale 15% (floor 0.6); if fps > 56 for 6 s, step back up.
-function baseDPR() { return Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5); }
+function baseDPR() { return Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5) * Q.res; }
 let resScale = 1, fpsN = 0, fpsT = 0, goodT = 0;
 function adaptRes(raw) {
   if (softGL || !(raw > 0) || raw > 0.5) return;
@@ -188,7 +189,7 @@ function frame(now) {
     score: window.SS.score,
     health: window.SS.health,
   });
-  post.render();
+  if (Q.post) post.render(); else renderer.render(scene, camera);
 }
 
 function onResize() {
@@ -302,3 +303,9 @@ art.onReady(() => { const r = art.staticInstance('rifle_ak47'); if (r) weapon.se
 let rapierQueued = false;
 function queueRapier() { if (rapierQueued) return; rapierQueued = true; setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(() => preloadRapier(), { timeout: 1500 }) : setTimeout(() => preloadRapier(), 1500)), 0); }
 document.getElementById('play').addEventListener('click', () => requestAnimationFrame(() => requestAnimationFrame(queueRapier)));
+
+// Quality toggle on the start screen (saved in localStorage; applies on reload).
+{ const b = document.getElementById('quality');
+  if (b) { const label = () => { b.textContent = 'Quality: ' + (QUALITY === 'low' ? 'Low' : 'High'); }; label();
+    b.addEventListener('click', (ev) => { ev.stopPropagation(); setQuality(QUALITY === 'low' ? 'high' : 'low'); }); }
+  window.SS.quality = QUALITY; }
