@@ -68,13 +68,20 @@ const res = {};
   res.pop.reDucked = await p.evaluate(() => SS.input.cover);
   await p.evaluate(() => SS.debug.killAll()); await p.waitForTimeout(1500); await p.screenshot({ path: OUT + '/5-ragdoll.png' }); await p.waitForFunction(() => SS.walking, null, { timeout: 20000 }).catch(() => {}); res.resumed = await p.evaluate(() => SS.walking);
   // soft-lock: an enemy stuck inside a building must not hold the player; despawned within ~5 s and walking resumes
+  // Zack's rule: a hidden/stuck engaged enemy is brought into view (never despawned); the halt holds (distance frozen)
+  // until it is KILLED; WAVE CLEARED only follows that kill.
   res.softlock = await p.evaluate(async () => { const e = SS.debug.spawnEnemy('shifter'); if (!e) return { spawned: false };
     const pz0 = SS.camera.position.z; const bl = SS.world.colliders.filter(m => m.scale.x >= 5 && m.scale.y >= 5 && m.position.z < pz0 - 10 && m.position.z > pz0 - 45)[0];
-    const bx = bl ? bl.position.x : 12, bz = bl ? bl.position.z : pz0 - 20;
-    const pin = () => { e.group.position.set(bx, 0, bz); e.goal = e.group.position.clone(); e.home.copy(e.goal); e.moveT = 99; e.exposed = true; };
-    pin(); const t0 = performance.now(); const d0 = SS.distance;
-    while (performance.now() - t0 < 9000 && e.alive) { if (e.alive) pin(); await new Promise(r => setTimeout(r, 100)); }
-    await new Promise(r => setTimeout(r, 1500)); return { spawned: true, despawned: !e.alive, secs: (performance.now() - t0) / 1000, walking: SS.walking, d0, d1: SS.distance }; });
+    e.group.position.set(bl ? bl.position.x : 12, 0, bl ? bl.position.z : pz0 - 20); e.engaged = true; e.exposed = false; e.path = null;
+    const w0 = SS.waveClears || 0, k0 = SS.scoreSys.state.kills; const t0 = performance.now(); const samples = [];
+    while (performance.now() - t0 < 14000 && !(e.seen && Math.abs(e.group.position.x) < 6.6)) { samples.push([SS.engaged, SS.distance, SS.walking]); await new Promise(r => setTimeout(r, 200)); }
+    const relocated = e.alive && Math.abs(e.group.position.x) < 6.6;
+    const dA = SS.distance; await new Promise(r => setTimeout(r, 1500)); const dB = SS.distance; const haltHeld = dB === dA && SS.walking === false && SS.engaged > 0;
+    const engagedGrew = samples.some((s, i) => i > 0 && s[0] > 0 && samples[i - 1][0] > 0 && s[1] > samples[i - 1][1] + 0.01);
+    const clearsBeforeKill = (SS.waveClears || 0) - w0;
+    e.takeHit('head', e.group.position.clone()); e.alive && e.takeHit('head', e.group.position.clone());
+    await new Promise(r => setTimeout(r, 2500));
+    return { spawned: true, relocated, alive: e.alive, haltHeld, engagedGrew, clearsBeforeKill, clearsAfterKill: (SS.waveClears || 0) - w0, kills: SS.scoreSys.state.kills - k0, walking: SS.walking, secs: (performance.now() - t0) / 1000 }; });
   res.score = await p.evaluate(() => JSON.parse(JSON.stringify(SS.score && (SS.score.value ?? SS.score.score ?? SS.score))));
   // real progress: distance past 30 m, and shoot a real enemy dead (pinned exposed flanker; Space held; no debug kill)
   res.shoot = await p.evaluate(() => { const k0 = SS.scoreSys.state.kills; const e = SS.debug.spawnEnemy('flanker'); if (!e) return { k0, spawned: false };
@@ -138,7 +145,9 @@ const res = {};
   assert.equal(res.enemyStop, false, 'stops for enemies'); assert.equal(res.resumed, true, 'resumes'); assert.ok(res.over, 'game over'); assert.ok(res.highscores, 'highscore saved');
   assert.ok(res.distance > 30, 'distance > 30 m'); assert.ok(res.shoot.spawned && res.shoot.k1 > res.shoot.k0, 'shot a real enemy dead'); assert.ok(res.naturalDeath != null, 'standing still gets you killed');
   assert.equal(res.dragAmmo[0], res.dragAmmo[1], 'mouse drag never fires'); assert.equal(res.clickAmmo, res.dragAmmo[1] - 1, 'mouse click fires one shot');
-  assert.ok(res.softlock.spawned && res.softlock.despawned && res.softlock.walking && res.softlock.d1 > res.softlock.d0, 'soft-lock enemy inside building is cleared and walking resumes');
+  assert.ok(res.softlock.spawned && res.softlock.relocated, 'stuck enemy moved to visible cover (not despawned)');
+  assert.ok(res.softlock.haltHeld && !res.softlock.engagedGrew, 'distance does not grow while engaged > 0');
+  assert.ok(res.softlock.clearsBeforeKill === 0 && res.softlock.kills === 1 && res.softlock.clearsAfterKill === 1 && res.softlock.walking, 'wave clears only on the kill');
   assert.deepEqual(res.deathFreeze.f0, res.deathFreeze.f1, 'death freezes walking/world');
   assert.ok(res.caches.some(k => k.startsWith('ss-')), 'ss- cache'); assert.ok(res.offline, 'offline'); assert.equal(res.ammoOverlap, false, 'ammo clear of buttons'); assert.equal(errs.length, 0, 'no page errors');
   assert.equal(res.art.tier, 'high', 'art tier high');

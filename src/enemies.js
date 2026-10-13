@@ -190,6 +190,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let lastReal = 0, lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
   let stallT = 0, standT = 0, graceT = 0, runT = 0, pressure = 0;
+  let waveClears = 0;
   let breatherTo = 0;          // no spawns until the player has walked this far (breather after WAVE CLEARED)
   let prevHold = false;       // edge-detect walk resume -> WAVE CLEARED
   let displayEngaged = 0;     // stable ENEMIES HUD: only rises on new engage, falls on death
@@ -723,6 +724,19 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   // Ground path into the opening, then a short climb. No underground hide point.
+  // Bring a hidden/stuck/behind-the-player enemy to a visible ground cover spot 12-30 m ahead, already leaning out to fire.
+  function toVisibleCover(e) {
+    const pz = camera.position.z; let best = null, bd = 1e9;
+    for (const seg of world.segments || []) for (const c of seg.coverPoints || []) {
+      if (!['car', 'barrel', 'wall', 'door'].includes(c.type)) continue;
+      const ahead = pz - c.pos.z; if (ahead < 12 || ahead > 30 || occupiedBy(c.pos, e)) continue;
+      const d = Math.abs(ahead - 18) + Math.abs(c.pos.x) * 0.3; if (d < bd) { bd = d; best = c; } }
+    e.behavior = 'shifter'; e.unseenT = 0; e.seen = true; e.engaged = true; e.afterHide = false;
+    if (best) { e.anchor = best; e.home = standPos(best); }
+    else { const side = Math.sign(e.group.position.x) || 1; e.anchor = { type: 'door', pos: new THREE.Vector3(side * 5.4, 1.2, pz - 18) }; e.home = standPos(e.anchor); }
+    e.group.position.copy(firePoint(e)); e.group.position.y = 0; e.path = null; e.pathI = 0;
+    beginFire(e);
+  }
   function setupLoco(enemy) {
     enemy.posture = 'idle';
     enemy.moving = false;
@@ -1067,10 +1081,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       for (let i = list.length - 1; i >= 0; i--) {
         const e = list[i];
         if (!e.alive) continue;
-        if (!e.exposed || e.group.position.y > 0.5) { despawn(e); list.splice(i, 1); }
-        else if (e.behavior !== 'flanker') { e.behavior = 'flanker'; e.flankTo.set((Math.sign(e.group.position.x) || 1) * 2, 0, e.group.position.z); }
+        if (!e.seen) toVisibleCover(e); // Zack's rule: waves clear only on kills; stuck enemies are brought into view, never removed
       }
-      stallT = 0; graceT = STALL_GRACE; squadCall('Fall back!');
+      stallT = 0;
     }
     // Line-of-sight watchdog (4x/s): an enemy counts only if exposed and not blocked by geometry.
     // watchdog runs on real time, so slow frames (dt is capped at 50 ms) can't stretch the 5 s limits
@@ -1086,10 +1099,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
         e.seen = e.exposed && losRay.intersectObjects(world.colliders, false).length === 0;
         e.unseenT = e.seen ? 0 : (e.unseenT || 0) + step;
         if (e.seen && d < HOLD_RANGE) { anySeen = true; e.engaged = true; }
-        if (e.unseenT > UNSEEN_LIMIT) { despawn(e); list.splice(i, 1); }
+        if (e.unseenT > UNSEEN_LIMIT && e.engaged) toVisibleCover(e); // hidden/stuck engaged enemy -> visible cover near the player
       }
     }
-    if (noProgT > NOPROGRESS_LIMIT && !anySeen && graceT <= 0) { graceT = 3; noProgT = 0; }
+
     const tempo = 1 + PRESSURE_TEMPO * pressure;
     const pz = camera.position.z;
     let hold = false, engagedN = 0;
@@ -1099,7 +1112,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         list.splice(i, 1);
         continue;
       }
-      if (e.group.position.z > pz + 6) {
+      if (e.group.position.z > pz + 6 && e.engaged) toVisibleCover(e);
+      else if (e.group.position.z > pz + 6) {
         e.alive = false;
         unregister(e);
         root.remove(e.group);
@@ -1118,13 +1132,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (e.engaged) { hold = true; engagedN += 1; } // halt until ALL engaged enemies are dead (hidden ones still despawn after 5 s)
     }
 
-    if (running) window.SS.walking = !hold || (graceT > 0 && !anySeen);
+    if (running) window.SS.walking = !hold; // halt from first engage until the last engaged enemy is KILLED
     // Stable ENEMIES counter: rises only when newly engaged appear, falls on engaged deaths (no silent mid-fight bumps from unengaged spawns).
     if (engagedN > displayEngaged) displayEngaged = engagedN;
     if (engagedN < displayEngaged) displayEngaged = engagedN;
     if (!hold) displayEngaged = 0;
     if (running && prevHold && !hold && window.SS.hud && window.SS.hud.banner) {
-      window.SS.hud.banner('WAVE CLEARED');
+      waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED');
       breatherTo = window.SS.distance + 25 + Math.random() * 15; phase = 'quiet'; phaseT = Math.max(phaseT, 0); window.SS.bursting = false;
     }
     prevHold = hold;

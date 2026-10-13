@@ -285,5 +285,5 @@ art.onReady(() => { const r = art.staticInstance('rifle_ak47'); if (r) weapon.se
 
 // Rapier (ragdoll physics, ~4 MB) is fetched after the first rendered frames, never before Play/first paint.
 let rapierQueued = false;
-function queueRapier() { if (rapierQueued) return; rapierQueued = true; setTimeout(() => (window.requestIdleCallback || setTimeout)(() => preloadRapier(), 1500), 0); }
+function queueRapier() { if (rapierQueued) return; rapierQueued = true; setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(() => preloadRapier(), { timeout: 1500 }) : setTimeout(() => preloadRapier(), 1500)), 0); }
 document.getElementById('play').addEventListener('click', () => requestAnimationFrame(() => requestAnimationFrame(queueRapier)));
