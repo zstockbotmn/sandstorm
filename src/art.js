@@ -4,7 +4,8 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // Names match assets/models/<name>.glb. dist/ serves index.html with assets/ beside it.
-const PRIMARY = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter1.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'];
+const PRIMARY = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter.quaternius.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'];
+const ANIM_FALLBACK = 'fighter1.anim';
 const PROPS = ['prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart'];
 const RIGS = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig'];
 const BONE_NAMES = ['Hips', 'Spine01', 'Spine', 'Head', 'RightHand', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'];
@@ -13,6 +14,13 @@ const CLIP_KEYS = {
   Walk_Left_with_Gun: 'strafe',
   Run_and_Shoot: 'run',
   Gunshot_Reaction: 'hit',
+  walk: 'walk',
+  run: 'run',
+  crouch: 'crouch',
+  lean: 'lean',
+  death: 'death',
+  idle: 'idle',
+  hit: 'hit',
 };
 
 const assets = Object.create(null);
@@ -90,6 +98,8 @@ function bakeClips(animations) {
     }
     if (tracks.length) out[key] = new THREE.AnimationClip(clip.name, clip.duration, tracks);
   }
+  // Gameplay strafe is a walk cycle. Quaternius has no lateral clip.
+  if (out.walk && !out.strafe) out.strafe = out.walk;
   return out;
 }
 
@@ -103,9 +113,16 @@ function loadOne(name) {
   return makeLoader().loadAsync('assets/models/' + name + '.glb');
 }
 
+function clipsUsable(baked) {
+  return !!(baked && baked.idle && baked.run && baked.hit && (baked.strafe || baked.walk));
+}
+
 function adopt(name, gltf) {
   fixObject(gltf.scene);
-  if (name === 'fighter1.anim') clips = bakeClips(gltf.animations || []);
+  if (name === 'fighter.quaternius.anim' || name === 'fighter1.anim') {
+    const baked = bakeClips(gltf.animations || []);
+    if (clipsUsable(baked)) clips = baked;
+  }
   assets[name] = gltf.scene;
 }
 
@@ -323,7 +340,10 @@ if (art.tier === 'low') {
   finish();
 } else {
   loadStarted = performance.now();
-  loadGroup(PRIMARY, false).then(() => loadGroup(PROPS, true)).then(finish).catch((err) => {
+  loadGroup(PRIMARY, false).then(() => {
+    if (clipsUsable(clips)) return null;
+    return loadGroup([ANIM_FALLBACK], false);
+  }).then(() => loadGroup(PROPS, true)).then(finish).catch((err) => {
     console.warn('art load', err);
     finish();
   });

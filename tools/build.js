@@ -14,7 +14,7 @@ const walk = d => fs.existsSync(P(d)) ? fs.readdirSync(P(d), { withFileTypes: tr
   fs.writeFileSync(P(`dist/game.${jh}.js`), js);
   const css = fs.readFileSync(P('style.css')), ch = crypto.createHash('sha1').update(css).digest('hex').slice(0, 10);
   fs.writeFileSync(P(`dist/style.${ch}.css`), css);
-  const assets = walk('assets').filter(f => /\.(glb|webp|ogg|mp3|m4a|json)$/.test(f));
+  const assets = walk('assets').filter(f => /\.(glb|webp|ogg|mp3|m4a|json|hdr)$/.test(f));
   for (const a of assets) { fs.mkdirSync(path.dirname(P('dist/' + a)), { recursive: true }); fs.copyFileSync(P(a), P('dist/' + a)); }
   let html = fs.readFileSync(P('index.html'), 'utf8').replace(/(src=["'])\.?\/?dist\/game\.js/, `$1game.${jh}.js`).replace(/(href=["'])\.?\/?style\.css/, `$1style.${ch}.css`);
   if (!/serviceWorker/.test(html)) html = html.replace('</body>', `<script>if('serviceWorker' in navigator&&!/[?&]nosw/.test(location.search))navigator.serviceWorker.register('./sw.js',{scope:'./'});</script></body>`);

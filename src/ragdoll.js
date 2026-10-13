@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
+import RAPIER from '@dimforge/rapier3d-compat';
+
+await RAPIER.init();
 
 const _q = new THREE.Quaternion();
 const _bodyQ = new THREE.Quaternion();
@@ -9,6 +11,7 @@ const _parentQ = new THREE.Quaternion();
 const _targetQ = new THREE.Quaternion();
 const _pA = new THREE.Vector3();
 const _pB = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
 
 // uarmL is -X in the doll, which is the Meshy model's right side (model +X is its left).
 const SKIN_ORDER = ['Hips', 'Spine01', 'Head', 'RightArm', 'RightForeArm', 'LeftArm', 'LeftForeArm', 'RightUpLeg', 'RightLeg', 'LeftUpLeg', 'LeftLeg'];
@@ -29,6 +32,9 @@ const SKIN_MIRRORS = [['RightArm', 'LeftArm'], ['RightForeArm', 'LeftForeArm'], 
 let skinSideLogged = false;
 
 const ENEMY_SCALE = 1.2;
+// Membership in the high 16 bits, filter in the low 16. Bodies hit the world, not each other.
+const GROUP_BODY = (1 << 16) | 2;
+const GROUP_WORLD = (2 << 16) | 1;
 
 function shemaghTexture() {
   const c = document.createElement('canvas');
@@ -80,23 +86,30 @@ function makeMat(color, opts = {}) {
   });
 }
 
+function plainBody(x, y, z) {
+  return {
+    position: { x, y, z },
+    quaternion: {
+      x: 0, y: 0, z: 0, w: 1,
+      copy(o) {
+        this.x = o.x; this.y = o.y; this.z = o.z; this.w = o.w;
+        return this;
+      },
+    },
+    velocity: { set() {} },
+  };
+}
+
 export function createRagdollSystem(scene) {
-  const phys = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0) });
-  phys.broadphase = new CANNON.SAPBroadphase(phys);
-  phys.allowSleep = true;
-  phys.solver.iterations = 8;
+  const phys = new RAPIER.World({ x: 0, y: -14, z: 0 });
+  phys.timestep = 1 / 60;
+  phys.numSolverIterations = 6;
 
-  const groundMat = new CANNON.Material('ground');
-  const bodyMat = new CANNON.Material('rag');
-  phys.addContactMaterial(new CANNON.ContactMaterial(groundMat, bodyMat, {
-    friction: 0.45,
-    restitution: 0.02,
-  }));
-
-  const ground = new CANNON.Body({ mass: 0, material: groundMat });
-  ground.addShape(new CANNON.Plane());
-  ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-  phys.addBody(ground);
+  const groundBody = phys.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.25, 0));
+  phys.createCollider(
+    RAPIER.ColliderDesc.cuboid(400, 0.25, 400).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
+    groundBody
+  );
 
   const dolls = [];
   const S = ENEMY_SCALE;
@@ -118,48 +131,60 @@ export function createRagdollSystem(scene) {
     mesh.add(rim);
   }
 
-  function addPart(doll, name, mesh, shape, mass, x, y, z) {
+  function addPart(doll, name, mesh, hx, hy, hz, mass, x, y, z) {
     mesh.castShadow = true;
     mesh.position.set(x, y, z);
     scene.add(mesh);
-    const body = new CANNON.Body({
-      mass,
-      material: bodyMat,
-      linearDamping: 0.12,
-      angularDamping: 0.18,
-      position: new CANNON.Vec3(x, y, z),
-    });
-    body.addShape(shape);
-    phys.addBody(body);
-    const part = { name, mesh, body };
+    const rb = phys.createRigidBody(
+      RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(x, y, z)
+        .setLinearDamping(0.14)
+        .setAngularDamping(0.42)
+        .setCanSleep(true)
+    );
+    phys.createCollider(
+      RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+        .setMass(mass)
+        .setFriction(0.5)
+        .setRestitution(0.02)
+        .setCollisionGroups(GROUP_BODY),
+      rb
+    );
+    const body = plainBody(x, y, z);
+    body.velocity.set = function setVel(vx, vy, vz) { rb.setLinvel({ x: vx, y: vy, z: vz }, true); };
+    const part = { name, mesh, body, rb };
     doll.parts.push(part);
     return part;
   }
 
-  function hinge(a, b, pivotA, pivotB, angle, twist) {
-    const c = new CANNON.ConeTwistConstraint(a.body, b.body, {
-      pivotA: new CANNON.Vec3(pivotA[0], pivotA[1], pivotA[2]),
-      pivotB: new CANNON.Vec3(pivotB[0], pivotB[1], pivotB[2]),
-      axisA: new CANNON.Vec3(0, 1, 0),
-      axisB: new CANNON.Vec3(0, 1, 0),
-      angle: angle == null ? 0.6 : angle,
-      twistAngle: twist == null ? 0.3 : twist,
-      collideConnected: false,
-    });
-    phys.addConstraint(c);
-    return c;
+  function ball(a, b, pivotA, pivotB) {
+    const data = RAPIER.JointData.spherical(
+      { x: pivotA[0], y: pivotA[1], z: pivotA[2] },
+      { x: pivotB[0], y: pivotB[1], z: pivotB[2] }
+    );
+    const joint = phys.createImpulseJoint(data, a.rb, b.rb, true);
+    joint.setContactsEnabled(false);
+    return joint;
   }
 
-  function point(a, b, pivotA, pivotB) {
-    const c = new CANNON.PointToPointConstraint(
-      a.body,
-      new CANNON.Vec3(pivotA[0], pivotA[1], pivotA[2]),
-      b.body,
-      new CANNON.Vec3(pivotB[0], pivotB[1], pivotB[2]),
-      80
+  function hinge(a, b, pivotA, pivotB) {
+    // Local Y is along the limb. Bend around X so elbows and knees fold.
+    const data = RAPIER.JointData.revolute(
+      { x: pivotA[0], y: pivotA[1], z: pivotA[2] },
+      { x: pivotB[0], y: pivotB[1], z: pivotB[2] },
+      { x: 1, y: 0, z: 0 }
     );
-    phys.addConstraint(c);
-    return c;
+    const joint = phys.createImpulseJoint(data, a.rb, b.rb, true);
+    joint.setContactsEnabled(false);
+    if (joint.setLimits) joint.setLimits(-0.15, 2.4);
+    return joint;
+  }
+
+  function pushBody(part) {
+    const p = part.body.position;
+    const q = part.body.quaternion;
+    part.rb.setTranslation({ x: p.x, y: p.y, z: p.z }, true);
+    part.rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
   }
 
   function spawn(origin, yaw, impulse) {
@@ -172,23 +197,24 @@ export function createRagdollSystem(scene) {
     const pelvis = addPart(
       doll, 'pelvis',
       new THREE.Mesh(new THREE.BoxGeometry(0.28 * S, 0.2 * S, 0.18 * S), clothDark),
-      new CANNON.Box(new CANNON.Vec3(0.14 * S, 0.1 * S, 0.09 * S)),
+      0.14 * S, 0.1 * S, 0.09 * S,
       8, cx, baseY + 0.92 * S, cz
     );
     addRim(pelvis.mesh);
     const torso = addPart(
       doll, 'torso',
       new THREE.Mesh(new THREE.BoxGeometry(0.36 * S, 0.44 * S, 0.2 * S), vest),
-      new CANNON.Box(new CANNON.Vec3(0.18 * S, 0.22 * S, 0.1 * S)),
+      0.18 * S, 0.22 * S, 0.1 * S,
       12, cx, baseY + 1.28 * S, cz
     );
     addRim(torso.mesh);
     const head = addPart(
       doll, 'head',
       new THREE.Mesh(new THREE.SphereGeometry(0.13 * S, 10, 8), skin),
-      new CANNON.Sphere(0.13 * S),
+      0.13 * S, 0.13 * S, 0.13 * S,
       4, cx, baseY + 1.66 * S, cz
     );
+    // Sphere collider is a cuboid of the same radius so the public part list stays simple.
     addRim(head.mesh, 1.1);
     const scarfMesh = new THREE.Mesh(new THREE.SphereGeometry(0.145 * S, 8, 6), scarf);
     scarfMesh.scale.set(1.05, 0.72, 1.05);
@@ -208,21 +234,17 @@ export function createRagdollSystem(scene) {
     const byName = { pelvis, torso, head };
     for (let i = 0; i < limbs.length; i++) {
       const L = limbs[i];
-      const hx = L[3] / 2;
-      const hy = L[4] / 2;
-      const hz = L[5] / 2;
       byName[L[0]] = addPart(
         doll, L[0],
         new THREE.Mesh(new THREE.BoxGeometry(L[3], L[4], L[5]), cloth),
-        new CANNON.Box(new CANNON.Vec3(hx, hy, hz)),
+        L[3] / 2, L[4] / 2, L[5] / 2,
         L[6], cx + L[1], baseY + L[2], cz
       );
       addRim(byName[L[0]].mesh, 1.1);
     }
 
     if (yaw) {
-      const q = new CANNON.Quaternion();
-      q.setFromEuler(0, yaw, 0);
+      _q.setFromAxisAngle(_up, yaw);
       for (let i = 0; i < doll.parts.length; i++) {
         const p = doll.parts[i];
         const dx = p.body.position.x - cx;
@@ -231,20 +253,21 @@ export function createRagdollSystem(scene) {
         const rz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
         p.body.position.x = cx + rx;
         p.body.position.z = cz + rz;
-        p.body.quaternion.copy(q);
+        p.body.quaternion.copy(_q);
+        pushBody(p);
       }
     }
 
-    doll.constraints.push(hinge(pelvis, torso, [0, 0.1 * S, 0], [0, -0.22 * S, 0], 0.35, 0.2));
-    doll.constraints.push(hinge(torso, head, [0, 0.22 * S, 0], [0, -0.14 * S, 0], 0.7, 0.4));
-    doll.constraints.push(hinge(torso, byName.uarmL, [-0.2 * S, 0.16 * S, 0], [0, 0.14 * S, 0], 1.2, 0.6));
-    doll.constraints.push(hinge(torso, byName.uarmR, [0.2 * S, 0.16 * S, 0], [0, 0.14 * S, 0], 1.2, 0.6));
-    doll.constraints.push(point(byName.uarmL, byName.larmL, [0, -0.14 * S, 0], [0, 0.13 * S, 0]));
-    doll.constraints.push(point(byName.uarmR, byName.larmR, [0, -0.14 * S, 0], [0, 0.13 * S, 0]));
-    doll.constraints.push(hinge(pelvis, byName.ulegL, [-0.09 * S, -0.1 * S, 0], [0, 0.2 * S, 0], 0.8, 0.3));
-    doll.constraints.push(hinge(pelvis, byName.ulegR, [0.09 * S, -0.1 * S, 0], [0, 0.2 * S, 0], 0.8, 0.3));
-    doll.constraints.push(point(byName.ulegL, byName.llegL, [0, -0.2 * S, 0], [0, 0.19 * S, 0]));
-    doll.constraints.push(point(byName.ulegR, byName.llegR, [0, -0.2 * S, 0], [0, 0.19 * S, 0]));
+    doll.constraints.push(ball(pelvis, torso, [0, 0.1 * S, 0], [0, -0.22 * S, 0]));
+    doll.constraints.push(ball(torso, head, [0, 0.22 * S, 0], [0, -0.14 * S, 0]));
+    doll.constraints.push(ball(torso, byName.uarmL, [-0.2 * S, 0.16 * S, 0], [0, 0.14 * S, 0]));
+    doll.constraints.push(ball(torso, byName.uarmR, [0.2 * S, 0.16 * S, 0], [0, 0.14 * S, 0]));
+    doll.constraints.push(hinge(byName.uarmL, byName.larmL, [0, -0.14 * S, 0], [0, 0.13 * S, 0]));
+    doll.constraints.push(hinge(byName.uarmR, byName.larmR, [0, -0.14 * S, 0], [0, 0.13 * S, 0]));
+    doll.constraints.push(ball(pelvis, byName.ulegL, [-0.09 * S, -0.1 * S, 0], [0, 0.2 * S, 0]));
+    doll.constraints.push(ball(pelvis, byName.ulegR, [0.09 * S, -0.1 * S, 0], [0, 0.2 * S, 0]));
+    doll.constraints.push(hinge(byName.ulegL, byName.llegL, [0, -0.2 * S, 0], [0, 0.19 * S, 0]));
+    doll.constraints.push(hinge(byName.ulegR, byName.llegR, [0, -0.2 * S, 0], [0, 0.19 * S, 0]));
 
     const ix = impulse ? impulse.x : 0;
     const iy = impulse ? impulse.y : 0.4;
@@ -302,7 +325,6 @@ export function createRagdollSystem(scene) {
       _bodyQ.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
       bone.getWorldQuaternion(_boneQ);
       _invQ.copy(_bodyQ).invert();
-      // offQ = inv(bodyQuat0) * boneWorldQuat0
       const offQ = _invQ.clone().multiply(_boneQ);
       bone.getWorldPosition(_pA);
       _pA.x -= body.position.x;
@@ -314,11 +336,10 @@ export function createRagdollSystem(scene) {
     return links;
   }
 
-  // Parent-first: Hips, then spine/head, then limbs. Unmapped bones keep their last pose.
-  function driveSkin(skin) {
-    const links = skin.links;
-    if (!links || !skin.model) return;
-    skin.model.updateMatrixWorld(true);
+  function driveSkin(skinLink) {
+    const links = skinLink.links;
+    if (!links || !skinLink.model) return;
+    skinLink.model.updateMatrixWorld(true);
     for (let i = 0; i < links.length; i++) {
       const link = links[i];
       const bone = link.bone;
@@ -341,18 +362,17 @@ export function createRagdollSystem(scene) {
   }
 
   function removeDoll(doll) {
-    // Drop the skinned model only. Geometry and textures are shared with the rig cache.
     if (doll.skin && doll.skin.model) {
       const model = doll.skin.model;
       if (model.parent) model.parent.remove(model);
       doll.skin = null;
     }
-    for (let i = 0; i < doll.constraints.length; i++) phys.removeConstraint(doll.constraints[i]);
+    for (let i = 0; i < doll.constraints.length; i++) phys.removeImpulseJoint(doll.constraints[i], false);
     for (let i = 0; i < doll.parts.length; i++) {
-      phys.removeBody(doll.parts[i].body);
+      phys.removeRigidBody(doll.parts[i].rb);
       disposeMesh(doll.parts[i].mesh);
     }
-    for (let i = 0; i < doll.statics.length; i++) phys.removeBody(doll.statics[i]);
+    for (let i = 0; i < doll.statics.length; i++) phys.removeRigidBody(doll.statics[i]);
     const idx = dolls.indexOf(doll);
     if (idx >= 0) dolls.splice(idx, 1);
   }
@@ -366,33 +386,48 @@ export function createRagdollSystem(scene) {
       const p = m.position;
       if (Math.abs(p.x - origin.x) > 4 || Math.abs(p.z - origin.z) > 4) continue;
       if (p.y > 4) continue;
-      const body = new CANNON.Body({ mass: 0, material: groundMat });
-      body.addShape(new CANNON.Box(new CANNON.Vec3(
-        Math.abs(m.scale.x) * 0.5,
-        Math.abs(m.scale.y) * 0.5,
-        Math.abs(m.scale.z) * 0.5
-      )));
-      body.position.set(p.x, p.y, p.z);
-      phys.addBody(body);
+      const body = phys.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(p.x, p.y, p.z));
+      phys.createCollider(
+        RAPIER.ColliderDesc.cuboid(
+          Math.abs(m.scale.x) * 0.5,
+          Math.abs(m.scale.y) * 0.5,
+          Math.abs(m.scale.z) * 0.5
+        ).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
+        body
+      );
       doll.statics.push(body);
       n += 1;
     }
   }
 
+  function syncPart(part) {
+    const t = part.rb.translation();
+    const r = part.rb.rotation();
+    part.body.position.x = t.x;
+    part.body.position.y = t.y;
+    part.body.position.z = t.z;
+    part.body.quaternion.x = r.x;
+    part.body.quaternion.y = r.y;
+    part.body.quaternion.z = r.z;
+    part.body.quaternion.w = r.w;
+    part.mesh.position.set(t.x, t.y, t.z);
+    _q.set(r.x, r.y, r.z, r.w);
+    part.mesh.quaternion.copy(_q);
+  }
+
   function update(dt, cameraZ) {
     const step = Math.min(0.05, dt || 0.016);
-    phys.step(1 / 60, step, 3);
+    const n = Math.max(1, Math.round(step / (1 / 60)));
+    phys.timestep = step / n;
+    for (let s = 0; s < n; s++) phys.step();
     for (let d = dolls.length - 1; d >= 0; d--) {
       const doll = dolls[d];
       doll.age += step;
       let behind = true;
       for (let i = 0; i < doll.parts.length; i++) {
         const part = doll.parts[i];
-        const b = part.body;
-        part.mesh.position.set(b.position.x, b.position.y, b.position.z);
-        _q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
-        part.mesh.quaternion.copy(_q);
-        if (b.position.z < cameraZ + 2) behind = false;
+        syncPart(part);
+        if (part.body.position.z < cameraZ + 2) behind = false;
       }
       if (doll.skin) driveSkin(doll.skin);
       if (doll.age > 8 || behind) removeDoll(doll);

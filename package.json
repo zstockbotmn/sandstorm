@@ -20,5 +20,9 @@
     "playwright": "^1.64.0",
     "sharp": "^0.35.5",
     "three": "^0.186.1"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "postprocessing": "^6.39.5"
   }
 }

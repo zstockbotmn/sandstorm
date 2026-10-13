@@ -9,6 +9,8 @@ import { createEnemies } from './enemies.js';
 import { createScore } from './score.js';
 import { createAudio } from './audio.js';
 import { createCover } from './cover.js';
+import { createPostFx } from './postfx.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -25,6 +27,20 @@ camera.rotation.order = 'YXZ';
 scene.add(camera);
 
 const world = createWorld(scene, 0x5a7d);
+const post = createPostFx(renderer, scene, camera);
+
+// Daytime HDRI for high tier. The warm fog stays so the street still reads as desert.
+if (art.tier === 'high') {
+  new RGBELoader().load('assets/env/noon_grass_1k.hdr', (hdr) => {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const env = pmrem.fromEquirectangular(hdr).texture;
+    scene.environment = env;
+    scene.background = env;
+    if (scene.environmentIntensity != null) scene.environmentIntensity = 0.72;
+    hdr.dispose();
+    pmrem.dispose();
+  }, undefined, (err) => { console.warn('hdri', err && (err.message || err)); });
+}
 const input = createInput(renderer.domElement);
 const weapon = createWeapon(camera, world, scene);
 const hud = createHud();
@@ -138,7 +154,7 @@ function frame(now) {
     score: window.SS.score,
     health: window.SS.health,
   });
-  renderer.render(scene, camera);
+  post.render();
 }
 
 function onResize() {
@@ -146,6 +162,7 @@ function onResize() {
   camera.updateProjectionMatrix();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
+  post.setSize(window.innerWidth, window.innerHeight);
 }
 window.addEventListener('resize', onResize);
 

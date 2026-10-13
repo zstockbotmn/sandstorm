@@ -48,7 +48,43 @@ function makePlasterTexture() {
 }
 
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+boxGeo.setAttribute('uv2', boxGeo.attributes.uv);
 const barrelGeo = new THREE.CylinderGeometry(0.32, 0.36, 0.9, 8);
+
+function prepTex(tex, repeatX, repeatY, srgb) {
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.anisotropy = 4;
+  if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// High tier swaps in Poly Haven CC0 maps. A failed fetch leaves the colored material.
+function upgradeMaterial(mat, base, repeatX, repeatY) {
+  const loader = new THREE.TextureLoader();
+  const root = 'assets/textures/' + base;
+  loader.load(root + '_diff.webp', (tex) => {
+    prepTex(tex, repeatX, repeatY, true);
+    mat.map = tex;
+    mat.color.set(0xffffff);
+    mat.needsUpdate = true;
+  });
+  loader.load(root + '_nor.webp', (tex) => {
+    prepTex(tex, repeatX, repeatY, false);
+    mat.normalMap = tex;
+    mat.needsUpdate = true;
+  });
+  loader.load(root + '_arm.webp', (tex) => {
+    prepTex(tex, repeatX, repeatY, false);
+    mat.roughnessMap = tex;
+    mat.metalnessMap = tex;
+    mat.aoMap = tex;
+    mat.roughness = 1;
+    mat.metalness = 1;
+    mat.aoMapIntensity = 0.85;
+    mat.needsUpdate = true;
+  });
+}
 
 export function createWorld(scene, seed) {
   const plasterMap = makePlasterTexture();
@@ -74,8 +110,19 @@ export function createWorld(scene, seed) {
   scene.background = new THREE.Color(0x8ec8ea);
   scene.fog = new THREE.FogExp2(0xd2c4a2, 0.016);
   // Endless desert floor that follows the player, so side views and alley gaps never show sky below the road.
-  const desert = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), new THREE.MeshLambertMaterial({ color: 0xc8b48a }));
+  const desertMat = new THREE.MeshStandardMaterial({ color: 0xc8b48a, roughness: 1, metalness: 0 });
+  const desertGeo = new THREE.PlaneGeometry(800, 800);
+  desertGeo.setAttribute('uv2', desertGeo.attributes.uv);
+  const desert = new THREE.Mesh(desertGeo, desertMat);
   desert.rotation.x = -Math.PI / 2; desert.position.y = -0.1; desert.receiveShadow = false; scene.add(desert);
+
+  if (art.tier === 'high') {
+    upgradeMaterial(desertMat, 'sand_01', 48, 48);
+    upgradeMaterial(matRoad, 'asphalt_01', 4, 18);
+    upgradeMaterial(matSand, 'sand_01', 4, 14);
+    upgradeMaterial(matPlaster, 'dirty_concrete', 2, 3);
+    upgradeMaterial(matWall, 'dirty_concrete', 1, 2);
+  }
 
   const hemi = new THREE.HemisphereLight(0xb7ddf5, 0xc4a06a, 0.85);
   scene.add(hemi);
