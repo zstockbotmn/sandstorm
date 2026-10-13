@@ -113,8 +113,8 @@ let started = false;
 
 function applyCamera(dt) {
   const st = input.state;
-  const aim = 1 - Math.exp(-12 * dt);
-  const duck = 1 - Math.exp(-8 * dt);
+  const aim = 1 - Math.exp(-24 * dt); // snappier ADS so soft-GL / low fps still reaches ~2.5x
+  const duck = 1 - Math.exp(-14 * dt);
   fov += ((st.scope ? SCOPE_FOV : BASE_FOV) - fov) * aim;
   eye += ((st.cover ? 1.28 : 1.7) - eye) * duck; // crouched eye clears lowered sandbags (~0.9 m)
   if (Math.abs(camera.fov - fov) > 0.01) {

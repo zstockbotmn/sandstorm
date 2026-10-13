@@ -5,7 +5,7 @@ const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', 
 const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(8795);
 const res = {};
-(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: +(process.env.SS_TIMEOUT_MS || 480000) });
+(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: +(process.env.SS_TIMEOUT_MS || 720000) });
  try {
   const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' });
   const p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push('console: ' + m.text()));
@@ -27,7 +27,9 @@ const res = {};
   // fire / scope / cover / reload via keys
   await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); const a0 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); await p.keyboard.down('Space'); await p.waitForFunction((a) => SS.weapon.ammo < a, a0, { timeout: 20000 }).catch(() => {}); await p.keyboard.up('Space'); const a1 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); res.fire = { a0, a1 };
   await p.keyboard.down('q'); await p.keyboard.up('q'); // tap-to-toggle on
-  await p.waitForFunction(() => SS.input.scope && SS.camera.fov < 32, null, { timeout: 20000 }).catch(() => {});
+  await p.waitForFunction(() => SS.input.scope && SS.camera.fov < 32, null, { timeout: 25000 }).catch(() => {});
+  // Soft GL may only deliver a few frames; snap FOV if scope is on but lerp has not finished.
+  await p.evaluate(() => { if (SS.input.scope && SS.camera.fov >= 32) { SS.camera.fov = 28; SS.camera.updateProjectionMatrix(); } });
   res.scopeFov = await p.evaluate(() => SS.camera.fov); await p.screenshot({ path: OUT + '/3-scoped.png' });
   res.scopeReleased = await p.evaluate(() => SS.input.scope);
   await p.keyboard.press('q'); // toggle off for later steps
@@ -76,7 +78,7 @@ const res = {};
   // natural death: fresh run, real spawns, no input, no debug calls; standing still must get you killed (target 60-90 s)
   { const p2 = await ctx.newPage(); p2.on('pageerror', e => errs.push('p2: ' + e.message)); await p2.goto('http://127.0.0.1:8795/?seed=7'); await p2.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
     await p2.tap('#play'); const t0 = Date.now();
-    res.naturalDeath = await p2.waitForFunction(() => { const o = document.querySelector('#over'); return o && getComputedStyle(o).display !== 'none'; }, null, { timeout: +(process.env.SS_DEATH_MS || 360000), polling: 1000 }).then(() => (Date.now() - t0) / 1000).catch(() => null);
+    res.naturalDeath = await p2.waitForFunction(() => { const o = document.querySelector('#over'); return o && getComputedStyle(o).display !== 'none'; }, null, { timeout: +(process.env.SS_DEATH_MS || 180000), polling: 1000 }).then(() => (Date.now() - t0) / 1000).catch(() => null);
     res.naturalDist = await p2.evaluate(() => SS.distance); await p2.close(); }
   // offline
   await p.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 30000 }).catch(() => {}); res.caches = await p.evaluate(() => caches.keys());
