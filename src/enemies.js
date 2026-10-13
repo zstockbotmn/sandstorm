@@ -687,7 +687,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return false;
   }
 
-  function spawnOne(prefer) {
+  function spawnOne(prefer) { const ts = performance.now(); const r = spawnOne_(prefer); const d = performance.now() - ts; if (d > 40) (window.SS_SPIKES = window.SS_SPIKES || []).push(['spawn', Math.round(ts), Math.round(d)]); return r; }
+  function spawnOne_(prefer) {
     const diff = difficulty();
     const roll = prefer || (Math.random() < 0.45 ? 'popper' : Math.random() < 0.55 ? 'shifter' : 'flanker');
     let types;
@@ -1150,9 +1151,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!hold) displayEngaged = 0;
     if (running && prevHold && !hold && window.SS.hud && window.SS.hud.banner) {
       waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED');
-      breatherTo = window.SS.distance + 25 + Math.random() * 15; phase = 'quiet'; phaseT = Math.max(phaseT, 0); window.SS.bursting = false;
+      breatherTo = window.SS.distance + 10 + Math.random() * 5; phase = 'quiet'; phaseT = 0; // tester: short 10-15 m breather window.SS.bursting = false;
     }
     prevHold = hold;
+    if (window.SS && window.SS.hud && window.SS.hud.setNext) window.SS.hud.setNext(running && !hold && waveClears > 0 ? breatherTo - window.SS.distance : 0);
     if (window.SS) { window.SS.engaged = engagedN; if (window.SS.hud && window.SS.hud.setRemaining) window.SS.hud.setRemaining(running && hold ? displayEngaged : 0); }
     if (window.SS) { window.SS.pressure = { pressure, standT, stallT, graceT }; window.SS.breatherTo = breatherTo; }
 
@@ -1228,6 +1230,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   api.update = update;
   api.reset = reset;
+  // Shader prewarm set: one object per material family enemies use (marker sprite, blood, rim, body, decal).
+  api.prewarmSet = function prewarmSet() { const g = new THREE.Group(); const box = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    g.add(new THREE.Sprite(markerMat), new THREE.Sprite(bloodMat), new THREE.Mesh(box, matRim), new THREE.Mesh(box, visMat(0x777777)), new THREE.Mesh(box, visMat(0x777777, { transparent: true, opacity: 0.5 })),
+      new THREE.Mesh(new THREE.CircleGeometry(0.1, 6), new THREE.MeshBasicMaterial({ color: 0x4a0808, transparent: true, opacity: 0.82, depthWrite: false })));
+    return g; };
   api.spawnEnemy = function spawnEnemy(behavior) {
     return spawnOne(behavior || undefined);
   };

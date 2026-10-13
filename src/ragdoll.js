@@ -5,9 +5,10 @@ let rapierPromise = null;
 export function preloadRapier() { return loadRapier().catch(() => null); }
 function loadRapier() {
   if (!rapierPromise) {
+    const t0 = performance.now(); const T = (k) => { if (typeof window !== 'undefined') (window.SS_T = window.SS_T || {})[k] = Math.round(performance.now() - t0); };
     rapierPromise = import('@dimforge/rapier3d-compat').then(async (mod) => {
-      const RAPIER = mod.default;
-      await RAPIER.init();
+      T('rapierImport'); const RAPIER = mod.default;
+      await RAPIER.init(); T('rapierInit');
       return RAPIER;
     });
   }

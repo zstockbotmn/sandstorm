@@ -109,7 +109,13 @@ export function createHud() {
 
   let radioLast = '';
   const remainEl = document.createElement('div'); remainEl.id = 'enemies-left'; root.appendChild(remainEl);
-  function setRemaining(n) { const t = n > 0 ? 'ENEMIES ' + n : ''; if (remainEl.textContent !== t) remainEl.textContent = t; remainEl.style.display = n > 0 ? 'block' : 'none'; }
+  let nextTxt = '';
+  function setRemaining(n) { const t = n > 0 ? 'ENEMIES ' + n : nextTxt; if (remainEl.textContent !== t) remainEl.textContent = t; remainEl.style.display = t ? 'block' : 'none'; remainEl.classList.toggle('next', !(n > 0) && !!nextTxt); }
+  function setNext(m) { nextTxt = m > 0 ? 'NEXT WAVE ' + Math.ceil(m) + ' m' : ''; }
+  // Scope overlay: dark lens vignette + fine reticle, shown while zoomed.
+  const scopeEl = document.createElement('div'); scopeEl.id = 'scope-overlay';
+  scopeEl.innerHTML = '<div class="lens"></div><div class="rh"></div><div class="rv"></div><div class="rd"></div>'; root.appendChild(scopeEl);
+  function setScope(on) { if (scopeEl.classList.contains('on') !== !!on) { scopeEl.classList.toggle('on', !!on); cross.style.visibility = on ? 'hidden' : ''; dot.style.visibility = on ? 'hidden' : ''; } }
   const bannerEl = document.createElement('div'); bannerEl.id = 'wave-banner'; root.appendChild(bannerEl); let bannerTimer = 0;
   function banner(text) { bannerEl.textContent = text; bannerEl.classList.remove('show'); void bannerEl.offsetWidth; bannerEl.classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => bannerEl.classList.remove('show'), 1300); }
   const hintEl = document.createElement('div'); hintEl.id = 'aim-hint'; root.appendChild(hintEl); let hintTimer = 0;
@@ -175,5 +181,7 @@ export function createHud() {
     hint,
     setRemaining,
     onTarget,
+    setNext,
+    setScope,
   };
 }

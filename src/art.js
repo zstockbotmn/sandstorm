@@ -158,7 +158,19 @@ function makeAction(mixer, clip, once) {
   return action;
 }
 
+// Pre-built fighter pool (filled + drawn once at prewarm) so the first waves don't clone skeletons / create bone textures mid-run.
+const fighterPool = {};
 function fighterInstance(i) {
+  const rigs = []; for (let k = 0; k < RIGS.length; k++) if (assets[RIGS[k]]) rigs.push(RIGS[k]);
+  if (rigs.length) { const n = Number.isFinite(i) ? i : 0; const name = rigs[((n % rigs.length) + rigs.length) % rigs.length];
+    const p = fighterPool[name]; if (p && p.length) { const f = p.pop(); if (f.root.parent) f.root.parent.remove(f.root); f.root.position.set(0, 0, 0); f.root.visible = true; return f; } }
+  return makeFighter(i);
+}
+function fillFighterPool(perRig) { const out = [];
+  for (let k = 0; k < RIGS.length; k++) { if (!assets[RIGS[k]]) continue; const p = fighterPool[RIGS[k]] = fighterPool[RIGS[k]] || [];
+    for (let j = 0; j < perRig; j++) { const f = makeFighter(k); if (f) { p.push(f); out.push(f); } } }
+  return out; }
+function makeFighter(i) {
   const rigs = [];
   for (let k = 0; k < RIGS.length; k++) if (assets[RIGS[k]]) rigs.push(RIGS[k]);
   if (!rigs.length || !clips || !clips.idle || !clips.strafe || !clips.run || !clips.hit) return null;
@@ -344,6 +356,7 @@ const art = {
     else waiters.push(fn);
   },
   fighterInstance,
+  fillFighterPool,
   staticInstance,
   fitToBox,
   measureHeight,

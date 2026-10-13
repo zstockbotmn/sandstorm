@@ -8,6 +8,7 @@ export function createCover(scene, camera, world, input) {
   const BAG_H = 0.7;
   const geo = new THREE.BoxGeometry(2.6, BAG_H, 0.55); // low; crouched eye (~1.28) sees street; ghosted while ducked
   const c = { state: 'none', target: null, spawned: null, update, reset };
+  c.prewarmMesh = () => { const m = new THREE.Mesh(geo, mat.clone()); m.castShadow = m.receiveShadow = true; m.material.opacity = 0.6; return m; };
   function pick() {
     const pz = camera.position.z; let best = null, bd = 1e9;
     for (const seg of world.segments || []) for (const p of seg.coverPoints || []) {

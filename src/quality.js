@@ -17,12 +17,23 @@ function softwareGL() {
     const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
     return /swiftshader|llvmpipe|software/i.test(String(r)); } catch (e) { return false; }
 }
-export const QUALITY = detect();
-export const LOWQ = QUALITY === 'low';
+export let QUALITY = detect();
+export let LOWQ = QUALITY === 'low';
+export const EXPLICIT = (() => { try { return /[?&]q=(low|high)\b/.test(location.search); } catch (e) { return false; } })();
 // Low: ~0.85 render scale, no postfx, no shadows, shorter LOD and draw/fog distance.
-export const Q = LOWQ
-  ? { res: 0.85, post: false, shadows: false, lodNear: 20, lodNearProp: 12, drawAhead: 95, fog: 0.022, far: 300 }
-  : { res: 1, post: true, shadows: true, lodNear: 38, lodNearProp: 22, drawAhead: 140, fog: 0.016, far: 420 };
+const LOW = { res: 0.85, post: false, shadows: false, lodNear: 20, lodNearProp: 12, drawAhead: 95, fog: 0.022, far: 300 };
+const HIGH = { res: 1, post: true, shadows: true, lodNear: 38, lodNearProp: 22, drawAhead: 140, fog: 0.016, far: 420 };
+export const Q = Object.assign({}, LOWQ ? LOW : HIGH);
+// Live switch to Low (software GL at start, or sustained low fps mid-run). Saved so the next start is Low too.
+const lowHooks = [];
+export function onLow(fn) { lowHooks.push(fn); }
+export function goLow(reason) {
+  if (LOWQ) return false; QUALITY = 'low'; LOWQ = true; Object.assign(Q, LOW);
+  try { localStorage.setItem(KEY, 'low'); } catch (e) {}
+  if (typeof window !== 'undefined') { window.SS_QUALITY = 'low'; if (window.SS) { window.SS.quality = 'low'; window.SS.autoLow = reason; } }
+  for (const f of lowHooks) { try { f(reason); } catch (e) { console.warn('goLow', e); } }
+  return true;
+}
 export function setQuality(v) { try { localStorage.setItem(KEY, v); } catch (e) {}
   const u = new URL(location.href); u.searchParams.delete('q'); location.replace(u.toString()); }
 if (typeof window !== 'undefined') window.SS_QUALITY = QUALITY;

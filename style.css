@@ -388,3 +388,12 @@ canvas {
   color: #f3e6cc;
   pointer-events: auto;
 }
+
+#enemies-left.next { background: rgba(30, 60, 30, 0.75); }
+#scope-overlay { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 3; }
+#scope-overlay.on { display: block; }
+#scope-overlay .lens { position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 0, transparent 34vmin, rgba(0,0,0,0.55) 35vmin, rgba(0,0,0,0.92) 37vmin); }
+#scope-overlay .rh, #scope-overlay .rv { position: absolute; background: rgba(10,10,10,0.85); }
+#scope-overlay .rh { left: calc(50% - 34vmin); width: 68vmin; top: 50%; height: 1.5px; transform: translateY(-50%); }
+#scope-overlay .rv { top: calc(50% - 34vmin); height: 68vmin; left: 50%; width: 1.5px; transform: translateX(-50%); }
+#scope-overlay .rd { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: #e3261b; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); }

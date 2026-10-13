@@ -529,11 +529,12 @@ export function createWorld(scene, seed) {
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
       // distance culling: only segments overlapping [player-ahead, player+behind] are drawn
-      seg.group.visible = seg.originZ - SEG_LEN < playerZ + DRAW_BEHIND && seg.originZ > playerZ - DRAW_AHEAD;
+      seg.group.visible = seg.originZ - SEG_LEN < playerZ + DRAW_BEHIND && seg.originZ > playerZ - Q.drawAhead;
       if (playerZ < seg.originZ - SEG_LEN - 8) {
         seg.originZ -= SEG_COUNT * SEG_LEN;
         seg.gen += 1;
-        fill(seg);
+        const tf = performance.now(); fill(seg); const dtf = performance.now() - tf;
+        if (typeof window !== 'undefined' && dtf > 40) (window.SS_SPIKES = window.SS_SPIKES || []).push(['fill', Math.round(tf), Math.round(dtf)]);
       }
     }
   }

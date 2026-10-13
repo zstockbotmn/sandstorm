@@ -22,7 +22,10 @@ export function createInput(canvas) {
   };
   input.state = input;
   let aimDX = 0, aimDY = 0;
+  // After KIA all input is ignored (no aiming/firing on the death screen).
+  const kia = () => !!(window.SS && window.SS.player && window.SS.player.alive === false);
   input.applyAim = function applyAim(dt) {
+    if (kia()) { aimDX = aimDY = 0; input.pendingShots = 0; input.fire = false; return; }
     if (!aimDX && !aimDY) return;
     const ax = aimDX, ay = aimDY; // immediate
     aimDX -= ax; aimDY -= ay;
@@ -63,6 +66,7 @@ export function createInput(canvas) {
   canvas.style.touchAction = 'none';
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (kia()) return;
     if (controlName(e.target)) return;
     // The Play tap (and its synthetic follow-up events) must never fire: ignore canvas presses until 400 ms after the run starts.
     if (!window.SS || !window.SS.running || performance.now() - (window.SS.startedAt || 0) < 400) return;
@@ -92,8 +96,8 @@ export function createInput(canvas) {
     // aim slows with the zoom), applied immediately (no smoothing tail -> no overshoot), spike-capped, no friction.
     const cam = window.SS && window.SS.camera; const fovRad = (cam ? cam.fov : 70) * Math.PI / 180;
     const sens = fovRad / Math.max(200, window.innerHeight || 390);
-    const cap = 80;
-    aimDX += Math.max(-cap, Math.min(cap, dx)) * sens; aimDY += Math.max(-cap, Math.min(cap, dy)) * sens;
+    if (kia()) return;
+    aimDX += dx * sens; aimDY += dy * sens; // every px counts, no per-event/per-frame cap (long 100-420 px drags turn fully)
     input.aimMovedT = performance.now(); if (window.SS && window.SS.weapon && window.SS.weapon.cancelRecoil) window.SS.weapon.cancelRecoil();
   }, { passive: false });
 
@@ -112,6 +116,7 @@ export function createInput(canvas) {
     if (!name) return;
     e.preventDefault();
     e.stopPropagation();
+    if (kia()) return;
     if (name === 'fire') { fireBtn = true; fireShots0 = window.SS && window.SS.weapon ? window.SS.weapon.shotsFired : 0; input.pendingShots = Math.min(8, (input.pendingShots | 0) + 1); } // every touch = one queued shot (fire rate respected by the weapon)
     else if (name === 'scope') input.scope = !input.scope; // tap-to-toggle: pop out of cover / duck back
     else if (name === 'reload') input.reloadPressed = true;
