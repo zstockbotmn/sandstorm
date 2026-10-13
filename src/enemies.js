@@ -187,7 +187,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let phase = 'quiet';
   let phaseT = 2.5;
   let quietCap = 1;
-  let burstCap = 3, burstSpawned = 0;
+  let burstCap = 3, burstSpawned = 0, waveActive = false;
   let spawnCd = 1.2;
   let lastReal = 0, lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
@@ -1067,11 +1067,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
     const cap = phase === 'quiet' ? quietCap : burstCap;
     spawnCd -= dt;
-    if (window.SS && window.SS.running && !CALM && alive < cap && spawnCd <= 0 && dNow >= breatherTo) {
+    // Fixed wave: the whole wave (burstCap) spawns at burst start in one go; no reinforcements ever, no spawns once engaged.
+    const canSpawn = phase === 'burst' ? (burstSpawned < burstCap && !waveActive) : alive < cap;
+    if (window.SS && window.SS.running && !CALM && canSpawn && dNow >= breatherTo) for (let tries = 0; tries < 6 && (phase === 'burst' ? burstSpawned < burstCap : tries < 1) && (phase === 'burst' || spawnCd <= 0); tries++) {
       const flankSlot = phase === 'burst' && burstSpawned === burstCap - 1 && (burstCap === 3 || Math.random() < 0.5);
       const made = spawnOne(flankSlot ? 'flanker' : (phase === 'burst' && burstSpawned === 0 ? 'shifter' : undefined)) || (flankSlot ? spawnOne() : null);
       if (made && phase === 'burst') burstSpawned++;
-      spawnCd = made ? (phase === 'burst' ? 0.45 + (1 - diff) * 0.55 : 2.2) : 0.6;
+      if (made && (window.SS.engaged > 0 || waveActive)) window.SS.spawnsWhileEngaged = (window.SS.spawnsWhileEngaged | 0) + 1; // must stay 0 (no reinforcements)
+      spawnCd = made ? 2.2 : 0.6;
     }
 
     const running = !!(window.SS && window.SS.running);
@@ -1134,13 +1137,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const dy = e.group.position.y - camera.position.y;
       const dz = e.group.position.z - camera.position.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (waveActive && e.alive && !e.engaged && !e.dying) e.engaged = true; // the whole wave is in the fight once it starts
       if (e.engaged) { hold = true; engagedN += 1; } // halt until ALL engaged enemies are dead (hidden ones still despawn after 5 s)
     }
 
+    if (hold) waveActive = true;
+    if (waveActive && aliveCount() === 0) waveActive = false; // clear only when every wave member is dead
+    if (waveActive) hold = true;
     if (running) window.SS.walking = !hold; // halt from first engage until the last engaged enemy is KILLED
     // Stable ENEMIES counter: rises only when newly engaged appear, falls on engaged deaths (no silent mid-fight bumps from unengaged spawns).
-    if (engagedN > displayEngaged) displayEngaged = engagedN;
-    if (engagedN < displayEngaged) displayEngaged = engagedN;
+    displayEngaged = aliveCount(); // total remaining in the wave
     if (!hold) displayEngaged = 0;
     if (running && prevHold && !hold && window.SS.hud && window.SS.hud.banner) {
       waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED');
@@ -1207,7 +1213,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     phaseT = 2.5;
     breatherTo = 0;
     quietCap = 1;
-    burstCap = 3; burstSpawned = 0;
+    burstCap = 3; burstSpawned = 0; waveActive = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;

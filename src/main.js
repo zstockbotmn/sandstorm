@@ -174,6 +174,7 @@ function frame(now) {
   const raw = last ? (now - last) / 1000 : 0;
   last = now;
   adaptRes(raw);
+  if (raw > 0.25 && window.SS && window.SS.running) (window.SS.hitches = window.SS.hitches || []).push([Math.round(now), Math.round(raw * 1000), window.SS.engaged | 0]);
   // Catch up when frames are late (software GL): up to 4 x 50 ms so fire/walk still advance.
   const steps = raw > 0 ? Math.min(4, Math.max(1, Math.ceil(raw / 0.05))) : 1;
   const dt = raw > 0 ? Math.min(0.05, raw / steps) : 0;
@@ -309,3 +310,18 @@ document.getElementById('play').addEventListener('click', () => requestAnimation
   if (b) { const label = () => { b.textContent = 'Quality: ' + (QUALITY === 'low' ? 'Low' : 'High'); }; label();
     b.addEventListener('click', (ev) => { ev.stopPropagation(); setQuality(QUALITY === 'low' ? 'high' : 'low'); }); }
   window.SS.quality = QUALITY; }
+
+// Prewarm (tester: 1-2 s hitches at first contact): compile every shader and upload every texture the fight will use
+// (all fighter rigs, props, buildings) right after art loads, so the first enemy/prop on screen doesn't stall.
+art.onReady(() => {
+  const t0 = performance.now(); const tmp = new THREE.Group(); tmp.position.set(0, 0, camera.position.z - 6); scene.add(tmp);
+  try {
+    for (let i = 0; i < 3; i++) { const f = art.fighterInstance(i); if (f && f.root) tmp.add(f.root); }
+    for (const n of ['prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart', 'bldg1', 'bldg2', 'bldg3', 'bldg4']) { const o = art.staticInstance(n); if (o) { o.scale.setScalar(0.001); tmp.add(o); } }
+    tmp.traverse((o) => { o.frustumCulled = false; const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of ms) for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap']) if (m[k]) renderer.initTexture(m[k]); });
+    renderer.compile(scene, camera);
+  } catch (err) { console.warn('prewarm', err && err.message); }
+  scene.remove(tmp);
+  (window.SS || {}).prewarmMs = Math.round(performance.now() - t0);
+});

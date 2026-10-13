@@ -18,6 +18,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     res.probe = await p.evaluate(() => ({ d: SS.distance, alive: (SS.enemies.list || []).filter(e => e.alive).length, bursting: SS.bursting, engaged: SS.engaged, walking: SS.walking, running: SS.running, breatherTo: SS.breatherTo, gameT: SS.gameTime }));
     // fight: aim at nearest exposed enemy torso and fire until the wave clears (or 120 s)
     // top up with debug-spawned art fighters so the test sees several real deaths at soft-GL speed (kills are still real shots)
+    res.naturalWave = await p.evaluate(async () => { const t0 = performance.now(); let maxAlive = 0, grew = false, prev = null; while (performance.now() - t0 < 3000) { const n = (SS.enemies.list || []).filter(e => e.alive).length; if (prev !== null && n > prev) grew = true; prev = n; maxAlive = Math.max(maxAlive, n); await new Promise(r => setTimeout(r, 100)); } return { maxAlive, grew, spawnsWhileEngaged: SS.spawnsWhileEngaged | 0, quality: SS.quality }; });
     await p.evaluate(() => { for (const b of ['shifter', 'flanker', 'shifter']) SS.debug.spawnEnemy(b); });
     res.fight = await p.evaluate(async () => { const k0 = SS.scoreSys.state.kills; const v = new SS.camera.position.constructor(); const t0 = performance.now(); let last = { k: k0, t: t0 }; const log = [];
       while (performance.now() - t0 < 200000) { const list = (SS.enemies.list || []).filter(e => e.alive);
@@ -29,13 +30,14 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
         if (performance.now() - last.t > 90000) { log.push('no kill for 90 s'); break; }
         await new Promise(r => setTimeout(r, 40)); }
       SS.input.fire = false; SS.input.scope = false;
-      return { ssErrors: SS.errors || [], deadVisible: (SS.enemies.list || []).filter(e => !e.alive && e.group.visible).length, kills: SS.scoreSys.state.kills - k0, walking: SS.walking, engaged: SS.engaged, hits: SS.weapon.shotsHit, shots: SS.weapon.shotsFired, secs: (performance.now() - t0) / 1000, log }; });
+      return { ssErrors: SS.errors || [], hitches: (SS.hitches || []).slice(0, 20), prewarmMs: SS.prewarmMs, deadVisible: (SS.enemies.list || []).filter(e => !e.alive && e.group.visible).length, kills: SS.scoreSys.state.kills - k0, walking: SS.walking, engaged: SS.engaged, hits: SS.weapon.shotsHit, shots: SS.weapon.shotsFired, secs: (performance.now() - t0) / 1000, log }; });
     await p.screenshot({ path: OUT + '/after-fight.png' });
     console.log(JSON.stringify(res, null, 1));
     if (res.errs.length) throw new Error('page errors');
     if (res.art.tier !== 'high' || res.art.failed.length) throw new Error('art not high/complete');
     if (!(res.fight.kills >= 2)) throw new Error('fewer than 2 real kills on art fighters');
     if (res.fight.ssErrors.length) throw new Error('SS.errors: ' + res.fight.ssErrors.join(', '));
+    if (res.naturalWave.grew || res.naturalWave.spawnsWhileEngaged) throw new Error('reinforcements spawned during an engaged wave: ' + JSON.stringify(res.naturalWave));
     if (res.firstContactM == null || res.firstContactM > 45) throw new Error('first contact later than 45 m (~15 s)');
     console.log('KILL-ART PASS');
   } catch (e) { console.log(JSON.stringify(res, null, 1)); console.log('KILL-ART FAIL', e.message); code = 1; } finally { await b.close(); srv.close(); process.exit(code); } })();

@@ -7,7 +7,15 @@ function detect() {
   const ua = navigator.userAgent || '';
   const ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   const touch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
-  return ios || touch ? 'low' : 'high';
+  // Automated / headless / software-GL browsers (the tester's replays) also default to Low.
+  const auto = navigator.webdriver === true || /HeadlessChrome/i.test(ua);
+  return ios || touch || auto || softwareGL() ? 'low' : 'high';
+}
+function softwareGL() {
+  try { const c = document.createElement('canvas'); const gl = c.getContext('webgl'); if (!gl) return true;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info'); const r = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+    return /swiftshader|llvmpipe|software/i.test(String(r)); } catch (e) { return false; }
 }
 export const QUALITY = detect();
 export const LOWQ = QUALITY === 'low';

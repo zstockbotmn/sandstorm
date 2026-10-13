@@ -19,7 +19,7 @@ const _origin = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _hip = new THREE.Vector3(0.34, -0.32, -0.48);
 const _ads = new THREE.Vector3(0.0, -0.2, -0.4);
-const _cover = new THREE.Vector3(0.28, -0.78, -0.32);
+const _cover = new THREE.Vector3(0.3, -0.4, -0.44); // tester: rifle stays in view while in cover (was lowered off-screen at y -0.78)
 const _desired = new THREE.Vector3();
 const _tp = new THREE.Vector3();
 const ASSIST_HIP = 3.0 * Math.PI / 180, ASSIST_ADS = 1.8 * Math.PI / 180, ASSIST_PULL = 0.6; // slight aim assist
@@ -227,6 +227,8 @@ export function createWeapon(camera, world, scene) {
     if (weapon.ammo <= 0) startReload();
   }
 
+  // A drag after a shot means the player is controlling the muzzle: drop the pending recoil recovery (no drift back).
+  weapon.cancelRecoil = function cancelRecoil() { recoil = 0; };
   weapon.update = function update(dt, input) {
     const k = 1 - Math.exp(-10 * dt);
     if (input.cover) _desired.copy(_cover);
@@ -236,6 +238,8 @@ export function createWeapon(camera, world, scene) {
     kick += (0 - kick) * (1 - Math.exp(-8 * dt));
     rig.rotation.x = kick;
     rig.rotation.y = input.scope || input.cover ? 0 : 0.05;
+    // Scoped: hide the viewmodel once zoomed in (it filled the view as a grey block); hip/cover always show it.
+    rig.visible = !(input.scope && camera.fov < 45);
 
     if (flashT > 0) {
       flashT -= dt;
