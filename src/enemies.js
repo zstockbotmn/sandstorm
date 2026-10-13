@@ -190,6 +190,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let lastReal = 0, lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
   let stallT = 0, standT = 0, graceT = 0, runT = 0, pressure = 0;
+  let prevHold = false;       // edge-detect walk resume -> WAVE CLEARED
+  let displayEngaged = 0;     // stable ENEMIES HUD: only rises on new engage, falls on death
+  let contactHintShown = false;
+  let burstIndex = 0;         // softens first waves
 
   function register(mesh, enemy, part) {
     mesh.userData.enemy = enemy;
@@ -380,6 +384,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       home: anchor.pos.clone(),
       flankFrom: anchor.pos.clone(),
       flankTo: anchor.pos.clone(),
+      suppressT: 0,
+      engaged: false,
     };
 
     const torso = new THREE.Mesh(geoTorso, matVest);
@@ -604,6 +610,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.engaged = true; // shooting engages: the walk halts until this enemy is dead
     if (window.SS && window.SS.input && window.SS.input.cover) chance *= 0.3; // ducked in cover
     chance *= 1 + PRESSURE_HIT * pressure;
+    // Early soften: first ~120 m / first bursts are less deadly
+    const prog = window.SS ? window.SS.distance : 0;
+    if (prog < 120 || burstIndex <= 2) chance *= 0.72;
+    if ((enemy.suppressT || 0) > 0) chance *= 0.45; // blind-fire suppression
     chance = Math.max(0.02, Math.min(0.85, chance));
     const hit = Math.random() < chance && player && player.alive;
     _aim.copy(camera.position);
@@ -799,14 +809,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
       startPeek(enemy);
       return;
     }
-    if (!enemy.moveCalled) {
-      enemy.moveCalled = true;
-      squadCall('Moving!');
-    }
     enemy.anchor = best;
     enemy.home = standPos(best);
     enemy.path = pathOnto(enemy, best);
     enemy.pathI = 0;
+    const pathLen = enemy.path && enemy.path.length
+      ? enemy.group.position.distanceTo(enemy.path[enemy.path.length - 1])
+      : 0;
+    if (!enemy.moveCalled && pathLen > 2) {
+      enemy.moveCalled = true;
+      squadCall('Moving!');
+    }
     enemy.phase = 'relocate';
     enemy.posture = 'idle';
     enemy.exposed = false;
@@ -873,11 +886,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.exposed = true;
     facePlayer(enemy);
     enemy.phaseT -= dt;
+    if ((enemy.suppressT || 0) > 0) enemy.suppressT = Math.max(0, enemy.suppressT - dt);
     if (player.alive && window.SS.running) {
-      enemy.shootCd -= dt;
+      const slow = (enemy.suppressT || 0) > 0 ? 0.55 : 1;
+      enemy.shootCd -= dt * slow;
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
-        enemy.shootCd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff);
+        let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff);
+        if ((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) cd *= 1.35;
+        if ((enemy.suppressT || 0) > 0) cd *= 1.5;
+        enemy.shootCd = cd;
       }
     }
     if (enemy.phaseT <= 0) startHide(enemy);
@@ -886,7 +904,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function updateFlanker(enemy, dt, diff) {
     const dest = enemy.flankTo;
     const d = enemy.group.position.distanceTo(dest);
+    if ((enemy.suppressT || 0) > 0) enemy.suppressT = Math.max(0, enemy.suppressT - dt);
     if (d > 0.4) {
+      // Callout only once movement has begun (rule: callouts match real movement).
       if (!enemy.flankCalled) {
         enemy.flankCalled = true;
         squadCall(dest.x >= 0 ? 'Flanking right!' : 'Flanking left!');
@@ -896,8 +916,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.posture = 'idle';
       enemy.path = [dest];
       enemy.pathI = 0;
-      stepToward(enemy, dest, 4.0 * (1 + 0.25 * diff), dt);
+      enemy.moving = true;
       enemy.moveKind = 'run';
+      stepToward(enemy, dest, 4.0 * (1 + 0.25 * diff), dt);
       return;
     }
     enemy.moving = false;
@@ -907,10 +928,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.group.position.y = 0;
     facePlayer(enemy);
     if (player.alive && window.SS.running) {
-      enemy.shootCd -= dt;
+      const slow = (enemy.suppressT || 0) > 0 ? 0.55 : 1;
+      enemy.shootCd -= dt * slow;
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
-        enemy.shootCd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff);
+        let cd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff);
+        if ((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) cd *= 1.35;
+        if ((enemy.suppressT || 0) > 0) cd *= 1.5;
+        enemy.shootCd = cd;
       }
     }
   }
@@ -963,9 +988,18 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (phase === 'quiet') {
       if (phaseT <= 0) {
         phase = 'burst';
+        burstIndex += 1;
         if (window.SS) window.SS.bursting = true;
         squadCall('Contact!'); if (window.SS && window.SS.hud && window.SS.hud.banner) window.SS.hud.banner('CONTACT');
-        burstCap = 3 + Math.min(3, (diff * 3 + Math.random() * 2) | 0);
+        if (!contactHintShown && window.SS && window.SS.hud && window.SS.hud.hint) {
+          contactHintShown = true;
+          setTimeout(() => { if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('Drag to aim · shots go to center'); }, 1400);
+        }
+        // Soften wave 2 / early bursts: fewer simultaneous enemies
+        const early = burstIndex <= 2 || (window.SS && window.SS.distance < 120);
+        burstCap = early
+          ? (2 + Math.min(1, (diff * 2 + Math.random()) | 0))
+          : (3 + Math.min(3, (diff * 3 + Math.random() * 2) | 0));
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;
       }
@@ -973,7 +1007,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       phase = 'quiet';
       if (window.SS) window.SS.bursting = false;
       quietCap = Math.random() < 0.4 ? 0 : (Math.random() < 0.5 ? 1 : 2);
-      phaseT = 7 + Math.random() * 6 - diff * 2;
+      // Breather: ~10–16 s at 3 m/s ≈ 30–48 m; floor 9 s so early game always gets a walk
+      phaseT = Math.max(9, 10 + Math.random() * 6 - diff * 1);
       spawnCd = 0.8;
     }
 
@@ -1047,7 +1082,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
 
     if (running) window.SS.walking = !hold || (graceT > 0 && !anySeen);
-    if (window.SS) { window.SS.engaged = engagedN; if (window.SS.hud && window.SS.hud.setRemaining) window.SS.hud.setRemaining(running && hold ? engagedN : 0); }
+    // Stable ENEMIES counter: rises only when newly engaged appear, falls on engaged deaths (no silent mid-fight bumps from unengaged spawns).
+    if (engagedN > displayEngaged) displayEngaged = engagedN;
+    if (engagedN < displayEngaged) displayEngaged = engagedN;
+    if (!hold) displayEngaged = 0;
+    if (running && prevHold && !hold && window.SS.hud && window.SS.hud.banner) {
+      window.SS.hud.banner('WAVE CLEARED');
+    }
+    prevHold = hold;
+    if (window.SS) { window.SS.engaged = engagedN; if (window.SS.hud && window.SS.hud.setRemaining) window.SS.hud.setRemaining(running && hold ? displayEngaged : 0); }
     if (window.SS) window.SS.pressure = { pressure, standT, stallT, graceT };
 
     for (let i = 0; i < flashes.length; i++) {
@@ -1109,6 +1152,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 4;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
+    prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;
     if (window.SS) window.SS.bursting = false;
   }
 

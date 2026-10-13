@@ -15,6 +15,7 @@ export function createInput(canvas) {
     scope: false,
     cover: false,
     reloadPressed: false,
+    pendingShots: 0, // queued still-clicks; weapon drains one per available cooldown
     endFrame() {
       input.reloadPressed = false;
     },
@@ -85,7 +86,7 @@ export function createInput(canvas) {
     const p = pointers.get(e.pointerId);
     if (!p) return;
     pointers.delete(e.pointerId);
-    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) input.clickShot = true; fireMouse = false; } // a still click always gets its shot, even if the 100 ms hold began and no frame fired
+    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) input.pendingShots = (input.pendingShots || 0) + 1; fireMouse = false; } // queue one shot per still-click; weapon drains when cooldown allows
     sync();
   }
   window.addEventListener('pointerup', endPointer);

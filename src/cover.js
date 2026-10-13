@@ -3,8 +3,9 @@ import * as THREE from 'three';
 // Tap SCOPE (or Q) to pop up and aim; tap again to duck back. While ducked (input.cover) the player can blind-fire.
 const SEARCH_AHEAD = 7, STREET_X = 4.4, BEHIND = 1.0, MOVE_SPEED = 4.5;
 export function createCover(scene, camera, world, input) {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x9c8a62, roughness: 0.95 });
-  const geo = new THREE.BoxGeometry(2.6, 0.9, 0.55); // low enough that crouched eye (~1.28) sees the street
+  const mat = new THREE.MeshStandardMaterial({ color: 0x9c8a62, roughness: 0.95, transparent: true });
+  const BAG_H = 0.7;
+  const geo = new THREE.BoxGeometry(2.6, BAG_H, 0.55); // low; crouched eye (~1.28) sees street; ghosted while ducked
   const c = { state: 'none', target: null, spawned: null, update, reset };
   function pick() {
     const pz = camera.position.z; let best = null, bd = 1e9;
@@ -15,7 +16,7 @@ export function createCover(scene, camera, world, input) {
     }
     if (best) return new THREE.Vector3(best.x, 0, best.z + BEHIND);
     // none close: drop a sandbag-style wall just ahead of the halt point
-    const m = new THREE.Mesh(geo, mat); m.position.set(camera.position.x, 0.45, pz - 2.2); m.castShadow = m.receiveShadow = true;
+    const m = new THREE.Mesh(geo, mat.clone()); m.position.set(camera.position.x, BAG_H / 2, pz - 2.2); m.castShadow = m.receiveShadow = true;
     scene.add(m); world.colliders.push(m); c.spawned = m;
     return new THREE.Vector3(m.position.x, 0, m.position.z + BEHIND);
   }
@@ -35,6 +36,10 @@ export function createCover(scene, camera, world, input) {
     if (d > 0.05) { const s = Math.min(d, MOVE_SPEED * dt) / d; camera.position.x += dx * s; camera.position.z += dz * s; }
     else c.state = 'in';
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
+    if (c.spawned && c.spawned.material) {
+      // ghost sandbag while ducked so a turn doesn't fill the screen; solid when popped out
+      c.spawned.material.opacity = input.cover ? 0.38 : 0.95;
+    }
   }
   function reset() { c.state = 'none'; c.target = null; clearSpawned(); input.cover = false; }
   return c;

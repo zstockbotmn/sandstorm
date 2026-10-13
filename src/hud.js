@@ -112,6 +112,13 @@ export function createHud() {
   function setRemaining(n) { const t = n > 0 ? 'ENEMIES ' + n : ''; if (remainEl.textContent !== t) remainEl.textContent = t; remainEl.style.display = n > 0 ? 'block' : 'none'; }
   const bannerEl = document.createElement('div'); bannerEl.id = 'wave-banner'; root.appendChild(bannerEl); let bannerTimer = 0;
   function banner(text) { bannerEl.textContent = text; bannerEl.classList.remove('show'); void bannerEl.offsetWidth; bannerEl.classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => bannerEl.classList.remove('show'), 1300); }
+  const hintEl = document.createElement('div'); hintEl.id = 'aim-hint'; root.appendChild(hintEl); let hintTimer = 0;
+  function hint(text) {
+    hintEl.textContent = text || '';
+    hintEl.classList.add('show');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => hintEl.classList.remove('show'), 2800);
+  }
   function onTarget(on) { cross.classList.toggle('on-target', !!on); }
   function callout(text) {
     const now = performance.now();
@@ -165,6 +172,7 @@ export function createHud() {
     headshotFlash,
     callout,
     banner,
+    hint,
     setRemaining,
     onTarget,
   };

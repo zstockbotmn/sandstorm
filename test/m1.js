@@ -24,7 +24,7 @@ const res = {};
   await p.mouse.click(400, 200); await p.waitForTimeout(300); res.clickAmmo = await p.evaluate(() => SS.weapon.ammo); res.aim = { y0, y1: await p.evaluate(() => SS.input.yaw), pt0, pt1: await p.evaluate(() => SS.input.pitch) };
   // fire / scope / cover / reload via keys
   await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); const a0 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); await p.keyboard.down('Space'); await p.waitForTimeout(700); await p.keyboard.up('Space'); const a1 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); res.fire = { a0, a1 };
-  await p.keyboard.down('q'); await p.waitForTimeout(800); res.scopeFov = await p.evaluate(() => SS.camera.fov); await p.screenshot({ path: OUT + '/3-scoped.png' }); await p.keyboard.up('q'); await p.waitForTimeout(300); res.scopeReleased = await p.evaluate(() => SS.input.scope);
+  await p.keyboard.down('q'); await p.waitForTimeout(800); res.scopeFov = await p.evaluate(() => SS.camera.fov); await p.screenshot({ path: OUT + '/3-scoped.png' }); await p.keyboard.up('q'); await p.waitForTimeout(300); res.scopeReleased = await p.evaluate(() => SS.input.scope); await p.keyboard.press('q'); await p.waitForTimeout(300); // tap-to-toggle: release leaves scope on; press again to clear for later steps
   res.noCoverBtn = await p.evaluate(() => !document.querySelector('[data-ctl="cover"]'));
   await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); res.afterReload = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag);
   // enemies
@@ -34,7 +34,7 @@ const res = {};
   // kill one engaged enemy by real damage: the halt must stay while others are alive
   res.haltAfterOne = await p.evaluate(async () => { const e = __en.find(x => x && x.alive && x.engaged); if (e) e.takeHit('head', e.group.position.clone()); await new Promise(r => setTimeout(r, 1500)); return { walking: SS.walking, engaged: SS.engaged }; });
   // scope pops out of cover and fires
-  await p.keyboard.down('q'); await p.waitForTimeout(500); res.pop = await p.evaluate(() => ({ ducked: SS.input.cover, a0: SS.weapon.ammo })); await p.keyboard.down('Space'); await p.waitForTimeout(500); await p.keyboard.up('Space'); res.pop.a1 = await p.evaluate(() => SS.weapon.ammo); await p.keyboard.up('q'); await p.waitForTimeout(400); res.pop.reDucked = await p.evaluate(() => SS.input.cover);
+  await p.keyboard.press('q'); await p.waitForTimeout(500); res.pop = await p.evaluate(() => ({ ducked: SS.input.cover, a0: SS.weapon.ammo })); await p.keyboard.down('Space'); await p.waitForTimeout(500); await p.keyboard.up('Space'); res.pop.a1 = await p.evaluate(() => SS.weapon.ammo); await p.keyboard.press('q'); await p.waitForTimeout(400); res.pop.reDucked = await p.evaluate(() => SS.input.cover); // tap again to duck back
   await p.evaluate(() => SS.debug.killAll()); await p.waitForTimeout(1500); await p.screenshot({ path: OUT + '/5-ragdoll.png' }); await p.waitForFunction(() => SS.walking, null, { timeout: 20000 }).catch(() => {}); res.resumed = await p.evaluate(() => SS.walking);
   // soft-lock: an enemy stuck inside a building must not hold the player; despawned within ~5 s and walking resumes
   res.softlock = await p.evaluate(async () => { const e = SS.debug.spawnEnemy('shifter'); if (!e) return { spawned: false };
@@ -76,7 +76,7 @@ const res = {};
     res.lowErrors = lowErrs;
     await p3.close(); }
   res.ammoOverlap = await p.evaluate(() => { const a = document.querySelector('#ammo').getBoundingClientRect(); return [...document.querySelectorAll('[data-ctl]')].some(b => { const r = b.getBoundingClientRect(); return !(a.right < r.left || a.left > r.right || a.bottom < r.top || a.top > r.bottom); }); }); res.errors = errs; console.log(JSON.stringify(res, null, 1));
-  assert.equal(res.ammoAfterPlay, 30, 'Play tap fires no shots'); assert.ok(d1 > d0, 'walks'); assert.notEqual(res.aim.y1, y0, 'aim'); assert.ok(res.aim.pt1 < res.aim.pt0, 'drag up looks up (pitch decreases; camera.rotation.x=-pitch)'); assert.ok(a1 < a0, 'fires'); assert.ok(res.scopeFov < 32, 'scope ~2.5x'); assert.equal(res.scopeReleased, false, 'scope is hold'); assert.ok(res.noCoverBtn, 'no COVER button');
+  assert.equal(res.ammoAfterPlay, 30, 'Play tap fires no shots'); assert.ok(d1 > d0, 'walks'); assert.notEqual(res.aim.y1, y0, 'aim'); assert.ok(res.aim.pt1 < res.aim.pt0, 'drag up looks up (pitch decreases; camera.rotation.x=-pitch)'); assert.ok(a1 < a0, 'fires'); assert.ok(res.scopeFov < 32, 'scope ~2.5x'); assert.equal(res.scopeReleased, true, 'scope is tap-to-toggle'); assert.ok(res.noCoverBtn, 'no COVER button');
   assert.ok(res.halt.engaged > 0 && /ENEMIES \d/.test(res.halt.hud), 'halt HUD count'); assert.ok(res.halt.cover === 'in' && res.halt.ducked && res.halt.eyeY < 1.4, 'auto-cover engaged and ducked');
   assert.ok(res.haltAfterOne.walking === false && res.haltAfterOne.engaged > 0, 'halt stays until all engaged are dead'); assert.ok(!res.pop.ducked && res.pop.a1 < res.pop.a0 && res.pop.reDucked, 'scope pops out of cover and fires');
   assert.equal(res.enemyStop, false, 'stops for enemies'); assert.equal(res.resumed, true, 'resumes'); assert.ok(res.over, 'game over'); assert.ok(res.highscores, 'highscore saved');

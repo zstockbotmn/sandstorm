@@ -8,7 +8,8 @@ const SHOT_INTERVAL = 60 / 600;
 const PITCH_LIMIT = 35 * Math.PI / 180;
 const HIP_SPREAD = 0.6 * Math.PI / 180;
 const ADS_SPREAD = 0.08 * Math.PI / 180; // steadier scope
-const COVER_SPREAD = 3.5 * Math.PI / 180; // blind fire from cover
+const COVER_SPREAD = 2.2 * Math.PI / 180; // blind fire: tighter so some hits land
+const ASSIST_COVER = 4.0 * Math.PI / 180, ASSIST_PULL_COVER = 0.45; // weak blind-fire pull toward torso
 
 const _dir = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -155,15 +156,29 @@ export function createWeapon(camera, world, scene) {
     _camUp.crossVectors(_right, _dir).normalize();
     camera.getWorldPosition(_origin);
     { // Slight aim assist: bend the shot part-way toward the nearest enemy torso near the crosshair.
-      const lim = input.scope ? ASSIST_ADS : input.touch ? ASSIST_TOUCH : ASSIST_HIP; let best = null, bestA = lim;
+      const lim = input.cover ? ASSIST_COVER : input.scope ? ASSIST_ADS : input.touch ? ASSIST_TOUCH : ASSIST_HIP;
+      let best = null, bestA = lim, bestEnemy = null;
       for (let i = 0; i < targets.length; i++) {
         const t = targets[i]; if (!t.userData || t.userData.part === 'head' || !t.visible) continue;
         t.getWorldPosition(_tp); _tp.sub(_origin); const a = _tp.angleTo(_dir);
-        if (a < bestA) { bestA = a; best = _tp.clone().normalize(); }
+        if (a < bestA) { bestA = a; best = _tp.clone().normalize(); bestEnemy = t.userData.enemy; }
       }
-      if (best) _dir.lerp(best, input.touch && !input.scope ? ASSIST_PULL_TOUCH : ASSIST_PULL).normalize();
+      const pull = input.cover ? ASSIST_PULL_COVER : (input.touch && !input.scope ? ASSIST_PULL_TOUCH : ASSIST_PULL);
+      if (best) _dir.lerp(best, pull).normalize();
     }
-    if (input.cover) _origin.y += 0.5; // blind fire over the top of cover
+    if (input.cover) {
+      _origin.y += 0.5; // blind fire over the top of cover
+      // Suppression: blind shots pin nearby alive enemies (slows their return fire).
+      if (window.SS && window.SS.enemies && window.SS.enemies.list) {
+        const el = window.SS.enemies.list;
+        for (let i = 0; i < el.length; i++) {
+          const en = el[i];
+          if (!en || !en.alive) continue;
+          const d = en.group.position.distanceTo(camera.position);
+          if (d < 55) en.suppressT = Math.max(en.suppressT || 0, 1.35);
+        }
+      }
+    }
     const spread = input.cover ? COVER_SPREAD : input.scope ? ADS_SPREAD : HIP_SPREAD;
     const a = Math.random() * Math.PI * 2;
     const r = Math.tan(spread) * Math.sqrt(Math.random());
@@ -246,8 +261,13 @@ export function createWeapon(camera, world, scene) {
       for (let i = 0; i < targets.length && !on; i++) { const t = targets[i]; if (!t.visible) continue; t.getWorldPosition(_tp); _tp.sub(_origin); if (_tp.length() < 180 && _tp.angleTo(_dir) < lim) on = true; }
       weapon.onTarget = on; }
     cooldown -= dt;
-    if (input.clickShot && !weapon.reloading && weapon.ammo > 0 && cooldown <= 0) { input.clickShot = false; shoot(input); }
-    else if (input.clickShot && (weapon.ammo <= 0)) input.clickShot = false; // a click during reload fires when it ends
+    // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
+    if ((input.pendingShots | 0) > 0 && !weapon.reloading && weapon.ammo > 0 && cooldown <= 0) {
+      input.pendingShots -= 1;
+      shoot(input);
+    } else if ((input.pendingShots | 0) > 0 && weapon.ammo <= 0 && !weapon.reloading) {
+      input.pendingShots = 0; // empty mag: drop queue (reload will start)
+    }
     const wants = input.fire && !weapon.reloading && weapon.ammo > 0;
     if (wants && cooldown <= 0) shoot(input);
   };
