@@ -34,7 +34,9 @@ const res = {};
   await p.evaluate(() => SS.debug.killAll()); await p.waitForTimeout(1500); await p.screenshot({ path: OUT + '/5-ragdoll.png' }); await p.waitForFunction(() => SS.walking, null, { timeout: 20000 }).catch(() => {}); res.resumed = await p.evaluate(() => SS.walking);
   // soft-lock: an enemy stuck inside a building must not hold the player; despawned within ~5 s and walking resumes
   res.softlock = await p.evaluate(async () => { const e = SS.debug.spawnEnemy('shifter'); if (!e) return { spawned: false };
-    const pin = () => { e.group.position.set(12, 0, SS.camera.position.z - 20); e.goal = e.group.position.clone(); e.home.copy(e.goal); e.moveT = 99; e.exposed = true; };
+    const pz0 = SS.camera.position.z; const bl = SS.world.colliders.filter(m => m.scale.x >= 5 && m.scale.y >= 5 && m.position.z < pz0 - 10 && m.position.z > pz0 - 45)[0];
+    const bx = bl ? bl.position.x : 12, bz = bl ? bl.position.z : pz0 - 20;
+    const pin = () => { e.group.position.set(bx, 0, bz); e.goal = e.group.position.clone(); e.home.copy(e.goal); e.moveT = 99; e.exposed = true; };
     pin(); const t0 = performance.now(); const d0 = SS.distance;
     while (performance.now() - t0 < 9000 && e.alive) { if (e.alive) pin(); await new Promise(r => setTimeout(r, 100)); }
     await new Promise(r => setTimeout(r, 1500)); return { spawned: true, despawned: !e.alive, secs: (performance.now() - t0) / 1000, walking: SS.walking, d0, d1: SS.distance }; });
