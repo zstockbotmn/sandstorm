@@ -1,7 +1,7 @@
 const YAW_LIMIT = 70 * Math.PI / 180;
 const PITCH_LIMIT = 35 * Math.PI / 180;
-const SENS = 0.0048;
-const SENS_SCOPED = 0.0019;
+const SENS = 0.0029; // -40% (tester: too twitchy)
+const SENS_SCOPED = 0.00114;
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -58,7 +58,7 @@ export function createInput(canvas) {
     if (!window.SS || !window.SS.running || performance.now() - (window.SS.startedAt || 0) < 400) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, mouse: e.pointerType === 'mouse' });
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, mouse: e.pointerType === 'mouse' });
     if (e.pointerType === 'mouse') fireMouse = true;
     sync();
     try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* already released */ }
@@ -72,6 +72,8 @@ export function createInput(canvas) {
     const dy = e.clientY - p.y;
     p.x = e.clientX;
     p.y = e.clientY;
+    // A drag is aiming, never shooting: cancel the mouse shot once it moves past 6 px.
+    if (p.mouse && fireMouse && Math.hypot(p.x - p.sx, p.y - p.sy) > 6) { fireMouse = false; sync(); }
     const sens = input.scope ? SENS_SCOPED : SENS;
     input.yaw = clamp(input.yaw + dx * sens, -YAW_LIMIT, YAW_LIMIT);
     input.pitch = clamp(input.pitch + dy * sens, -PITCH_LIMIT, PITCH_LIMIT);
