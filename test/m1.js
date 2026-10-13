@@ -109,10 +109,13 @@ const res = {};
   await p.evaluate(() => SS.debug.damage(1000)); await p.waitForTimeout(500); { const f0 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); await p.waitForTimeout(1500); const f1 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); res.deathFreeze = { f0, f1 }; } res.over = await p.evaluate(() => { const o = document.querySelector('#over'); return !!o && getComputedStyle(o).display !== 'none'; });
   res.highscores = await p.evaluate(() => localStorage.getItem('ss-highscores')); await p.screenshot({ path: OUT + '/6-gameover.png' });
   // natural death: fresh run, real spawns, no input, no debug calls; standing still must get you killed (target 60-90 s)
-  { const p2 = await ctx.newPage(); p2.on('pageerror', e => errs.push('p2: ' + e.message)); await p2.goto('http://127.0.0.1:8795/?art=0&seed=7'); await p2.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
+  // Pause the high-art page rAF first — soft-GL is process-wide and the live Meshy scene starves art=0 to death.
+  { await p.evaluate(() => { if (!window.__ssRAF) { window.__ssRAF = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = () => 0; } });
+    const p2 = await ctx.newPage(); p2.on('pageerror', e => errs.push('p2: ' + e.message)); await p2.goto('http://127.0.0.1:8795/?art=0&seed=7'); await p2.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
     await p2.tap('#play'); const t0 = Date.now();
     res.naturalDeath = await p2.waitForFunction(() => { const o = document.querySelector('#over'); return o && getComputedStyle(o).display !== 'none'; }, null, { timeout: +(process.env.SS_DEATH_MS || 180000), polling: 1000 }).then(() => (Date.now() - t0) / 1000).catch(() => null);
-    res.naturalDist = await p2.evaluate(() => SS.distance); await p2.close(); }
+    res.naturalDist = await p2.evaluate(() => SS.distance); await p2.close();
+    await p.evaluate(() => { if (window.__ssRAF) { window.requestAnimationFrame = window.__ssRAF; delete window.__ssRAF; requestAnimationFrame(() => {}); } }); }
   // offline
   await p.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 30000 }).catch(() => {}); res.caches = await p.evaluate(() => caches.keys());
   await ctx.setOffline(true); await p.reload({ timeout: 120000, waitUntil: 'domcontentloaded' }).catch(() => {}); await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 120000 }).then(() => res.offline = true).catch(() => res.offline = false); await ctx.setOffline(false);
