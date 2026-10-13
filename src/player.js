@@ -1,0 +1,50 @@
+export function createPlayer(camera, input, hud) {
+  const player = {
+    health: 100,
+    alive: true,
+  };
+  let regenDelay = 0;
+
+  player.damage = function damage(amount, fromPosition) {
+    if (!player.alive) return;
+    const dmg = Math.max(0, amount || 0);
+    player.health = Math.max(0, player.health - dmg);
+    if (window.SS) window.SS.health = player.health;
+    if (hud) {
+      hud.setHealth(player.health);
+      hud.damageVignette(Math.min(1, 0.35 + dmg / 28));
+      if (fromPosition && camera) {
+        const dx = fromPosition.x - camera.position.x;
+        const dz = fromPosition.z - camera.position.z;
+        const yaw = input ? input.yaw : 0;
+        const forward = dx * Math.sin(yaw) + dz * -Math.cos(yaw);
+        const right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
+        hud.damageDirection(Math.atan2(right, forward));
+      }
+    }
+    regenDelay = 4;
+    if (player.health <= 0) {
+      player.alive = false;
+      if (window.SS) {
+        window.SS.running = false;
+        window.SS.walking = false;
+        if (typeof window.SS.onDeath === 'function') window.SS.onDeath();
+      }
+    }
+  };
+
+  player.update = function update(dt) {
+    if (!player.alive || player.health >= 100) return;
+    if (regenDelay > 0) {
+      regenDelay -= dt;
+      return;
+    }
+    const inCover = !!(input && input.cover);
+    const rate = inCover ? 20 : 8;
+    player.health = Math.min(100, player.health + rate * dt);
+    if (window.SS) window.SS.health = player.health;
+    if (hud) hud.setHealth(player.health);
+  };
+
+  return player;
+}

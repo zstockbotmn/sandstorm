@@ -3,6 +3,8 @@ import { createWorld } from './world.js';
 import { createInput } from './input.js';
 import { createWeapon } from './weapon.js';
 import { createHud } from './hud.js';
+import { createPlayer } from './player.js';
+import { createEnemies } from './enemies.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -22,6 +24,8 @@ const world = createWorld(scene, 0x5a7d);
 const input = createInput(renderer.domElement);
 const weapon = createWeapon(camera, world, scene);
 const hud = createHud();
+const player = createPlayer(camera, input, hud);
+const enemies = createEnemies(scene, camera, world, weapon, player);
 
 window.SS = {
   scene,
@@ -30,11 +34,14 @@ window.SS = {
   input,
   weapon,
   hud,
+  player,
+  enemies,
   walking: true,
   distance: 0,
   running: false,
   score: 0,
   health: 100,
+  onDeath() {},
 };
 
 const SPEED = 2.2;
@@ -71,6 +78,9 @@ function frame(now) {
     window.SS.distance += SPEED * dt;
   }
   applyCamera(dt || 0.016);
+  const step = dt || 0.016;
+  player.update(step);
+  enemies.update(step);
   weapon.update(dt, input.state);
   applyCamera(0);
   input.endFrame();
