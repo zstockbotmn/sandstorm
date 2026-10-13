@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createWorld } from './world.js';
+import { art } from './art.js';
 import { createInput } from './input.js';
 import { createWeapon } from './weapon.js';
 import { createHud } from './hud.js';
@@ -50,6 +51,8 @@ window.SS = {
   health: 100,
   onDeath() {},
 };
+// art.js may have started loading before this object existed. Keep the same reference.
+window.SS.art = art;
 
 const priorHit = weapon.onHit;
 weapon.onHit = function onHit(info) {
