@@ -6,8 +6,8 @@ for f in $(find assets-src/meshy -maxdepth 1 -name '*.raw.glb' 2>/dev/null | sor
   # Perf: simplify static art (buildings 35%, props 40%); rigged fighters/anims untouched.
   # Buildings: full mesh (seam-locked, UVs intact) + a geometry-only far LOD (<b>.lod.glb, -si 0.3 -sa; aggressive
   # simplification smears UVs up close, invisible past ~40 m). Props keep -si 0.35 -sa. Rigged fighters untouched.
-  case $b in prop_*) SI="-si 0.35 -sa";; *) SI="";; esac
+  SI="" # full meshes everywhere; bldg*/prop_* get a far LOD below
   node tools/compress.mjs "$f" /tmp/ss_$b.glb && npx gltfpack -i /tmp/ss_$b.glb -o assets/models/$b.glb -cc -kn -km $SI
-  case $b in bldg*) npx gltfpack -i /tmp/ss_$b.glb -o /tmp/ss_${b}_lo.glb -kn -km -si 0.3 -sa && node tools/strip-tex.mjs /tmp/ss_${b}_lo.glb /tmp/ss_${b}_lo2.glb \
+  case $b in bldg*|prop_*) LR=0.3; case $b in prop_*) LR=0.35;; esac; npx gltfpack -i /tmp/ss_$b.glb -o /tmp/ss_${b}_lo.glb -kn -km -si $LR -sa && node tools/strip-tex.mjs /tmp/ss_${b}_lo.glb /tmp/ss_${b}_lo2.glb \
     && npx gltfpack -i /tmp/ss_${b}_lo2.glb -o assets/models/$b.lod.glb -cc -kn -km;; esac; done
 ls -la assets/models; echo compress done

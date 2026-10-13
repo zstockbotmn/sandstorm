@@ -85,10 +85,10 @@ export function createWeapon(camera, world, scene) {
     obj.updateMatrixWorld(true); b = new THREE.Box3().setFromObject(obj); b.getSize(sz);
     const k = 0.74 / Math.max(sz.z, 1e-4); obj.scale.multiplyScalar(k); obj.updateMatrixWorld(true);
     b = new THREE.Box3().setFromObject(obj); const ctr = b.getCenter(new THREE.Vector3());
-    const holder = new THREE.Group(); holder.add(obj); obj.position.sub(ctr); holder.position.set(0.02, -0.04, -0.12);
+    const holder = new THREE.Group(); holder.add(obj); obj.position.sub(ctr); holder.position.set(0.035, -0.045, -0.12); holder.rotation.set(0, 0.09, -0.05); // slight yaw/cant so the curved mag and wood furniture read
     obj.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.frustumCulled = false; if (m.material) { m.material = m.material.clone(); m.material.roughness = Math.max(0.5, m.material.roughness ?? 0.6);
-        if (!/wood/i.test(m.material.name || '')) { m.material.color.multiplyScalar(0.45); m.material.metalness = 0.35; } } } }); // gunmetal, not toy grey
-    rig.add(holder); boxGun.visible = false; weapon.model = holder;
+        if (!/wood/i.test(m.material.name || '')) { m.material.color.multiplyScalar(0.6); m.material.metalness = 0.5; } } } }); // gunmetal, not toy grey
+    rig.add(holder); boxGun.visible = false; weapon.model = holder; weapon.modelName = obj.name || 'rifle_ak47';
   };
   const flash = new THREE.PointLight(0xffb060, 0, 3.2, 2);
   flash.position.set(0, 0.03, -0.66);

@@ -10,5 +10,5 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://127.0.0.1:8797/' + q); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 90000 });
     await p.tap('#play'); await p.waitForTimeout(800); if (js) await p.evaluate(js); await p.waitForTimeout(+wait);
-    await p.screenshot({ path: out }); console.log(JSON.stringify({ out, errs, art: await p.evaluate(() => ({ loaded: SS.art.loaded, failed: SS.art.failed })) }));
+    await p.screenshot({ path: out }); console.log(JSON.stringify({ out, errs, dbg: await p.evaluate(() => window.__dbg), art: await p.evaluate(() => ({ loaded: SS.art.loaded, failed: SS.art.failed })) }));
   } finally { await b.close(); srv.close(); } })().catch(e => { console.error(e); process.exit(1); });
