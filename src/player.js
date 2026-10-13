@@ -22,7 +22,7 @@ export function createPlayer(camera, input, hud) {
         hud.damageDirection(Math.atan2(right, forward));
       }
     }
-    regenDelay = 4;
+    regenDelay = 5; // regen starts 5 s after the last hit
     if (player.health <= 0) {
       player.alive = false;
       if (window.SS) {
@@ -40,7 +40,7 @@ export function createPlayer(camera, input, hud) {
       return;
     }
     const inCover = !!(input && input.cover);
-    const rate = inCover ? 20 : 8;
+    const rate = inCover ? 16 : 4; // limited: slow in the open
     player.health = Math.min(100, player.health + rate * dt);
     if (window.SS) window.SS.health = player.health;
     if (hud) hud.setHealth(player.health);
