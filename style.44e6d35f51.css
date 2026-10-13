@@ -154,12 +154,12 @@ canvas {
 #controls {
   position: fixed;
   z-index: 4;
-  right: calc(14px + env(safe-area-inset-right));
+  left: calc(14px + env(safe-area-inset-left));
   bottom: calc(14px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 12px;
-  align-items: flex-end;
+  align-items: flex-start;
   touch-action: none;
 }
 
@@ -251,15 +251,19 @@ canvas {
   background: #c0392b;
 }
 
-#ammo { /* bottom-left, clear of the right-hand buttons */
-  bottom: calc(14px + env(safe-area-inset-bottom));
-  left: calc(16px + env(safe-area-inset-left));
+#ammo { /* bottom-right: FIRE moved left, so mag stays clear on the right */
+  top: auto;
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  left: auto;
+  right: calc(16px + env(safe-area-inset-right));
   font: 700 28px system-ui, sans-serif;
 }
 
 #reloading {
-  bottom: calc(50px + env(safe-area-inset-bottom));
-  left: calc(16px + env(safe-area-inset-left));
+  top: auto;
+  bottom: calc(62px + env(safe-area-inset-bottom));
+  left: auto;
+  right: calc(16px + env(safe-area-inset-right));
   font: 800 16px system-ui, sans-serif;
   letter-spacing: 0.14em;
   color: #ffd27a;
@@ -370,3 +374,7 @@ canvas {
 #enemies-left { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: none; font: 700 18px/1 system-ui, sans-serif; letter-spacing: 2px; color: #fff; background: rgba(150, 20, 10, 0.75); padding: 5px 12px; border-radius: 4px; pointer-events: none; }
 /* stronger hit marker */
 #hit-marker span { width: 18px; height: 4px; background: #fff; box-shadow: 0 0 4px #000, 0 0 2px #f33; }
+
+/* first-contact aim hint */
+#aim-hint { position: absolute; left: 0; right: 0; top: 42%; text-align: center; font: 600 18px/1.3 system-ui, sans-serif; letter-spacing: 1px; color: #f4efe4; text-shadow: 0 1px 4px #000; opacity: 0; pointer-events: none; transition: opacity 0.35s ease; }
+#aim-hint.show { opacity: 1; }
