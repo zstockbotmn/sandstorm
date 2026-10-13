@@ -24,6 +24,7 @@ export function createInput(canvas) {
 
   const pointers = new Map();
   let fireBtn = false;
+  let fireShots0 = 0;
   let fireKey = false;
   let fireMouse = false;
 
@@ -97,7 +98,7 @@ export function createInput(canvas) {
     if (!name) return;
     e.preventDefault();
     e.stopPropagation();
-    if (name === 'fire') fireBtn = true;
+    if (name === 'fire') { fireBtn = true; fireShots0 = window.SS && window.SS.weapon ? window.SS.weapon.shotsFired : 0; }
     else if (name === 'scope') input.scope = !input.scope; // tap-to-toggle: pop out of cover / duck back
     else if (name === 'reload') input.reloadPressed = true;
     sync();
@@ -106,7 +107,8 @@ export function createInput(canvas) {
   buttons.fire.addEventListener('pointerdown', (e) => {
     try { buttons.fire.setPointerCapture(e.pointerId); } catch (_) {}
   });
-  const releaseFireBtn = () => { fireBtn = false; sync(); };
+  // a quick FIRE tap that ended before any frame fired still gets exactly one shot
+  const releaseFireBtn = () => { if (fireBtn && window.SS && window.SS.weapon && window.SS.weapon.shotsFired === fireShots0) input.pendingShots = Math.max(input.pendingShots | 0, 1); fireBtn = false; sync(); };
   buttons.fire.addEventListener('pointerup', releaseFireBtn);
   buttons.fire.addEventListener('pointercancel', releaseFireBtn);
   buttons.fire.addEventListener('lostpointercapture', releaseFireBtn);
