@@ -21,6 +21,15 @@ export function createInput(canvas) {
     },
   };
   input.state = input;
+  let aimDX = 0, aimDY = 0;
+  input.applyAim = function applyAim(dt) {
+    if (!aimDX && !aimDY) return;
+    const k = 1 - Math.exp(-(dt || 0.016) / 0.035);
+    const ax = Math.abs(aimDX) < 1e-5 ? aimDX : aimDX * k, ay = Math.abs(aimDY) < 1e-5 ? aimDY : aimDY * k;
+    aimDX -= ax; aimDY -= ay;
+    input.yaw = clamp(input.yaw + ax, -YAW_LIMIT, YAW_LIMIT);
+    input.pitch = clamp(input.pitch + ay, -PITCH_LIMIT, PITCH_LIMIT);
+  };
 
   const pointers = new Map();
   let fireBtn = false;
@@ -78,9 +87,11 @@ export function createInput(canvas) {
     p.y = e.clientY;
     // A drag is aiming, never shooting: cancel the mouse shot once it moves past 6 px.
     if (p.mouse && Math.hypot(p.x - p.sx, p.y - p.sy) > 4) { p.moved = true; clearTimeout(pressTimer); if (fireMouse) { fireMouse = false; sync(); } }
-    const sens = input.scope ? SENS_SCOPED : SENS;
-    input.yaw = clamp(input.yaw + dx * sens, -YAW_LIMIT, YAW_LIMIT);
-    input.pitch = clamp(input.pitch + dy * sens, -PITCH_LIMIT, PITCH_LIMIT);
+    // Proportional drag aim with light smoothing: deltas queue and are applied over ~35 ms in applyAim(dt).
+    // Spikes (coalesced/late events) are capped so one event can't fling the view; gentle friction on a target.
+    const sens = (input.scope ? SENS_SCOPED : SENS) * (input.onTarget ? 0.7 : 1);
+    const cap = 60;
+    aimDX += Math.max(-cap, Math.min(cap, dx)) * sens; aimDY += Math.max(-cap, Math.min(cap, dy)) * sens;
   }, { passive: false });
 
   function endPointer(e) {

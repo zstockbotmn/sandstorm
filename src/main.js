@@ -139,6 +139,7 @@ function simStep(dt) {
     camera.position.z -= SPEED * dt;
     window.SS.distance += SPEED * dt;
   }
+  input.applyAim(dt || 0.016); input.onTarget = weapon.onTarget;
   if (!frozen) cover.update(dt || 0.016, window.SS.walking && window.SS.running);
   applyCamera(dt || 0.016);
   const step = dt || 0.016;
