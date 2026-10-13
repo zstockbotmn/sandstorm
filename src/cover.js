@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 // Automatic cover: when the walk halts for a fight, move behind the nearest cover ahead (or drop a sandbag wall) and duck.
 // Tap SCOPE (or Q) to pop up and aim; tap again to duck back. While ducked (input.cover) the player can blind-fire.
+const PLAYER_R = 0.55; // camera keeps this far from the cover face
 const SEARCH_AHEAD = 7, STREET_X = 4.4, BEHIND = 1.0, MOVE_SPEED = 4.5;
 export function createCover(scene, camera, world, input) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x9c8a62, roughness: 0.95, transparent: true });
@@ -14,18 +15,26 @@ export function createCover(scene, camera, world, input) {
       const ahead = pz - p.pos.z; if (ahead < 1.5 || ahead > SEARCH_AHEAD || Math.abs(p.pos.x) > STREET_X) continue;
       const d = ahead + Math.abs(p.pos.x - camera.position.x); if (d < bd) { bd = d; best = p.pos; }
     }
-    if (best) return new THREE.Vector3(best.x, 0, best.z + BEHIND);
+    if (best) {
+      // stop at the cover's real surface: union the colliders around the spot and stand PLAYER_R behind its near face
+      const box = new THREE.Box3(), tmp = new THREE.Box3(); let any = false;
+      for (const m of world.colliders) { if (!m.geometry) continue; tmp.setFromObject(m); const cx = (tmp.min.x + tmp.max.x) / 2, cz = (tmp.min.z + tmp.max.z) / 2;
+        if (Math.abs(cx - best.x) < 1.6 && Math.abs(cz - best.z) < 2.8 && tmp.max.y < 3) { box.union(tmp); any = true; } }
+      if (any) { c.surface = box; return new THREE.Vector3(Math.max(box.min.x + 0.3, Math.min(box.max.x - 0.3, camera.position.x)), 0, box.max.z + PLAYER_R); }
+      return new THREE.Vector3(best.x, 0, best.z + BEHIND);
+    }
     // none close: drop a sandbag-style wall just ahead of the halt point
     const m = new THREE.Mesh(geo, mat.clone()); m.position.set(camera.position.x, BAG_H / 2, pz - 2.2); m.castShadow = m.receiveShadow = true;
     scene.add(m); world.colliders.push(m); c.spawned = m;
-    return new THREE.Vector3(m.position.x, 0, m.position.z + BEHIND);
+    c.surface = new THREE.Box3().setFromObject(m);
+    return new THREE.Vector3(m.position.x, 0, c.surface.max.z + PLAYER_R);
   }
   function clearSpawned() {
     if (!c.spawned) return; scene.remove(c.spawned); const i = world.colliders.indexOf(c.spawned); if (i >= 0) world.colliders.splice(i, 1); c.spawned = null;
   }
   function update(dt, walking) {
     if (walking) {
-      if (c.state !== 'none') { c.state = 'none'; c.target = null; clearSpawned(); }
+      if (c.state !== 'none') { c.state = 'none'; c.target = null; c.surface = null; clearSpawned(); }
       input.cover = false;
       camera.position.x += (0 - camera.position.x) * (1 - Math.exp(-1.5 * dt)); // drift back to the road centre
       return;
@@ -33,7 +42,8 @@ export function createCover(scene, camera, world, input) {
     if (!window.SS || !window.SS.running) return;
     if (!c.target) { c.target = pick(); c.state = 'moving'; }
     const dx = c.target.x - camera.position.x, dz = c.target.z - camera.position.z, d = Math.hypot(dx, dz);
-    if (d > 0.05) { const s = Math.min(d, MOVE_SPEED * dt) / d; camera.position.x += dx * s; camera.position.z += dz * s; }
+    if (d > 0.05) { const s = Math.min(d, MOVE_SPEED * dt) / d; camera.position.x += dx * s; camera.position.z += dz * s;
+      if (c.surface && camera.position.z < c.surface.max.z + PLAYER_R) camera.position.z = c.surface.max.z + PLAYER_R; } // never enter the cover
     else c.state = 'in';
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
     if (c.spawned && c.spawned.material) {
@@ -41,6 +51,6 @@ export function createCover(scene, camera, world, input) {
       c.spawned.material.opacity = input.cover ? 0.38 : 0.95;
     }
   }
-  function reset() { c.state = 'none'; c.target = null; clearSpawned(); input.cover = false; }
+  function reset() { c.surface = null; c.state = 'none'; c.target = null; clearSpawned(); input.cover = false; }
   return c;
 }
