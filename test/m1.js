@@ -16,7 +16,7 @@ const res = {};
   res.walk = { d0, d1, walking: await p.evaluate(() => SS.walking) };
   await p.screenshot({ path: OUT + '/2-walking.png' });
   // aim drag
-  const y0 = await p.evaluate(() => SS.input.yaw); await p.mouse.move(300, 200); await p.mouse.down(); await p.mouse.move(200, 180, { steps: 8 }); await p.mouse.up(); res.aim = { y0, y1: await p.evaluate(() => SS.input.yaw) };
+  const y0 = await p.evaluate(() => SS.input.yaw); const pt0 = await p.evaluate(() => SS.input.pitch); await p.mouse.move(300, 200); await p.mouse.down(); await p.mouse.move(200, 180, { steps: 8 }); await p.mouse.up(); res.aim = { y0, y1: await p.evaluate(() => SS.input.yaw), pt0, pt1: await p.evaluate(() => SS.input.pitch) };
   // fire / scope / cover / reload via keys
   await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); const a0 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); await p.keyboard.down('Space'); await p.waitForTimeout(700); await p.keyboard.up('Space'); const a1 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); res.fire = { a0, a1 };
   await p.keyboard.press('q'); await p.waitForTimeout(800); res.scopeFov = await p.evaluate(() => SS.camera.fov); await p.screenshot({ path: OUT + '/3-scoped.png' }); await p.keyboard.press('q');
@@ -34,7 +34,7 @@ const res = {};
   await ctx.setOffline(true); await p.reload(); await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 30000 }).then(() => res.offline = true).catch(() => res.offline = false); await ctx.setOffline(false);
   await p.screenshot({ path: OUT + '/7-offline.png' });
   res.ammoOverlap = await p.evaluate(() => { const a = document.querySelector('#ammo').getBoundingClientRect(); return [...document.querySelectorAll('[data-ctl]')].some(b => { const r = b.getBoundingClientRect(); return !(a.right < r.left || a.left > r.right || a.bottom < r.top || a.top > r.bottom); }); }); res.errors = errs; console.log(JSON.stringify(res, null, 1));
-  assert.equal(res.ammoAfterPlay, 30, 'Play tap fires no shots'); assert.ok(d1 > d0, 'walks'); assert.notEqual(res.aim.y1, y0, 'aim'); assert.ok(a1 < a0, 'fires'); assert.ok(res.scopeFov < 60, 'scope'); assert.ok(res.coverY < 1.4, 'cover');
+  assert.equal(res.ammoAfterPlay, 30, 'Play tap fires no shots'); assert.ok(d1 > d0, 'walks'); assert.notEqual(res.aim.y1, y0, 'aim'); assert.ok(res.aim.pt1 < res.aim.pt0, 'drag up looks up (pitch decreases; camera.rotation.x=-pitch)'); assert.ok(a1 < a0, 'fires'); assert.ok(res.scopeFov < 60, 'scope'); assert.ok(res.coverY < 1.4, 'cover');
   assert.equal(res.enemyStop, false, 'stops for enemies'); assert.equal(res.resumed, true, 'resumes'); assert.ok(res.over, 'game over'); assert.ok(res.highscores, 'highscore saved');
   assert.ok(res.caches.some(k => k.startsWith('ss-')), 'ss- cache'); assert.ok(res.offline, 'offline'); assert.equal(res.ammoOverlap, false, 'ammo clear of buttons'); assert.equal(errs.length, 0, 'no page errors');
   console.log('M1 PASS');

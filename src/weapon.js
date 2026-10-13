@@ -135,7 +135,7 @@ export function createWeapon(camera, world, scene) {
     flash.intensity = 5;
     flashSprite.visible = true;
     const kickAmt = input.scope ? 0.008 : 0.02;
-    input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch + kickAmt));
+    input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt));
     kick = input.scope ? 0.03 : 0.07;
     if (weapon.onShot) weapon.onShot();
 

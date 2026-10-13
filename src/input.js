@@ -74,7 +74,7 @@ export function createInput(canvas) {
     p.y = e.clientY;
     const sens = input.scope ? SENS_SCOPED : SENS;
     input.yaw = clamp(input.yaw + dx * sens, -YAW_LIMIT, YAW_LIMIT);
-    input.pitch = clamp(input.pitch - dy * sens, -PITCH_LIMIT, PITCH_LIMIT);
+    input.pitch = clamp(input.pitch + dy * sens, -PITCH_LIMIT, PITCH_LIMIT);
   }, { passive: false });
 
   function endPointer(e) {
