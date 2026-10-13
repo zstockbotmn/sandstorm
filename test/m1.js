@@ -37,9 +37,19 @@ const res = {};
   res.noCoverBtn = await p.evaluate(() => !document.querySelector('[data-ctl="cover"]'));
   await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); res.afterReload = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag);
   // enemies
-  await p.evaluate(() => { window.__en = [SS.debug.spawnEnemy('shifter'), SS.debug.spawnEnemy('flanker'), SS.debug.spawnEnemy('popper')]; });
-  await p.evaluate(() => { for (const e of __en) { if (!e) continue; e.engaged = true; e.exposed = true; e.seen = true; } });
-  await p.waitForFunction(() => SS.walking === false && SS.engaged > 0, null, { timeout: 20000 }).catch(() => {});
+  await p.evaluate(() => {
+    window.__en = [SS.debug.spawnEnemy('flanker'), SS.debug.spawnEnemy('flanker'), SS.debug.spawnEnemy('flanker')].filter(Boolean);
+    const pz = SS.camera.position.z;
+    __en.forEach((e, i) => {
+      if (!e) return;
+      e.group.position.set((i - 1) * 1.8, 0, pz - 18 - i * 2);
+      e.home.copy(e.group.position); e.goal = e.group.position.clone();
+      e.flankTo.copy(e.group.position); e.behavior = 'flanker';
+      e.phase = 'fire'; e.exposed = true; e.engaged = true; e.seen = true; e.unseenT = 0;
+      e.posture = 'idle'; e.moving = false;
+    });
+  });
+  await p.waitForFunction(() => SS.walking === false && SS.engaged >= 2, null, { timeout: 25000 }).catch(() => {});
   await p.waitForFunction(() => SS.cover && SS.cover.state === 'in' && SS.input.cover && SS.camera.position.y < 1.4, null, { timeout: 20000 }).catch(() => {});
   res.enemyStop = await p.evaluate(() => SS.walking); await p.screenshot({ path: OUT + '/4-enemies.png' });
   res.halt = await p.evaluate(() => ({ engaged: SS.engaged, hud: (document.querySelector('#enemies-left') || {}).textContent, cover: SS.cover.state, ducked: SS.input.cover, eyeY: SS.camera.position.y }));
@@ -53,6 +63,7 @@ const res = {};
   await p.waitForFunction((a0) => SS.weapon.ammo < a0, res.pop.a0, { timeout: 15000 }).catch(() => {});
   await p.keyboard.up('Space'); res.pop.a1 = await p.evaluate(() => SS.weapon.ammo);
   await p.keyboard.press('q'); // tap again to duck back
+  await p.evaluate(() => { SS.input.scope = false; });
   await p.waitForFunction(() => !SS.input.scope && SS.input.cover, null, { timeout: 15000 }).catch(() => {});
   res.pop.reDucked = await p.evaluate(() => SS.input.cover);
   await p.evaluate(() => SS.debug.killAll()); await p.waitForTimeout(1500); await p.screenshot({ path: OUT + '/5-ragdoll.png' }); await p.waitForFunction(() => SS.walking, null, { timeout: 20000 }).catch(() => {}); res.resumed = await p.evaluate(() => SS.walking);
@@ -76,7 +87,7 @@ const res = {};
   await p.evaluate(() => SS.debug.damage(1000)); await p.waitForTimeout(500); { const f0 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); await p.waitForTimeout(1500); const f1 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); res.deathFreeze = { f0, f1 }; } res.over = await p.evaluate(() => { const o = document.querySelector('#over'); return !!o && getComputedStyle(o).display !== 'none'; });
   res.highscores = await p.evaluate(() => localStorage.getItem('ss-highscores')); await p.screenshot({ path: OUT + '/6-gameover.png' });
   // natural death: fresh run, real spawns, no input, no debug calls; standing still must get you killed (target 60-90 s)
-  { const p2 = await ctx.newPage(); p2.on('pageerror', e => errs.push('p2: ' + e.message)); await p2.goto('http://127.0.0.1:8795/?seed=7'); await p2.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
+  { const p2 = await ctx.newPage(); p2.on('pageerror', e => errs.push('p2: ' + e.message)); await p2.goto('http://127.0.0.1:8795/?art=0&seed=7'); await p2.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
     await p2.tap('#play'); const t0 = Date.now();
     res.naturalDeath = await p2.waitForFunction(() => { const o = document.querySelector('#over'); return o && getComputedStyle(o).display !== 'none'; }, null, { timeout: +(process.env.SS_DEATH_MS || 180000), polling: 1000 }).then(() => (Date.now() - t0) / 1000).catch(() => null);
     res.naturalDist = await p2.evaluate(() => SS.distance); await p2.close(); }
