@@ -154,11 +154,25 @@ function simStep(dt) {
   sky.update(camera);
 }
 
+// Adaptive resolution: every 2 s, if fps < 40 drop the render scale 15% (floor 0.6); if fps > 56 for 6 s, step back up.
+function baseDPR() { return Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5); }
+let resScale = 1, fpsN = 0, fpsT = 0, goodT = 0;
+function adaptRes(raw) {
+  if (softGL || !(raw > 0) || raw > 0.5) return;
+  fpsN++; fpsT += raw; if (fpsT < 2) return;
+  const fps = fpsN / fpsT; fpsN = 0; fpsT = 0; let next = resScale;
+  if (fps < 40) { next = Math.max(0.6, resScale * 0.85); goodT = 0; }
+  else if (fps > 56) { goodT += 2; if (goodT >= 6) { next = Math.min(1, resScale / 0.85); goodT = 0; } } else goodT = 0;
+  if (Math.abs(next - resScale) > 0.01) { resScale = next; window.SS.resScale = resScale; onResize(); }
+  window.SS.fps = Math.round(fps);
+}
+
 const frameErrs = new Set();
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = last ? (now - last) / 1000 : 0;
   last = now;
+  adaptRes(raw);
   // Catch up when frames are late (software GL): up to 4 x 50 ms so fire/walk still advance.
   const steps = raw > 0 ? Math.min(4, Math.max(1, Math.ceil(raw / 0.05))) : 1;
   const dt = raw > 0 ? Math.min(0.05, raw / steps) : 0;
@@ -180,7 +194,7 @@ function frame(now) {
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5));
+  renderer.setPixelRatio(baseDPR() * resScale);
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
 }

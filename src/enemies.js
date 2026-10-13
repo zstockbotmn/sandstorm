@@ -116,8 +116,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Small red chevron over enemies at range when unscoped, so they read without the scope.
   const markerMat = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
-    g.fillStyle = '#ff3b2f'; g.beginPath(); g.moveTo(4, 8); g.lineTo(28, 8); g.lineTo(16, 26); g.closePath(); g.fill();
-    const t = new THREE.CanvasTexture(c); return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }); })();
+    // Clearer marker: screen-constant size (sizeAttenuation off), red chevron with a white outline + dark rim.
+    g.lineJoin = 'round'; g.beginPath(); g.moveTo(4, 6); g.lineTo(28, 6); g.lineTo(16, 27); g.closePath();
+    g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.stroke(); g.lineWidth = 2.5; g.strokeStyle = '#fff'; g.stroke(); g.fillStyle = '#ff2a1f'; g.fill();
+    const t = new THREE.CanvasTexture(c); return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, sizeAttenuation: false }); })();
   // Hitboxes stay mesh.visible so shots connect; this material is what hides them.
   const ghostMat = new THREE.MeshBasicMaterial({ visible: false });
   let fighterCursor = 0;
@@ -363,7 +365,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function buildEnemy(behavior, anchor) {
     const group = new THREE.Group();
-    const marker = new THREE.Sprite(markerMat); marker.scale.set(0.35, 0.35, 1); marker.position.y = 2.25 * S; marker.renderOrder = 5; group.add(marker);
+    const marker = new THREE.Sprite(markerMat); marker.scale.set(0.045, 0.045, 1); marker.position.y = 2.25 * S; marker.renderOrder = 5; group.add(marker);
     const enemy = {
       marker,
       behavior,
@@ -1124,7 +1126,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       try { updateEnemy(e, dt * tempo, diff); }
       catch (err) { reportErr('enemy update', err); despawn(e); list.splice(i, 1); continue; } // a broken enemy is removed, never freezes the fight
       if (e.art) syncArt(e);
-      if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 12;
+      if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 7;
       const dx = e.group.position.x - camera.position.x;
       const dy = e.group.position.y - camera.position.y;
       const dz = e.group.position.z - camera.position.z;
