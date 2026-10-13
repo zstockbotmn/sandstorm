@@ -2,6 +2,31 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 const _q = new THREE.Quaternion();
+const _bodyQ = new THREE.Quaternion();
+const _boneQ = new THREE.Quaternion();
+const _invQ = new THREE.Quaternion();
+const _parentQ = new THREE.Quaternion();
+const _targetQ = new THREE.Quaternion();
+const _pA = new THREE.Vector3();
+const _pB = new THREE.Vector3();
+
+// uarmL is -X in the doll, which is the Meshy model's right side (model +X is its left).
+const SKIN_ORDER = ['Hips', 'Spine01', 'Head', 'RightArm', 'RightForeArm', 'LeftArm', 'LeftForeArm', 'RightUpLeg', 'RightLeg', 'LeftUpLeg', 'LeftLeg'];
+const SKIN_PART = {
+  Hips: 'pelvis',
+  Spine01: 'torso',
+  Head: 'head',
+  RightArm: 'uarmL',
+  RightForeArm: 'larmL',
+  LeftArm: 'uarmR',
+  LeftForeArm: 'larmR',
+  RightUpLeg: 'ulegL',
+  RightLeg: 'llegL',
+  LeftUpLeg: 'ulegR',
+  LeftLeg: 'llegR',
+};
+const SKIN_MIRRORS = [['RightArm', 'LeftArm'], ['RightForeArm', 'LeftForeArm'], ['RightUpLeg', 'LeftUpLeg'], ['RightLeg', 'LeftLeg']];
+let skinSideLogged = false;
 
 const ENEMY_SCALE = 1.2;
 
@@ -241,7 +266,87 @@ export function createRagdollSystem(scene) {
     scene.remove(mesh);
   }
 
+  // Map bones onto the existing bodies. offQ/offP keep the death-pose offset.
+  function bindSkin(doll, bones) {
+    const byName = Object.create(null);
+    for (let i = 0; i < doll.parts.length; i++) byName[doll.parts[i].name] = doll.parts[i];
+    const partOf = Object.assign(Object.create(null), SKIN_PART);
+    for (let i = 0; i < SKIN_MIRRORS.length; i++) {
+      const boneA = SKIN_MIRRORS[i][0];
+      const boneB = SKIN_MIRRORS[i][1];
+      const bone = bones && bones[boneA];
+      const partA = byName[partOf[boneA]];
+      const partB = byName[partOf[boneB]];
+      if (!bone || !partA || !partB) continue;
+      bone.getWorldPosition(_pA);
+      _pB.set(partA.body.position.x, partA.body.position.y, partA.body.position.z);
+      const dA = _pA.distanceToSquared(_pB);
+      _pB.set(partB.body.position.x, partB.body.position.y, partB.body.position.z);
+      if (_pA.distanceToSquared(_pB) < dA) {
+        const tmp = partOf[boneA];
+        partOf[boneA] = partOf[boneB];
+        partOf[boneB] = tmp;
+        if (!skinSideLogged) {
+          skinSideLogged = true;
+          console.debug('ragdoll bindSkin side swap', boneA, partOf[boneA], boneB, partOf[boneB]);
+        }
+      }
+    }
+    const links = [];
+    for (let i = 0; i < SKIN_ORDER.length; i++) {
+      const boneName = SKIN_ORDER[i];
+      const bone = bones && bones[boneName];
+      const part = byName[partOf[boneName]];
+      if (!bone || !part) continue;
+      const body = part.body;
+      _bodyQ.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+      bone.getWorldQuaternion(_boneQ);
+      _invQ.copy(_bodyQ).invert();
+      // offQ = inv(bodyQuat0) * boneWorldQuat0
+      const offQ = _invQ.clone().multiply(_boneQ);
+      bone.getWorldPosition(_pA);
+      _pA.x -= body.position.x;
+      _pA.y -= body.position.y;
+      _pA.z -= body.position.z;
+      const offP = _pA.applyQuaternion(_invQ).clone();
+      links.push({ bone, part, offQ, offP, root: boneName === 'Hips' });
+    }
+    return links;
+  }
+
+  // Parent-first: Hips, then spine/head, then limbs. Unmapped bones keep their last pose.
+  function driveSkin(skin) {
+    const links = skin.links;
+    if (!links || !skin.model) return;
+    skin.model.updateMatrixWorld(true);
+    for (let i = 0; i < links.length; i++) {
+      const link = links[i];
+      const bone = link.bone;
+      const body = link.part.body;
+      _bodyQ.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+      _targetQ.copy(_bodyQ).multiply(link.offQ);
+      const parent = bone.parent;
+      if (parent) parent.getWorldQuaternion(_parentQ);
+      else _parentQ.identity();
+      bone.quaternion.copy(_parentQ.invert()).multiply(_targetQ);
+      if (link.root) {
+        _pA.set(body.position.x, body.position.y, body.position.z);
+        _pB.copy(link.offP).applyQuaternion(_bodyQ);
+        _pA.add(_pB);
+        if (parent) parent.worldToLocal(_pA);
+        bone.position.copy(_pA);
+      }
+      bone.updateMatrixWorld(true);
+    }
+  }
+
   function removeDoll(doll) {
+    // Drop the skinned model only. Geometry and textures are shared with the rig cache.
+    if (doll.skin && doll.skin.model) {
+      const model = doll.skin.model;
+      if (model.parent) model.parent.remove(model);
+      doll.skin = null;
+    }
     for (let i = 0; i < doll.constraints.length; i++) phys.removeConstraint(doll.constraints[i]);
     for (let i = 0; i < doll.parts.length; i++) {
       phys.removeBody(doll.parts[i].body);
@@ -289,6 +394,7 @@ export function createRagdollSystem(scene) {
         part.mesh.quaternion.copy(_q);
         if (b.position.z < cameraZ + 2) behind = false;
       }
+      if (doll.skin) driveSkin(doll.skin);
       if (doll.age > 8 || behind) removeDoll(doll);
     }
   }
@@ -297,5 +403,5 @@ export function createRagdollSystem(scene) {
     while (dolls.length) removeDoll(dolls[0]);
   }
 
-  return { spawn, update, addNearbyStatics, dolls, clear };
+  return { spawn, update, addNearbyStatics, dolls, clear, bindSkin };
 }

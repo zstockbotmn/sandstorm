@@ -1,5 +1,6 @@
 const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.search); // tests: no auto spawns
 import * as THREE from 'three';
+import { art } from './art.js';
 import { createRagdollSystem } from './ragdoll.js';
 
 const BODY_DMG = 55;
@@ -9,6 +10,9 @@ const MAX_HEALTH = 100;
 const _look = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
 const _aim = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+const _wA = new THREE.Vector3();
+const _wB = new THREE.Vector3();
 
 const ENEMY_SCALE = 1.2; // ~20% larger; adult silhouette ~1.85–2.1 m
 
@@ -111,6 +115,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const markerMat = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
     g.fillStyle = '#ff3b2f'; g.beginPath(); g.moveTo(4, 8); g.lineTo(28, 8); g.lineTo(16, 26); g.closePath(); g.fill();
     const t = new THREE.CanvasTexture(c); return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }); })();
+  // Hitboxes stay mesh.visible so shots connect; this material is what hides them.
+  const ghostMat = new THREE.MeshBasicMaterial({ visible: false });
+  let fighterCursor = 0;
   const capsule = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 6);
   const geoTorso = capsule(0.17 * S, 0.42 * S);
   const geoHead = new THREE.SphereGeometry(0.125 * S, 10, 8);
@@ -192,6 +199,152 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
   }
 
+  function hideKids(mesh) {
+    for (let i = 0; i < mesh.children.length; i++) mesh.children[i].visible = false;
+  }
+
+  // Feet land on the group origin. Height was measured on bones before this scale.
+  function plantFeet(root) {
+    root.updateMatrixWorld(true);
+    let minY = Infinity;
+    const names = ['LeftToeBase', 'RightToeBase', 'LeftFoot', 'RightFoot'];
+    for (let i = 0; i < names.length; i++) {
+      const b = root.getObjectByName(names[i]);
+      if (!b) continue;
+      b.getWorldPosition(_wA);
+      if (_wA.y < minY) minY = _wA.y;
+    }
+    if (minY !== Infinity) root.position.y -= minY;
+  }
+
+  function crossTo(enemy, next, fade) {
+    const prev = enemy.currentAction;
+    next.reset().setEffectiveWeight(1).setEffectiveTimeScale(1);
+    const dur = next.getClip().duration || 0;
+    if (dur > 0 && next !== enemy.actions.hit) next.time = enemy.animPhase * dur;
+    next.play();
+    if (prev && prev !== next) prev.crossFadeTo(next, fade, false);
+    enemy.currentAction = next;
+  }
+
+  // exposed + still -> idle; shifter moving -> strafe; flanker moving -> run
+  function desiredAnim(enemy) {
+    if (enemy.behavior === 'shifter' && enemy.moveT <= 0 && enemy.goal &&
+        enemy.group.position.distanceTo(enemy.goal) > 0.35) return 'strafe';
+    if (enemy.behavior === 'flanker' && enemy.group.position.distanceTo(enemy.flankTo) > 0.4) return 'run';
+    return 'idle';
+  }
+
+  function stepArt(enemy, dt) {
+    const name = desiredAnim(enemy);
+    enemy.animState = name;
+    if (enemy.hitPlaying) {
+      const hit = enemy.actions.hit;
+      const dur = hit.getClip().duration || 0;
+      const left = dur - hit.time;
+      if (!enemy.hitReturning && hit.time > 0 && left <= 0.1) {
+        enemy.hitReturning = true;
+        crossTo(enemy, enemy.actions[name] || enemy.actions.idle, 0.1);
+      }
+    } else {
+      const next = enemy.actions[name];
+      if (next && enemy.currentAction !== next) crossTo(enemy, next, 0.2);
+    }
+    enemy.mixer.update(dt);
+    if (enemy.hitPlaying && !enemy.actions.hit.enabled) {
+      enemy.hitPlaying = false;
+      enemy.hitReturning = false;
+    }
+  }
+
+  function playHit(enemy) {
+    const hit = enemy.actions.hit;
+    if (!hit) return;
+    const prev = enemy.currentAction;
+    hit.reset().setEffectiveWeight(1).setEffectiveTimeScale(1);
+    hit.play();
+    if (prev && prev !== hit) prev.crossFadeTo(hit, 0.1, false);
+    else hit.fadeIn(0.1);
+    enemy.currentAction = hit;
+    enemy.hitPlaying = true;
+    enemy.hitReturning = false;
+  }
+
+  function syncArt(enemy) {
+    const group = enemy.group;
+    const bones = enemy.bones;
+    if (!bones) return;
+    group.updateMatrixWorld(true);
+    const headB = bones.Head;
+    if (headB) {
+      headB.getWorldPosition(_wA);
+      _wA.y += 0.1;
+      group.worldToLocal(_wA);
+      enemy.parts.head.position.copy(_wA);
+    }
+    if (bones.Spine && bones.Hips) {
+      bones.Spine.getWorldPosition(_wA);
+      bones.Hips.getWorldPosition(_wB);
+      _wA.add(_wB).multiplyScalar(0.5);
+      group.worldToLocal(_wA);
+      enemy.parts.torso.position.copy(_wA);
+    }
+    group.updateMatrixWorld(true);
+  }
+
+  // stopAllAction restores the bind pose; write the death pose back so unmapped bones keep it.
+  function stopMixer(root, mixer) {
+    const saved = [];
+    root.traverse((obj) => {
+      if (!obj.isBone) return;
+      saved.push(obj, obj.position.clone(), obj.quaternion.clone(), obj.scale.clone());
+    });
+    mixer.stopAllAction();
+    mixer.timeScale = 0;
+    for (let i = 0; i < saved.length; i += 4) {
+      saved[i].position.copy(saved[i + 1]);
+      saved[i].quaternion.copy(saved[i + 2]);
+      saved[i].scale.copy(saved[i + 3]);
+    }
+    root.updateMatrixWorld(true);
+  }
+
+  function mountFighter(enemy, group, extras) {
+    if (art.tier !== 'high') return;
+    const inst = art.fighterInstance(fighterCursor);
+    if (!inst) return;
+    fighterCursor += 1;
+    const h = inst.height > 0.3 ? inst.height : 1.8;
+    inst.root.scale.setScalar(1.95 / h); // code silhouette is ~2 m at ENEMY_SCALE 1.2
+    group.add(inst.root); // model faces +Z; group.lookAt already aims +Z at the target
+
+    const head = enemy.parts.head;
+    const torso = enemy.parts.torso;
+    head.material = ghostMat;
+    torso.material = ghostMat;
+    head.castShadow = torso.castShadow = false;
+    head.receiveShadow = torso.receiveShadow = false;
+    hideKids(head);
+    hideKids(torso);
+    for (let i = 0; i < extras.length; i++) extras[i].visible = false;
+
+    enemy.art = inst;
+    enemy.mixer = inst.mixer;
+    enemy.actions = inst.actions;
+    enemy.bones = inst.bones;
+    enemy.animPhase = Math.random();
+    enemy.animState = 'idle';
+    enemy.hitPlaying = false;
+    enemy.hitReturning = false;
+    const idle = inst.actions.idle;
+    idle.reset().setEffectiveWeight(1).play();
+    const idleDur = idle.getClip().duration || 1;
+    idle.time = enemy.animPhase * idleDur;
+    enemy.currentAction = idle;
+    inst.mixer.update(0);
+    plantFeet(inst.root);
+  }
+
   function buildEnemy(behavior, anchor) {
     const group = new THREE.Group();
     const marker = new THREE.Sprite(markerMat); marker.scale.set(0.35, 0.35, 1); marker.position.y = 2.25 * S; marker.renderOrder = 5; group.add(marker);
@@ -229,12 +382,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     group.add(wrap);
     addRim(wrap, 1.06);
 
+    const extras = [];
     function limb(geo, x, y, z, mat) {
       const m = new THREE.Mesh(geo, mat || matClothDark);
       m.position.set(x * S, y * S, z * S);
       m.castShadow = true;
       group.add(m);
       addRim(m, 1.1);
+      extras.push(m);
       return m;
     }
     limb(geoLimb, -0.24, 1.2, 0.02, matCloth);
@@ -251,11 +406,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     barrel.position.set(0.18 * S, 1.27 * S, -0.4 * S);
     rifle.add(stock, body, barrel);
     group.add(rifle);
+    extras.push(wrap, rifle);
     enemy.muzzleLocal = new THREE.Vector3(0.18 * S, 1.27 * S, -0.62 * S);
 
     register(head, enemy, 'head');
     register(torso, enemy, 'body');
     enemy.parts = { head, torso };
+    mountFighter(enemy, group, extras);
 
     enemy.home = standPos(anchor);
     enemy.flankFrom = enemy.home.clone();
@@ -331,8 +488,20 @@ export function createEnemies(scene, camera, world, weapon, player) {
     spray(point || origin.clone().setY(origin.y + 1.3));
     dropDecal(origin);
     const yaw = enemy.group.rotation.y;
+    enemy.group.updateMatrixWorld(true);
     const doll = ragdolls.spawn(origin, yaw, _aim.copy(origin).sub(camera.position).normalize());
     ragdolls.addNearbyStatics(doll, world.colliders, origin);
+    if (enemy.art) {
+      const model = enemy.art.root;
+      scene.attach(model); // keeps the world transform
+      stopMixer(model, enemy.mixer);
+      for (let i = 0; i < doll.parts.length; i++) {
+        doll.parts[i].mesh.traverse((obj) => { obj.visible = false; });
+      }
+      // Bones leave the mesh origin as the body falls; don't frustum-cull the skin.
+      model.traverse((obj) => { if (obj.isMesh) obj.frustumCulled = false; });
+      doll.skin = { model, links: ragdolls.bindSkin(doll, enemy.bones) };
+    }
     enemy.group.visible = false;
     root.remove(enemy.group);
     if (window.SS && window.SS.scoreSys) window.SS.scoreSys.addKill(part === 'head');
@@ -344,6 +513,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.health -= dmg;
     if (point) spray(point);
     if (enemy.health <= 0) kill(enemy, point, part);
+    else if (enemy.art) playHit(enemy);
   }
 
   weapon.onHit = function onHit(info) {
@@ -381,8 +551,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function enemyShoot(enemy) {
     const diff = difficulty();
-    enemy.group.updateMatrixWorld();
-    _muzzle.copy(enemy.muzzleLocal).applyMatrix4(enemy.group.matrixWorld);
+    enemy.group.updateMatrixWorld(true);
+    if (enemy.art && enemy.bones && enemy.bones.RightHand) {
+      enemy.bones.RightHand.getWorldPosition(_muzzle);
+      _fwd.set(0, 0, 1).transformDirection(enemy.group.matrixWorld);
+      _muzzle.addScaledVector(_fwd, 0.45);
+    } else {
+      _muzzle.copy(enemy.muzzleLocal).applyMatrix4(enemy.group.matrixWorld);
+    }
     const dist = _muzzle.distanceTo(camera.position);
     let chance = (0.42 - dist * 0.006) * (0.55 + 0.7 * diff);
     if (window.SS && window.SS.input && window.SS.input.cover) chance *= 0.18;
@@ -652,7 +828,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
         list.splice(i, 1);
         continue;
       }
+      if (e.art) stepArt(e, dt);
       updateEnemy(e, dt * tempo, diff);
+      if (e.art) syncArt(e);
       if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 12;
       const dx = e.group.position.x - camera.position.x;
       const dy = e.group.position.y - camera.position.y;
