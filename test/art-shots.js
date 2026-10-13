@@ -24,7 +24,12 @@ const res = {};
   await p.waitForFunction(() => Math.abs(SS.camera.rotation.y + 0.35) < 0.02);
   await p.screenshot({ path: OUT + '/2-street-right.png' });
   await p.evaluate(() => { SS.debug.spawnEnemy('popper'); SS.debug.spawnEnemy('shifter'); SS.debug.spawnEnemy('flanker'); });
-  await p.waitForTimeout(2500);
+  // Approach on foot, then lean. Windows are not in the opening on the first frames.
+  await p.waitForFunction(() => {
+    const list = (SS.enemies && SS.enemies.list) || [];
+    return list.some((e) => e.alive && e.exposed && (e.posture === 'lean' || e.animState === 'lean'));
+  }, null, { timeout: 8000 }).catch(() => {});
+  await p.waitForTimeout(500);
   res.aimed = await p.evaluate(() => {
     const list = (SS.enemies && SS.enemies.list) || [];
     const cam = SS.camera.position;
@@ -32,7 +37,10 @@ const res = {};
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
       if (!e.alive || !e.exposed) continue;
-      const d = e.group.position.distanceTo(cam);
+      let d = e.group.position.distanceTo(cam);
+      if (e.posture === 'lean' || e.animState === 'lean') d -= 40;
+      const kind = e.anchor && e.anchor.type;
+      if (kind === 'window' || kind === 'door' || kind === 'roof') d -= 12;
       if (d < bestD) { best = e; bestD = d; }
     }
     SS._artEnemy = best;

@@ -232,12 +232,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.currentAction = next;
   }
 
-  // exposed + still -> idle; shifter moving -> strafe; flanker moving -> run
+  // walk/run while moving, crouch in cover, lean on a peek, idle exposed, hit/death override.
   function desiredAnim(enemy) {
-    if (enemy.behavior === 'shifter' && enemy.moveT <= 0 && enemy.goal &&
-        enemy.group.position.distanceTo(enemy.goal) > 0.35) return 'strafe';
-    if (enemy.behavior === 'flanker' && enemy.group.position.distanceTo(enemy.flankTo) > 0.4) return 'run';
-    return 'idle';
+    if (enemy.dying) return 'death';
+    if (!enemy.moving) {
+      if (enemy.posture === 'crouch') return 'crouch';
+      if (enemy.posture === 'lean') return 'lean';
+      return 'idle';
+    }
+    if (enemy.moveKind === 'walk') return 'walk';
+    if (enemy.moveKind === 'strafe') return 'strafe';
+    return 'run';
   }
 
   function stepArt(enemy, dt) {
@@ -360,9 +365,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
       anchor,
       health: MAX_HEALTH,
       alive: true,
-      exposed: behavior !== 'popper',
-      hideT: 0.4 + Math.random() * 1.2,
-      showT: 0,
+      exposed: false,
+      phase: 'approach',
+      phaseT: 0,
+      posture: 'idle',
+      moving: false,
+      moveKind: 'run',
+      path: null,
+      pathI: 0,
+      dying: false,
       moveT: 0,
       shootCd: 0.4 + Math.random() * 0.8,
       goal: null,
@@ -426,7 +437,6 @@ export function createEnemies(scene, camera, world, weapon, player) {
     root.add(group);
     enemy.takeHit = (part, point) => hitEnemy(enemy, part, point);
     list.push(enemy);
-    if (enemy.behavior === 'popper') group.position.copy(hidePos(enemy));
     return enemy;
   }
 
@@ -441,11 +451,25 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return new THREE.Vector3(x, y, anchor.pos.z);
   }
 
-  function hidePos(enemy) {
-    const pos = enemy.home;
-    const side = Math.sign(pos.x) || 1;
-    const drop = enemy.anchor.type === 'roof' ? 0.9 : 0.15;
-    return new THREE.Vector3(pos.x + side * 0.9, Math.max(0, pos.y - drop), pos.z);
+  // Behind ground cover, away from the street center. Feet stay on y=0.
+  function tuckOf(home) {
+    const side = Math.sign(home.x) || 1;
+    return new THREE.Vector3(side * Math.min(Math.abs(home.x) + 0.7, 6.5), 0, home.z);
+  }
+
+  // Sill/parapet tuck: step toward the facade at the same height. Never drop under the opening.
+  function sillTuck(home, anchor) {
+    const side = Math.sign(anchor.pos.x) || 1;
+    return new THREE.Vector3(home.x + side * 0.35, home.y, home.z);
+  }
+
+  function isElevated(type) {
+    return type === 'window' || type === 'roof';
+  }
+
+  function groundPoint(x, z) {
+    const side = Math.sign(x) || 1;
+    return new THREE.Vector3(side * Math.min(Math.abs(x), 6.3), 0, z);
   }
 
   function facePlayer(enemy) {
@@ -501,6 +525,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (enemy.art) {
       const model = enemy.art.root;
       scene.attach(model); // keeps the world transform
+      // Sample the death clip, then freeze that pose for the ragdoll skin.
+      const death = enemy.actions && enemy.actions.death;
+      if (death && enemy.mixer) {
+        enemy.dying = true;
+        enemy.mixer.stopAllAction();
+        death.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+        const dur = death.getClip().duration || 0.6;
+        enemy.mixer.update(Math.min(0.7, dur * 0.62));
+        enemy.animState = 'death';
+      }
       stopMixer(model, enemy.mixer);
       for (let i = 0; i < doll.parts.length; i++) {
         doll.parts[i].mesh.traverse((obj) => { obj.visible = false; });
@@ -613,10 +647,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return out;
   }
 
-  function occupied(pos) {
+  function occupiedBy(pos, self) {
     for (let i = 0; i < list.length; i++) {
-      if (!list[i].alive) continue;
-      const h = list[i].home;
+      const e = list[i];
+      if (!e.alive || e === self) continue;
+      const h = e.home;
       if ((h.x - pos.x) ** 2 + (h.z - pos.z) ** 2 < 2.2) return true;
     }
     return false;
@@ -635,9 +670,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     let pick = pool[(Math.random() * pool.length) | 0];
     for (let n = 0; n < 6; n++) {
       const tryP = pool[(Math.random() * pool.length) | 0];
-      if (!occupied(tryP.pos)) { pick = tryP; break; }
+      if (!occupiedBy(tryP.pos, null)) { pick = tryP; break; }
     }
-    if (occupied(pick.pos)) return null;
+    if (occupiedBy(pick.pos, null)) return null;
     const enemy = buildEnemy(roll, pick);
     if (roll === 'flanker') {
       const side = Math.sign(pick.pos.x) || (Math.random() < 0.5 ? -1 : 1);
@@ -645,129 +680,274 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // flankers emerge from the alley but start at the street mouth if the alley spot is deep
       enemy.flankFrom.x = Math.sign(enemy.flankFrom.x) * Math.min(Math.abs(enemy.flankFrom.x), 6.9);
       enemy.flankTo.set(side * (1.6 + Math.random() * 1.2), 0, enemy.home.z + (Math.random() - 0.5) * 2);
-      enemy.group.position.copy(enemy.flankFrom);
-      enemy.exposed = false;
     }
-    if (roll === 'shifter') {
-      enemy.goal = enemy.home.clone();
-      enemy.moveT = 0.2;
-    }
-    enemy.shootCd = 0.6 + Math.random() * (1.4 - diff);
+    setupLoco(enemy);
+    enemy.shootCd = 0.35 + Math.random() * (0.9 - diff * 0.4);
     return enemy;
   }
 
-  function nearestCover(from, avoid) {
-    const pool = coverPool(['wall', 'barrel', 'car', 'door']);
+  // Ground path into the opening, then a short climb. No underground hide point.
+  function setupLoco(enemy) {
+    enemy.posture = 'idle';
+    enemy.moving = false;
+    enemy.moveKind = 'run';
+    enemy.phaseT = 0;
+    enemy.pathI = 0;
+    const type = enemy.anchor.type;
+    if (enemy.behavior === 'flanker') {
+      enemy.phase = 'relocate';
+      enemy.path = [enemy.flankTo.clone()];
+      enemy.group.position.copy(enemy.flankFrom);
+      enemy.group.position.y = 0;
+      enemy.exposed = false;
+      return;
+    }
+    const home = enemy.home;
+    const zOff = (Math.random() < 0.5 ? -1 : 1) * (2.0 + Math.random() * 1.4);
+    if (isElevated(type)) {
+      const start = groundPoint(home.x, home.z + zOff);
+      const atDoor = groundPoint(home.x, home.z);
+      enemy.phase = 'approach';
+      enemy.path = [atDoor, home.clone()];
+      enemy.group.position.copy(start);
+    } else if (type === 'door' || type === 'alley') {
+      const start = groundPoint(home.x, home.z + zOff);
+      const at = home.clone();
+      at.y = 0;
+      enemy.phase = 'approach';
+      enemy.path = [at];
+      enemy.group.position.copy(start);
+    } else {
+      const tuck = tuckOf(home);
+      const start = new THREE.Vector3(tuck.x, 0, tuck.z + zOff);
+      start.x = Math.sign(start.x || 1) * Math.min(Math.abs(start.x), STREET_X);
+      enemy.phase = 'approach';
+      enemy.path = [tuck];
+      enemy.group.position.copy(start);
+    }
+    enemy.exposed = false;
+    enemy.goal = enemy.path[0].clone();
+  }
+
+  function enterCover(enemy, hold) {
+    enemy.phase = 'takeCover';
+    enemy.phaseT = hold != null ? hold : 0.22 + Math.random() * 0.2;
+    enemy.posture = 'crouch';
+    enemy.moving = false;
+    enemy.exposed = false;
+    enemy.goal = null;
+  }
+
+  function firePoint(enemy) {
+    if (isElevated(enemy.anchor.type)) return enemy.home.clone();
+    const p = enemy.home.clone();
+    p.y = 0;
+    return p;
+  }
+
+  function hidePoint(enemy) {
+    if (isElevated(enemy.anchor.type)) return sillTuck(enemy.home, enemy.anchor);
+    return tuckOf(enemy.home);
+  }
+
+  function startPeek(enemy) {
+    enemy.phase = 'peek';
+    enemy.posture = 'lean';
+    enemy.path = [firePoint(enemy)];
+    enemy.pathI = 0;
+    enemy.exposed = true;
+    enemy.goal = enemy.path[0];
+  }
+
+  function startHide(enemy) {
+    enemy.phase = 'hide';
+    enemy.posture = 'crouch';
+    enemy.exposed = false;
+    enemy.path = [hidePoint(enemy)];
+    enemy.pathI = 0;
+    enemy.moveKind = 'strafe';
+    enemy.goal = enemy.path[0];
+  }
+
+  function pathOnto(enemy, anchor) {
+    const home = standPos(anchor);
+    const here = enemy.group.position;
+    const pts = [];
+    if (here.y > 0.45) pts.push(groundPoint(here.x, here.z));
+    const elev = isElevated(anchor.type);
+    const at = elev ? groundPoint(home.x, home.z) : (anchor.type === 'door' || anchor.type === 'alley' ? home.clone().setY(0) : tuckOf(home));
+    pts.push(at);
+    if (elev) pts.push(home);
+    return pts;
+  }
+
+  function startRelocate(enemy) {
+    const elevated = isElevated(enemy.anchor.type);
+    const types = elevated ? ['window', 'roof', 'door'] : ['wall', 'barrel', 'car', 'door'];
+    const pool = coverPool(types);
     let best = null;
     let bestD = 1e9;
     for (let i = 0; i < pool.length; i++) {
-      const p = pool[i].pos;
-      if (avoid && (p.x - avoid.x) ** 2 + (p.z - avoid.z) ** 2 < 1) continue;
-      const d = p.distanceToSquared(from);
-      if (d > 0.8 && d < 64 && d < bestD) {
-        bestD = d;
-        best = p;
+      const p = pool[i];
+      if (p === enemy.anchor) continue;
+      const d = p.pos.distanceToSquared(enemy.home);
+      if (d < 1.2 || d > 81) continue;
+      if (occupiedBy(p.pos, enemy)) continue;
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    if (!best) {
+      startPeek(enemy);
+      return;
+    }
+    if (!enemy.moveCalled) {
+      enemy.moveCalled = true;
+      squadCall('Moving!');
+    }
+    enemy.anchor = best;
+    enemy.home = standPos(best);
+    enemy.path = pathOnto(enemy, best);
+    enemy.pathI = 0;
+    enemy.phase = 'relocate';
+    enemy.posture = 'idle';
+    enemy.exposed = false;
+    enemy.moveKind = 'run';
+    enemy.goal = enemy.path[0];
+  }
+
+  // Horizontal run/walk, or a short climb when the waypoint is up the facade. No Y pop.
+  function stepToward(enemy, dest, speed, dt) {
+    const p = enemy.group.position;
+    _fwd.copy(dest).sub(p);
+    const dist = _fwd.length();
+    if (dist <= 0.07) {
+      p.copy(dest);
+      enemy.moving = false;
+      return true;
+    }
+    const horiz = Math.hypot(_fwd.x, _fwd.z);
+    const climb = Math.abs(_fwd.y) > 0.3 && horiz < 1.2;
+    const lateral = enemy.phase === 'peek' || enemy.phase === 'hide';
+    enemy.moveKind = lateral ? 'strafe' : climb ? 'walk' : 'run';
+    if (!lateral && !climb && dist < 1.5) enemy.moveKind = 'walk';
+    enemy.moving = true;
+    const step = Math.min(dist, speed * dt);
+    p.addScaledVector(_fwd.multiplyScalar(1 / dist), step);
+    if (p.y < 0) p.y = 0;
+    if (horiz > 0.12) enemy.group.lookAt(dest.x, p.y, dest.z);
+    return false;
+  }
+
+  function followPath(enemy, dt, diff) {
+    const dest = enemy.path && enemy.path[enemy.pathI];
+    if (!dest) return true;
+    enemy.goal = dest;
+    const p = enemy.group.position;
+    const horiz = Math.hypot(dest.x - p.x, dest.z - p.z);
+    const climb = Math.abs(dest.y - p.y) > 0.3 && horiz < 1.2;
+    const lateral = enemy.phase === 'peek' || enemy.phase === 'hide';
+    const speed = lateral ? 1.85 : climb ? 3.15 : 4.15 * (1 + 0.22 * diff);
+    if (climb && (enemy.phase === 'approach' || enemy.phase === 'relocate')) enemy.phase = 'climb';
+    if (!stepToward(enemy, dest, speed, dt)) return false;
+    enemy.pathI += 1;
+    if (enemy.pathI < enemy.path.length) {
+      const nxt = enemy.path[enemy.pathI];
+      if (nxt && nxt.y > 0.8 && enemy.group.position.y < 0.45) enemy.phase = 'climb';
+      return false;
+    }
+    enemy.moving = false;
+    return true;
+  }
+
+  function beginFire(enemy) {
+    enemy.phase = 'fire';
+    enemy.phaseT = 0.5 + Math.random() * 0.65;
+    enemy.posture = 'lean';
+    enemy.moving = false;
+    enemy.exposed = true;
+    enemy.shootCd = Math.min(enemy.shootCd, 0.12 + Math.random() * 0.1);
+  }
+
+  function tickFire(enemy, dt, diff) {
+    enemy.moving = false;
+    enemy.posture = 'lean';
+    enemy.exposed = true;
+    facePlayer(enemy);
+    enemy.phaseT -= dt;
+    if (player.alive && window.SS.running) {
+      enemy.shootCd -= dt;
+      if (enemy.shootCd <= 0) {
+        enemyShoot(enemy);
+        enemy.shootCd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff);
       }
     }
-    if (!best) return null;
-    const side = Math.sign(best.x) || 1;
-    return new THREE.Vector3(side * Math.min(Math.abs(best.x - side * 0.3), STREET_X), 0, best.z);
+    if (enemy.phaseT <= 0) startHide(enemy);
+  }
+
+  function updateFlanker(enemy, dt, diff) {
+    const dest = enemy.flankTo;
+    const d = enemy.group.position.distanceTo(dest);
+    if (d > 0.4) {
+      if (!enemy.flankCalled) {
+        enemy.flankCalled = true;
+        squadCall(dest.x >= 0 ? 'Flanking right!' : 'Flanking left!');
+      }
+      enemy.phase = 'relocate';
+      enemy.exposed = false;
+      enemy.posture = 'idle';
+      enemy.path = [dest];
+      enemy.pathI = 0;
+      stepToward(enemy, dest, 4.0 * (1 + 0.25 * diff), dt);
+      enemy.moveKind = 'run';
+      return;
+    }
+    enemy.moving = false;
+    enemy.exposed = true;
+    enemy.posture = 'idle';
+    enemy.phase = 'fire';
+    enemy.group.position.y = 0;
+    facePlayer(enemy);
+    if (player.alive && window.SS.running) {
+      enemy.shootCd -= dt;
+      if (enemy.shootCd <= 0) {
+        enemyShoot(enemy);
+        enemy.shootCd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff);
+      }
+    }
+  }
+
+  // approach → (climb) → takeCover → peek/lean → fire → hide/crouch → relocate
+  function updateCover(enemy, dt, diff) {
+    const phase = enemy.phase;
+    if (phase === 'approach' || phase === 'climb' || phase === 'relocate' || phase === 'peek' || phase === 'hide') {
+      if (phase !== 'peek') enemy.exposed = false;
+      if (followPath(enemy, dt, diff)) {
+        if (phase === 'peek') beginFire(enemy);
+        else if (phase === 'hide') {
+          enemy.afterHide = true;
+          enterCover(enemy, 0.45 + Math.random() * 0.7);
+        } else enterCover(enemy);
+      }
+      return;
+    }
+    if (phase === 'takeCover') {
+      enemy.moving = false;
+      enemy.posture = 'crouch';
+      enemy.exposed = false;
+      enemy.phaseT -= dt;
+      if (enemy.phaseT <= 0) {
+        if (enemy.afterHide && Math.random() < 0.45) startRelocate(enemy);
+        else startPeek(enemy);
+        enemy.afterHide = false;
+      }
+      return;
+    }
+    tickFire(enemy, dt, diff);
   }
 
   function updateEnemy(enemy, dt, diff) {
     if (!enemy.alive) return;
-    const popScale = 1 - 0.45 * diff;
-    if (enemy.behavior === 'popper') {
-      if (enemy.exposed) {
-        enemy.showT -= dt;
-        facePlayer(enemy);
-        enemy.group.position.lerp(enemy.home, 1 - Math.exp(-10 * dt));
-        if (enemy.showT <= 0) {
-          enemy.exposed = false;
-          enemy.hideT = (1 + Math.random() * 3) * popScale;
-        } else if (player.alive && window.SS.running) {
-          enemy.shootCd -= dt;
-          if (enemy.shootCd <= 0) {
-            enemyShoot(enemy);
-            enemy.shootCd = (0.7 + Math.random() * 0.8) * (1.15 - 0.4 * diff);
-          }
-        }
-      } else {
-        enemy.hideT -= dt;
-        const hid = hidePos(enemy);
-        enemy.group.position.lerp(hid, 1 - Math.exp(-8 * dt));
-        if (enemy.hideT <= 0) {
-          enemy.exposed = true;
-          enemy.showT = 0.55 + Math.random() * 0.7;
-          enemy.shootCd = 0.12 + Math.random() * 0.25;
-        }
-      }
-    } else if (enemy.behavior === 'shifter') {
-      if (!enemy.goal) enemy.goal = enemy.home.clone();
-      const moving = enemy.group.position.distanceTo(enemy.goal) > 0.35 && enemy.moveT <= 0;
-      if (enemy.moveT > 0) {
-        enemy.moveT -= dt;
-        enemy.exposed = true;
-        facePlayer(enemy);
-        if (player.alive && window.SS.running) {
-          enemy.shootCd -= dt;
-          if (enemy.shootCd <= 0) {
-            enemyShoot(enemy);
-            enemy.shootCd = 0.55 + Math.random() * 0.5;
-          }
-        }
-        if (enemy.moveT <= 0) {
-          const next = nearestCover(enemy.group.position, enemy.goal);
-          enemy.goal = next || enemy.home.clone();
-        }
-      } else if (moving) {
-        if (!enemy.moveCalled) {
-          enemy.moveCalled = true;
-          squadCall('Moving!');
-        }
-        enemy.exposed = true;
-        const step = 3.4 * dt * (1 + 0.35 * diff);
-        const dir = _look.copy(enemy.goal).sub(enemy.group.position);
-        dir.y = 0;
-        const len = dir.length();
-        if (len > 0.05) {
-          dir.multiplyScalar(step / len);
-          enemy.group.position.add(dir);
-          enemy.group.lookAt(enemy.goal.x, enemy.group.position.y, enemy.goal.z);
-        }
-      } else {
-        enemy.moveCalled = false;
-        enemy.moveT = 0.7 + Math.random() * 0.8;
-        enemy.shootCd = 0.15;
-      }
-    } else {
-      const dest = enemy.exposed ? enemy.flankTo : enemy.flankTo;
-      const d = enemy.group.position.distanceTo(enemy.flankTo);
-      if (d > 0.4) {
-        if (!enemy.flankCalled) {
-          enemy.flankCalled = true;
-          squadCall(enemy.flankTo.x >= 0 ? 'Flanking right!' : 'Flanking left!');
-        }
-        enemy.exposed = false;
-        const step = 3.8 * dt * (1 + 0.3 * diff);
-        _look.copy(enemy.flankTo).sub(enemy.group.position);
-        _look.y = 0;
-        const len = _look.length() || 1;
-        enemy.group.position.addScaledVector(_look, step / len);
-        enemy.group.lookAt(enemy.flankTo.x, enemy.group.position.y, enemy.flankTo.z);
-      } else {
-        enemy.exposed = true;
-        enemy.group.position.y += (0 - enemy.group.position.y) * (1 - Math.exp(-6 * dt));
-        facePlayer(enemy);
-        if (player.alive && window.SS.running) {
-          enemy.shootCd -= dt;
-          if (enemy.shootCd <= 0) {
-            enemyShoot(enemy);
-            enemy.shootCd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff);
-          }
-        }
-      }
-    }
+    if (enemy.behavior === 'flanker') updateFlanker(enemy, dt, diff);
+    else updateCover(enemy, dt, diff);
   }
 
   function aliveCount() {

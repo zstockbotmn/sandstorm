@@ -166,10 +166,14 @@ function fighterInstance(i) {
   const mixer = new THREE.AnimationMixer(root);
   const actions = {
     idle: makeAction(mixer, clips.idle, false),
-    strafe: makeAction(mixer, clips.strafe, false),
+    strafe: makeAction(mixer, clips.strafe || clips.walk, false),
+    walk: makeAction(mixer, clips.walk || clips.strafe, false),
     run: makeAction(mixer, clips.run, false),
+    crouch: makeAction(mixer, clips.crouch || clips.idle, false),
+    lean: makeAction(mixer, clips.lean || clips.idle, false),
     hit: makeAction(mixer, clips.hit, true),
   };
+  if (clips.death) actions.death = makeAction(mixer, clips.death, true);
   const bones = {};
   for (let k = 0; k < BONE_NAMES.length; k++) {
     bones[BONE_NAMES[k]] = root.getObjectByName(BONE_NAMES[k]) || null;
