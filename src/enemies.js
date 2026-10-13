@@ -180,7 +180,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let quietCap = 1;
   let burstCap = 4;
   let spawnCd = 1.2;
-  let lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
+  let lastReal = 0, lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
   let stallT = 0, standT = 0, graceT = 0, runT = 0, pressure = 0;
 
@@ -646,15 +646,18 @@ export function createEnemies(scene, camera, world, weapon, player) {
       stallT = 0; graceT = STALL_GRACE; squadCall('Fall back!');
     }
     // Line-of-sight watchdog (4x/s): an enemy counts only if exposed and not blocked by geometry.
-    losT -= dt;
+    // watchdog runs on real time, so slow frames (dt is capped at 50 ms) can't stretch the 5 s limits
+    const nowR = performance.now() / 1000; const rdt = Math.min(1, nowR - (lastReal || nowR)); lastReal = nowR;
+    if (running && !(prog > lastProg - 0.05 && noProgT === 0)) noProgT += rdt - dt;
+    losT -= rdt;
     if (losT <= 0) {
-      losT = 0.25; anySeen = false;
+      const step = 0.25 - losT; losT = 0.25; anySeen = false;
       for (let i = list.length - 1; i >= 0; i--) {
         const e = list[i]; if (!e.alive) continue;
         e.group.getWorldPosition(_ep); _ep.y += 1.3; _ed.copy(_ep).sub(camera.position); const d = _ed.length(); _ed.divideScalar(d);
         losRay.set(camera.position, _ed); losRay.far = d - 0.6;
         e.seen = e.exposed && losRay.intersectObjects(world.colliders, false).length === 0;
-        e.unseenT = e.seen ? 0 : (e.unseenT || 0) + 0.25;
+        e.unseenT = e.seen ? 0 : (e.unseenT || 0) + step;
         if (e.seen && d < HOLD_RANGE) { anySeen = true; e.engaged = true; }
         if (e.unseenT > UNSEEN_LIMIT) { despawn(e); list.splice(i, 1); }
       }
