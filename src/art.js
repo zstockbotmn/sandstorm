@@ -6,7 +6,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 // Names match assets/models/<name>.glb. dist/ serves index.html with assets/ beside it.
 const PRIMARY = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter.quaternius.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'];
 const ANIM_FALLBACK = 'fighter1.anim';
-const PROPS = ['rifle_ak47', 'prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart'];
+const PROPS = ['bldg1.lod', 'bldg2.lod', 'bldg3.lod', 'bldg4.lod', 'rifle_ak47', 'prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart'];
 const RIGS = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig'];
 const BONE_NAMES = ['Hips', 'Spine01', 'Spine', 'Head', 'RightHand', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'];
 const CLIP_KEYS = {
@@ -185,8 +185,16 @@ function staticInstance(name) {
   const src = assets[name];
   if (!src) return null;
   // Shares geometry and materials. Do not clone textures.
-  return src.clone(true);
+  const full = src.clone(true);
+  const lo = assets[name + '.lod'];
+  if (!lo) return full;
+  // Perf LOD: full (UV-correct) mesh within LOD_NEAR m, geometry-only simplified mesh beyond, using the full model's material.
+  let mat = null; full.traverse((o) => { if (!mat && o.isMesh) mat = o.material; });
+  const far = lo.clone(true); far.traverse((o) => { if (o.isMesh) { o.material = mat || o.material; o.castShadow = false; } });
+  const lod = new THREE.LOD(); lod.addLevel(full, 0); lod.addLevel(far, LOD_NEAR); lod.name = name;
+  return lod;
 }
+const LOD_NEAR = 38;
 
 const _box = new THREE.Box3();
 const _size = new THREE.Vector3();
