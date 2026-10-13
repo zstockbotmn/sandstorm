@@ -214,6 +214,21 @@ export function createWorld(scene, seed) {
     }
   }
 
+  let signMat = null;
+  function shopSign(raw) {
+    if (!signMat) {
+      const c = document.createElement('canvas'); c.width = 512; c.height = 160; const g = c.getContext('2d');
+      g.fillStyle = '#e9e1cf'; g.fillRect(0, 0, 512, 160); g.fillStyle = '#7a1e14'; g.fillRect(0, 0, 512, 10); g.fillRect(0, 150, 512, 10);
+      g.fillStyle = '#2a2420'; g.textAlign = 'center'; g.font = 'bold 64px sans-serif'; g.fillText('SOUK', 256, 76);
+      g.font = 'bold 34px sans-serif'; g.fillText('MARKET · سوق', 256, 128);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      signMat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2 });
+    }
+    const w = raw.max.x - raw.min.x, h = raw.max.y - raw.min.y;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.24, h * 0.19), signMat);
+    m.position.set(raw.min.x + w * 0.2, raw.min.y + h * 0.765, raw.max.z - (raw.max.z - raw.min.z) * 0.18);
+    return m;
+  }
   // Front (+Z) faces the street. Width (local X) becomes the lot length along Z.
   function placeArtBuilding(seg, rng, name, side, zCursor, lot, doors) {
     const model = art.staticInstance(name);
@@ -229,9 +244,10 @@ export function createWorld(scene, seed) {
     const h = sizeY * s;
     if (h < 3.6) yMul = Math.min(1.12, 3.6 / h); // max 12% vertical stretch (tester: stretched facades)
     else if (h > 11) yMul = Math.max(1 / 1.12, 11 / h);
-    // bldg3's Meshy texture has its shop sign baked mirrored ('NAIVATS'): mirror the mesh along its width so it reads forward
-    // (three.js flips the face winding for negative scale, so lighting/culling stay correct).
-    model.scale.set(name === 'bldg3' ? -s : s, s * yMul, s);
+    model.scale.set(s, s * yMul, s);
+    // bldg3's Meshy texture bakes AI-gibberish shop lettering ('NAIVATS'); the glyphs are not mirrored, so a UV flip
+    // would make it worse. Cover the main sign board with a readable painted sign instead.
+    if (name === 'bldg3') model.add(shopSign(raw));
     model.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
     model.updateMatrixWorld(true);
     let box = new THREE.Box3().setFromObject(model);
