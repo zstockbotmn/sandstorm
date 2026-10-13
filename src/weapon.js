@@ -17,6 +17,8 @@ const _hip = new THREE.Vector3(0.34, -0.32, -0.48);
 const _ads = new THREE.Vector3(0.0, -0.2, -0.4);
 const _cover = new THREE.Vector3(0.28, -0.78, -0.32);
 const _desired = new THREE.Vector3();
+const _tp = new THREE.Vector3();
+const ASSIST_HIP = 3.0 * Math.PI / 180, ASSIST_ADS = 1.2 * Math.PI / 180, ASSIST_PULL = 0.6; // slight aim assist
 
 function softCircle(r, g, b, a) {
   const c = document.createElement('canvas');
@@ -144,6 +146,16 @@ export function createWeapon(camera, world, scene) {
     if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
     _right.normalize();
     _camUp.crossVectors(_right, _dir).normalize();
+    camera.getWorldPosition(_origin);
+    { // Slight aim assist: bend the shot part-way toward the nearest enemy torso near the crosshair.
+      const lim = input.scope ? ASSIST_ADS : ASSIST_HIP; let best = null, bestA = lim;
+      for (let i = 0; i < targets.length; i++) {
+        const t = targets[i]; if (!t.userData || t.userData.part === 'head' || !t.visible) continue;
+        t.getWorldPosition(_tp); _tp.sub(_origin); const a = _tp.angleTo(_dir);
+        if (a < bestA) { bestA = a; best = _tp.clone().normalize(); }
+      }
+      if (best) _dir.lerp(best, ASSIST_PULL).normalize();
+    }
     const spread = input.scope ? ADS_SPREAD : HIP_SPREAD;
     const a = Math.random() * Math.PI * 2;
     const r = Math.tan(spread) * Math.sqrt(Math.random());

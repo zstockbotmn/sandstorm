@@ -102,11 +102,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const matRifle = visMat(0x0a0b0a, { roughness: 0.5, metalness: 0.35, emissive: 0x050505 });
   const matWood = visMat(0x2a1c12, { roughness: 0.78, emissive: 0x120c08 });
   const matRim = new THREE.MeshBasicMaterial({
-    color: 0x0a0c0a,
+    color: 0x000000,
     side: THREE.BackSide,
     depthWrite: false,
   });
 
+  // Small red chevron over enemies at range when unscoped, so they read without the scope.
+  const markerMat = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
+    g.fillStyle = '#ff3b2f'; g.beginPath(); g.moveTo(4, 8); g.lineTo(28, 8); g.lineTo(16, 26); g.closePath(); g.fill();
+    const t = new THREE.CanvasTexture(c); return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }); })();
   const capsule = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 6);
   const geoTorso = capsule(0.17 * S, 0.42 * S);
   const geoHead = new THREE.SphereGeometry(0.125 * S, 10, 8);
@@ -190,7 +194,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function buildEnemy(behavior, anchor) {
     const group = new THREE.Group();
+    const marker = new THREE.Sprite(markerMat); marker.scale.set(0.35, 0.35, 1); marker.position.y = 2.25 * S; marker.renderOrder = 5; group.add(marker);
     const enemy = {
+      marker,
       behavior,
       group,
       anchor,
@@ -211,12 +217,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     torso.position.y = 1.15 * S;
     torso.castShadow = true;
     group.add(torso);
-    addRim(torso, 1.08);
+    addRim(torso, 1.12);
     const head = new THREE.Mesh(geoHead, matSkin);
     head.position.y = 1.68 * S;
     head.castShadow = true;
     group.add(head);
-    addRim(head, 1.1);
+    addRim(head, 1.14);
     const wrap = new THREE.Mesh(geoScar, matScarf);
     wrap.scale.set(1.08, 0.78, 1.12);
     wrap.position.y = 1.64 * S;
@@ -647,6 +653,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         continue;
       }
       updateEnemy(e, dt * tempo, diff);
+      if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 12;
       const dx = e.group.position.x - camera.position.x;
       const dy = e.group.position.y - camera.position.y;
       const dz = e.group.position.z - camera.position.z;
