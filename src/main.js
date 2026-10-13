@@ -9,14 +9,11 @@ import { createEnemies } from './enemies.js';
 import { createScore } from './score.js';
 import { createAudio } from './audio.js';
 import { createCover } from './cover.js';
-import { createPostFx } from './postfx.js';
+import { createPostFx, wantLow } from './postfx.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
@@ -26,7 +23,13 @@ camera.position.set(0, 1.7, 4);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 
+const softGL = wantLow(renderer);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : 1.5));
+renderer.shadowMap.enabled = !softGL;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
 const world = createWorld(scene, 0x5a7d);
+if (softGL && world.sun) world.sun.castShadow = false;
 const post = createPostFx(renderer, scene, camera);
 
 // Daytime HDRI for high tier. The warm fog stays so the street still reads as desert.
@@ -125,10 +128,7 @@ function applyCamera(dt) {
   camera.updateMatrixWorld();
 }
 
-function frame(now) {
-  requestAnimationFrame(frame);
-  const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
-  last = now;
+function simStep(dt) {
   const frozen = !player.alive; // death freezes the world: no walking, no enemy/world updates
   if (window.SS.walking && !frozen) {
     camera.position.z -= SPEED * dt;
@@ -145,6 +145,16 @@ function frame(now) {
   applyCamera(0);
   input.endFrame();
   if (!frozen) world.update(camera.position.z);
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const raw = last ? (now - last) / 1000 : 0;
+  last = now;
+  // Catch up when frames are late (software GL): up to 4 x 50 ms so fire/walk still advance.
+  const steps = raw > 0 ? Math.min(4, Math.max(1, Math.ceil(raw / 0.05))) : 1;
+  const dt = raw > 0 ? Math.min(0.05, raw / steps) : 0;
+  for (let i = 0; i < steps; i++) simStep(dt);
   hud.onTarget(weapon.onTarget);
   hud.update({
     distance: window.SS.distance,
@@ -160,7 +170,7 @@ function frame(now) {
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
 }

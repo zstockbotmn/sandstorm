@@ -510,5 +510,5 @@ export function createWorld(scene, seed) {
     update(playerZ == null ? 0 : playerZ);
   }
 
-  return { update, reset, segments, colliders };
+  return { update, reset, segments, colliders, sun };
 }

@@ -10,7 +10,7 @@ import {
 } from 'postprocessing';
 
 // iPhone, ?art=0, and software GL skip bloom + SMAA. Tone mapping stays on the renderer.
-function wantLow(renderer) {
+export function wantLow(renderer) {
   try {
     const search = (typeof location !== 'undefined' && location && location.search) || '';
     if (/[?&]art=0(?:&|$)/.test(search)) return true;
