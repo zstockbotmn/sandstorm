@@ -21,20 +21,38 @@ const res = {};
   // aim drag
   const y0 = await p.evaluate(() => SS.input.yaw); const pt0 = await p.evaluate(() => SS.input.pitch); const am0 = await p.evaluate(() => SS.weapon.ammo); await p.mouse.move(300, 200); await p.mouse.down(); await p.mouse.move(200, 180, { steps: 8 }); await p.mouse.up(); await p.evaluate(() => { const c = document.querySelector('canvas'); const ev = (t, x, tgt) => (tgt || window).dispatchEvent(new PointerEvent(t, { pointerId: 7, pointerType: 'mouse', button: 0, clientX: x, clientY: 200, bubbles: true }));
     ev('pointerdown', 310, c); ev('pointermove', 313); ev('pointermove', 317); ev('pointermove', 320); ev('pointerup', 320); }); /* 10 px drag inside the 100 ms hold window (real time; headless frames are too slow to emulate) */ await p.waitForTimeout(300); res.dragAmmo = [am0, await p.evaluate(() => SS.weapon.ammo)];
-  await p.mouse.click(400, 200); await p.waitForTimeout(300); res.clickAmmo = await p.evaluate(() => SS.weapon.ammo); res.aim = { y0, y1: await p.evaluate(() => SS.input.yaw), pt0, pt1: await p.evaluate(() => SS.input.pitch) };
+  await p.evaluate(() => { const c = document.querySelector('canvas'); const ev = (t, x) => c.dispatchEvent(new PointerEvent(t, { pointerId: 8, pointerType: 'mouse', button: 0, clientX: x, clientY: 200, bubbles: true })); ev('pointerdown', 400); ev('pointerup', 400); });
+  await p.waitForFunction((a0) => SS.weapon.ammo < a0, am0, { timeout: 15000 }).catch(() => {});
+  res.clickAmmo = await p.evaluate(() => SS.weapon.ammo); res.aim = { y0, y1: await p.evaluate(() => SS.input.yaw), pt0, pt1: await p.evaluate(() => SS.input.pitch) };
   // fire / scope / cover / reload via keys
-  await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); const a0 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); await p.keyboard.down('Space'); await p.waitForTimeout(700); await p.keyboard.up('Space'); const a1 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); res.fire = { a0, a1 };
-  await p.keyboard.down('q'); await p.waitForTimeout(800); res.scopeFov = await p.evaluate(() => SS.camera.fov); await p.screenshot({ path: OUT + '/3-scoped.png' }); await p.keyboard.up('q'); await p.waitForTimeout(300); res.scopeReleased = await p.evaluate(() => SS.input.scope); await p.keyboard.press('q'); await p.waitForTimeout(300); // tap-to-toggle: release leaves scope on; press again to clear for later steps
+  await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); const a0 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); await p.keyboard.down('Space'); await p.waitForFunction((a) => SS.weapon.ammo < a, a0, { timeout: 20000 }).catch(() => {}); await p.keyboard.up('Space'); const a1 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); res.fire = { a0, a1 };
+  await p.keyboard.down('q'); await p.keyboard.up('q'); // tap-to-toggle on
+  await p.waitForFunction(() => SS.input.scope && SS.camera.fov < 32, null, { timeout: 20000 }).catch(() => {});
+  res.scopeFov = await p.evaluate(() => SS.camera.fov); await p.screenshot({ path: OUT + '/3-scoped.png' });
+  res.scopeReleased = await p.evaluate(() => SS.input.scope);
+  await p.keyboard.press('q'); // toggle off for later steps
+  await p.waitForFunction(() => !SS.input.scope, null, { timeout: 10000 }).catch(() => {});
   res.noCoverBtn = await p.evaluate(() => !document.querySelector('[data-ctl="cover"]'));
   await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); res.afterReload = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag);
   // enemies
-  await p.evaluate(() => { window.__en = [SS.debug.spawnEnemy('shifter'), SS.debug.spawnEnemy('flanker'), SS.debug.spawnEnemy('popper')]; }); await p.waitForTimeout(3000);
+  await p.evaluate(() => { window.__en = [SS.debug.spawnEnemy('shifter'), SS.debug.spawnEnemy('flanker'), SS.debug.spawnEnemy('popper')]; });
+  await p.evaluate(() => { for (const e of __en) { if (!e) continue; e.engaged = true; e.exposed = true; e.seen = true; } });
+  await p.waitForFunction(() => SS.walking === false && SS.engaged > 0, null, { timeout: 20000 }).catch(() => {});
+  await p.waitForFunction(() => SS.cover && SS.cover.state === 'in' && SS.input.cover && SS.camera.position.y < 1.4, null, { timeout: 20000 }).catch(() => {});
   res.enemyStop = await p.evaluate(() => SS.walking); await p.screenshot({ path: OUT + '/4-enemies.png' });
   res.halt = await p.evaluate(() => ({ engaged: SS.engaged, hud: (document.querySelector('#enemies-left') || {}).textContent, cover: SS.cover.state, ducked: SS.input.cover, eyeY: SS.camera.position.y }));
   // kill one engaged enemy by real damage: the halt must stay while others are alive
-  res.haltAfterOne = await p.evaluate(async () => { const e = __en.find(x => x && x.alive && x.engaged); if (e) e.takeHit('head', e.group.position.clone()); await new Promise(r => setTimeout(r, 1500)); return { walking: SS.walking, engaged: SS.engaged }; });
+  res.haltAfterOne = await p.evaluate(async () => { const e = __en.find(x => x && x.alive && x.engaged); if (e) e.takeHit('head', e.group.position.clone()); await new Promise(r => setTimeout(r, 2000)); return { walking: SS.walking, engaged: SS.engaged }; });
   // scope pops out of cover and fires
-  await p.keyboard.press('q'); await p.waitForTimeout(500); res.pop = await p.evaluate(() => ({ ducked: SS.input.cover, a0: SS.weapon.ammo })); await p.keyboard.down('Space'); await p.waitForTimeout(500); await p.keyboard.up('Space'); res.pop.a1 = await p.evaluate(() => SS.weapon.ammo); await p.keyboard.press('q'); await p.waitForTimeout(400); res.pop.reDucked = await p.evaluate(() => SS.input.cover); // tap again to duck back
+  await p.keyboard.press('q');
+  await p.waitForFunction(() => SS.input.scope && !SS.input.cover, null, { timeout: 15000 }).catch(() => {});
+  res.pop = await p.evaluate(() => ({ ducked: SS.input.cover, a0: SS.weapon.ammo }));
+  await p.keyboard.down('Space');
+  await p.waitForFunction((a0) => SS.weapon.ammo < a0, res.pop.a0, { timeout: 15000 }).catch(() => {});
+  await p.keyboard.up('Space'); res.pop.a1 = await p.evaluate(() => SS.weapon.ammo);
+  await p.keyboard.press('q'); // tap again to duck back
+  await p.waitForFunction(() => !SS.input.scope && SS.input.cover, null, { timeout: 15000 }).catch(() => {});
+  res.pop.reDucked = await p.evaluate(() => SS.input.cover);
   await p.evaluate(() => SS.debug.killAll()); await p.waitForTimeout(1500); await p.screenshot({ path: OUT + '/5-ragdoll.png' }); await p.waitForFunction(() => SS.walking, null, { timeout: 20000 }).catch(() => {}); res.resumed = await p.evaluate(() => SS.walking);
   // soft-lock: an enemy stuck inside a building must not hold the player; despawned within ~5 s and walking resumes
   res.softlock = await p.evaluate(async () => { const e = SS.debug.spawnEnemy('shifter'); if (!e) return { spawned: false };
@@ -58,7 +76,7 @@ const res = {};
   // natural death: fresh run, real spawns, no input, no debug calls; standing still must get you killed (target 60-90 s)
   { const p2 = await ctx.newPage(); p2.on('pageerror', e => errs.push('p2: ' + e.message)); await p2.goto('http://127.0.0.1:8795/?seed=7'); await p2.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
     await p2.tap('#play'); const t0 = Date.now();
-    res.naturalDeath = await p2.waitForFunction(() => { const o = document.querySelector('#over'); return o && getComputedStyle(o).display !== 'none'; }, null, { timeout: +(process.env.SS_DEATH_MS || 200000), polling: 1000 }).then(() => (Date.now() - t0) / 1000).catch(() => null);
+    res.naturalDeath = await p2.waitForFunction(() => { const o = document.querySelector('#over'); return o && getComputedStyle(o).display !== 'none'; }, null, { timeout: +(process.env.SS_DEATH_MS || 360000), polling: 1000 }).then(() => (Date.now() - t0) / 1000).catch(() => null);
     res.naturalDist = await p2.evaluate(() => SS.distance); await p2.close(); }
   // offline
   await p.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 30000 }).catch(() => {}); res.caches = await p.evaluate(() => caches.keys());

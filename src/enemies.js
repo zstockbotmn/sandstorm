@@ -612,7 +612,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     chance *= 1 + PRESSURE_HIT * pressure;
     // Early soften: first ~120 m / first bursts are less deadly
     const prog = window.SS ? window.SS.distance : 0;
-    if (prog < 120 || burstIndex <= 2) chance *= 0.72;
+    if ((prog < 120 || burstIndex <= 2) && pressure < 0.45) chance *= 0.72; // still lethal once standing-still pressure builds
     if ((enemy.suppressT || 0) > 0) chance *= 0.45; // blind-fire suppression
     chance = Math.max(0.02, Math.min(0.85, chance));
     const hit = Math.random() < chance && player && player.alive;
@@ -893,7 +893,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
         let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff);
-        if ((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) cd *= 1.35;
+        if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
         enemy.shootCd = cd;
       }
@@ -933,7 +933,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
         let cd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff);
-        if ((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) cd *= 1.35;
+        if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
         enemy.shootCd = cd;
       }
