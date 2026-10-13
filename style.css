@@ -390,7 +390,7 @@ canvas {
 }
 
 #enemies-left.next { background: rgba(30, 60, 30, 0.75); }
-#scope-overlay { position: fixed; inset: 0; pointer-events: none; display: none; }
+#scope-overlay { position: fixed; inset: 0; pointer-events: none; display: none; z-index: -1; }
 #scope-overlay.on { display: block; }
 #scope-overlay .lens { position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 0, transparent 34vmin, rgba(0,0,0,0.55) 35vmin, rgba(0,0,0,0.92) 37vmin); }
 #scope-overlay .rh, #scope-overlay .rv { position: absolute; background: rgba(10,10,10,0.85); }
