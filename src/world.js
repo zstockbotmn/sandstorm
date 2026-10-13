@@ -240,7 +240,7 @@ export function createWorld(scene, seed) {
     const grp = new THREE.Group();
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.24, h * 0.19), signMat);
     m.position.set(raw.min.x + w * 0.2, raw.min.y + h * 0.765, raw.max.z - d * 0.18);
-    const p2 = (window.SS && window.SS.sign2) || [0.56, 0.7, 0.19, 0.17, 0.15];
+    const p2 = (window.SS && window.SS.sign2) || [0.665, 0.785, 0.1, 0.3, 0.3];
     const m2 = new THREE.Mesh(new THREE.PlaneGeometry(w * p2[3], h * p2[4]), sign2Mat);
     m2.position.set(raw.min.x + w * p2[0], raw.min.y + h * p2[1], raw.max.z - d * p2[2]);
     grp.add(m, m2);
