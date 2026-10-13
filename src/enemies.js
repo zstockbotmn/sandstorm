@@ -380,10 +380,20 @@ export function createEnemies(scene, camera, world, weapon, player) {
     muzzleFlash(_muzzle);
     tracer(_muzzle, _aim);
     if (window.SS && window.SS.audio) window.SS.audio.enemyShot(_muzzle);
+    enemy.rounds = (enemy.rounds || 0) + 1;
+    if (enemy.rounds >= 6) {
+      enemy.rounds = 0;
+      squadCall('Reloading!');
+    }
     if (hit) {
-      const amount = 8 + diff * 6 + Math.random() * 4;
+      const amount = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4));
       player.damage(amount, _muzzle);
     }
+  }
+
+  function squadCall(text) {
+    const hud = window.SS && window.SS.hud;
+    if (hud && typeof hud.callout === 'function') hud.callout(text);
   }
 
   function coverPool(types) {
@@ -509,6 +519,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
           enemy.goal = next || enemy.home.clone();
         }
       } else if (moving) {
+        if (!enemy.moveCalled) {
+          enemy.moveCalled = true;
+          squadCall('Moving!');
+        }
         enemy.exposed = true;
         const step = 3.4 * dt * (1 + 0.35 * diff);
         const dir = _look.copy(enemy.goal).sub(enemy.group.position);
@@ -520,6 +534,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
           enemy.group.lookAt(enemy.goal.x, enemy.group.position.y, enemy.goal.z);
         }
       } else {
+        enemy.moveCalled = false;
         enemy.moveT = 0.7 + Math.random() * 0.8;
         enemy.shootCd = 0.15;
       }
@@ -527,6 +542,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const dest = enemy.exposed ? enemy.flankTo : enemy.flankTo;
       const d = enemy.group.position.distanceTo(enemy.flankTo);
       if (d > 0.4) {
+        if (!enemy.flankCalled) {
+          enemy.flankCalled = true;
+          squadCall(enemy.flankTo.x >= 0 ? 'Flanking right!' : 'Flanking left!');
+        }
         enemy.exposed = false;
         const step = 3.8 * dt * (1 + 0.3 * diff);
         _look.copy(enemy.flankTo).sub(enemy.group.position);
@@ -563,6 +582,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (phaseT <= 0) {
         phase = 'burst';
         if (window.SS) window.SS.bursting = true;
+        squadCall('Contact!');
         burstCap = 3 + Math.min(3, (diff * 3 + Math.random() * 2) | 0);
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;

@@ -1,5 +1,3 @@
-const CALLOUTS = ['Contact!', 'Moving!', 'Reloading!'];
-
 export function createAudio() {
   let ctx = null;
   let master = null;
@@ -252,18 +250,6 @@ export function createAudio() {
     end.stop(et + 0.07);
   }
 
-  function callout() {
-    try {
-      if (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== 'function') return;
-      const phrase = CALLOUTS[(Math.random() * CALLOUTS.length) | 0];
-      const u = new SpeechSynthesisUtterance(phrase);
-      u.volume = 0.22;
-      u.rate = 1.05;
-      u.pitch = 0.9;
-      window.speechSynthesis.speak(u);
-    } catch (e) { /* optional */ }
-  }
-
   function bark() {
     if (!ctx) return;
     const p = panNode((Math.random() * 2 - 1) * 0.7);
@@ -313,10 +299,7 @@ export function createAudio() {
     const running = !!(window.SS && window.SS.running);
     const bursting = !!(window.SS && window.SS.bursting);
     if (windGain) windGain.gain.value = running && window.SS.walking ? 0.11 : 0.05;
-    if (bursting && !wasBurst) {
-      radio();
-      callout();
-    }
+    if (bursting && !wasBurst) radio();
     wasBurst = bursting;
     if (!running) return;
     chatterT -= dt;
@@ -336,5 +319,5 @@ export function createAudio() {
     }
   }
 
-  return { unlock, update, gunfire, enemyShot, hit, headshot, reload, radio, callout };
+  return { unlock, update, gunfire, enemyShot, hit, headshot, reload, radio };
 }

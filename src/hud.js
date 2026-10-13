@@ -54,7 +54,12 @@ export function createHud() {
   hs.id = 'hs-icon';
   hs.textContent = 'HS';
 
-  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, hs);
+  const radioStack = document.createElement('div');
+  radioStack.id = 'radio-callouts';
+  const radioLines = [];
+  let radioNext = 0;
+
+  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, hs, radioStack);
 
   let health = 100;
   let score = 0;
@@ -102,6 +107,23 @@ export function createHud() {
     hsTimer = setTimeout(() => hs.classList.remove('show'), 420);
   }
 
+  function callout(text) {
+    const now = performance.now();
+    if (now < radioNext) return;
+    radioNext = now + 1500;
+    const line = document.createElement('div');
+    line.className = 'radio-line';
+    line.textContent = '[RADIO] ' + text;
+    radioStack.appendChild(line);
+    radioLines.push(line);
+    while (radioLines.length > 2) radioLines.shift().remove();
+    setTimeout(() => {
+      line.remove();
+      const i = radioLines.indexOf(line);
+      if (i >= 0) radioLines.splice(i, 1);
+    }, 2000);
+  }
+
   function setScore(v) {
     score = v | 0;
     scoreEl.textContent = String(score);
@@ -135,5 +157,6 @@ export function createHud() {
     setHealth,
     setScore,
     headshotFlash,
+    callout,
   };
 }
