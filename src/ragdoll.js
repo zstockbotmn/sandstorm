@@ -1,7 +1,17 @@
 import * as THREE from 'three';
-import RAPIER from '@dimforge/rapier3d-compat';
 
-await RAPIER.init();
+// Rapier is a separate chunk. Load it on first need so the game module can start without it.
+let rapierPromise = null;
+function loadRapier() {
+  if (!rapierPromise) {
+    rapierPromise = import('@dimforge/rapier3d-compat').then(async (mod) => {
+      const RAPIER = mod.default;
+      await RAPIER.init();
+      return RAPIER;
+    });
+  }
+  return rapierPromise;
+}
 
 const _q = new THREE.Quaternion();
 const _bodyQ = new THREE.Quaternion();
@@ -101,17 +111,32 @@ function plainBody(x, y, z) {
 }
 
 export function createRagdollSystem(scene) {
-  const phys = new RAPIER.World({ x: 0, y: -14, z: 0 });
-  phys.timestep = 1 / 60;
-  phys.numSolverIterations = 6;
-
-  const groundBody = phys.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.25, 0));
-  phys.createCollider(
-    RAPIER.ColliderDesc.cuboid(400, 0.25, 400).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
-    groundBody
-  );
-
+  let RAPIER = null;
+  let phys = null;
   const dolls = [];
+  const pending = [];
+
+  function bootWorld(api) {
+    RAPIER = api;
+    phys = new RAPIER.World({ x: 0, y: -14, z: 0 });
+    phys.timestep = 1 / 60;
+    phys.numSolverIterations = 6;
+
+    const groundBody = phys.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.25, 0));
+    phys.createCollider(
+      RAPIER.ColliderDesc.cuboid(400, 0.25, 400).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
+      groundBody
+    );
+
+    const queued = pending.splice(0, pending.length);
+    for (let i = 0; i < queued.length; i++) realize(queued[i]);
+  }
+
+  // createRagdollSystem start, and again from the first spawn if this has not run yet.
+  loadRapier().then(bootWorld).catch((err) => {
+    console.debug('ragdoll rapier init failed', err);
+    pending.length = 0;
+  });
   const S = ENEMY_SCALE;
   const skin = makeMat(0xa56b48, { roughness: 0.72, emissive: 0x3a2014 });
   const cloth = makeMat(0x2c3228, { roughness: 0.88, emissive: 0x121510 });
@@ -187,8 +212,7 @@ export function createRagdollSystem(scene) {
     part.rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
   }
 
-  function spawn(origin, yaw, impulse) {
-    const doll = { parts: [], constraints: [], statics: [], age: 0, frozen: false };
+  function fillSpawn(doll, origin, yaw, impulse) {
     const cx = origin.x;
     const cy = origin.y;
     const cz = origin.z;
@@ -278,6 +302,47 @@ export function createRagdollSystem(scene) {
     head.body.velocity.set((ix / len) * kick * 1.15, 1.1, (iz / len) * kick * 1.15);
     pelvis.body.velocity.set((ix / len) * kick * 0.65, 0.3, (iz / len) * kick * 0.65);
 
+  }
+
+  function realize(job) {
+    const doll = job.doll;
+    if (doll._cancelled) return;
+    fillSpawn(doll, job.origin, job.yaw, job.impulse);
+    dolls.push(doll);
+    if (job.statics) addNearbyStatics(doll, job.statics.colliders, job.statics.origin);
+    if (job.bonesRequested) {
+      const links = linkSkin(doll, job.bones);
+      if (doll.skin) {
+        doll.skin.links = links;
+        // kill() hides the box stand-in only when parts already exist. Replay that if we built late.
+        if (doll.skin.model) {
+          for (let i = 0; i < doll.parts.length; i++) {
+            doll.parts[i].mesh.traverse((obj) => { obj.visible = false; });
+          }
+        }
+      }
+    }
+    doll._job = null;
+  }
+
+  function spawn(origin, yaw, impulse) {
+    if (!rapierPromise) loadRapier();
+    const doll = { parts: [], constraints: [], statics: [], age: 0, frozen: false };
+    const job = {
+      doll,
+      origin: { x: origin.x, y: origin.y, z: origin.z },
+      yaw: yaw || 0,
+      impulse: impulse ? { x: impulse.x, y: impulse.y, z: impulse.z } : null,
+      statics: null,
+      bones: null,
+      bonesRequested: false,
+    };
+    if (!phys) {
+      doll._job = job;
+      pending.push(job);
+      return doll;
+    }
+    fillSpawn(doll, job.origin, job.yaw, job.impulse);
     dolls.push(doll);
     return doll;
   }
@@ -291,6 +356,18 @@ export function createRagdollSystem(scene) {
 
   // Map bones onto the existing bodies. offQ/offP keep the death-pose offset.
   function bindSkin(doll, bones) {
+    if (!doll) return [];
+    if (!phys) {
+      if (doll._job) {
+        doll._job.bones = bones;
+        doll._job.bonesRequested = true;
+      }
+      return [];
+    }
+    return linkSkin(doll, bones);
+  }
+
+  function linkSkin(doll, bones) {
     const byName = Object.create(null);
     for (let i = 0; i < doll.parts.length; i++) byName[doll.parts[i].name] = doll.parts[i];
     const partOf = Object.assign(Object.create(null), SKIN_PART);
@@ -378,6 +455,16 @@ export function createRagdollSystem(scene) {
   }
 
   function addNearbyStatics(doll, colliders, origin) {
+    if (!doll) return;
+    if (!phys) {
+      if (doll._job) {
+        doll._job.statics = {
+          colliders,
+          origin: origin ? { x: origin.x, y: origin.y, z: origin.z } : { x: 0, y: 0, z: 0 },
+        };
+      }
+      return;
+    }
     if (!colliders) return;
     let n = 0;
     for (let i = 0; i < colliders.length && n < 5; i++) {
@@ -416,6 +503,7 @@ export function createRagdollSystem(scene) {
   }
 
   function update(dt, cameraZ) {
+    if (!phys) return;
     const step = Math.min(0.05, dt || 0.016);
     const n = Math.max(1, Math.round(step / (1 / 60)));
     phys.timestep = step / n;
@@ -435,6 +523,9 @@ export function createRagdollSystem(scene) {
   }
 
   function clear() {
+    for (let i = 0; i < pending.length; i++) pending[i].doll._cancelled = true;
+    pending.length = 0;
+    if (!phys) return;
     while (dolls.length) removeDoll(dolls[0]);
   }
 
