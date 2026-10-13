@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { art } from './art.js';
 
 const SEG_LEN = 60;
 const SEG_COUNT = 5;
@@ -65,6 +66,10 @@ export function createWorld(scene, seed) {
     (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15 })
   );
   const matGlass = new THREE.MeshStandardMaterial({ color: 0x9ec4d4, roughness: 0.25, metalness: 0.1 });
+  // Shared by art colliders: not drawn, still raycastable (mesh.visible stays true).
+  const matInvisible = new THREE.MeshBasicMaterial({ visible: false });
+  const BLDGS = [['bldg1', 0.3], ['bldg2', 0.3], ['bldg3', 0.2], ['bldg4', 0.2]];
+  const ROOF_OK = { bldg1: 1, bldg2: 1, bldg3: 1 };
 
   scene.background = new THREE.Color(0x8ec8ea);
   scene.fog = new THREE.FogExp2(0xd2c4a2, 0.016);
@@ -107,6 +112,150 @@ export function createWorld(scene, seed) {
     return m;
   }
 
+  function addInvisibleBox(seg, x, y, z, sx, sy, sz) {
+    const m = addBox(seg, matInvisible, x, y, z, sx, sy, sz, { cast: false });
+    m.visible = true;
+    return m;
+  }
+
+  function useProp(name) {
+    return art.tier === 'high' && art.done && !!art.get(name);
+  }
+
+  function buildingsReady() {
+    if (art.tier !== 'high' || !art.done) return false;
+    for (let i = 0; i < BLDGS.length; i++) if (art.get(BLDGS[i][0])) return true;
+    return false;
+  }
+
+  function pickBuilding(rng) {
+    let total = 0;
+    const opts = [];
+    for (let i = 0; i < BLDGS.length; i++) {
+      if (art.get(BLDGS[i][0])) {
+        opts.push(BLDGS[i]);
+        total += BLDGS[i][1];
+      }
+    }
+    let r = rng() * total;
+    for (let i = 0; i < opts.length; i++) {
+      r -= opts[i][1];
+      if (r <= 0) return opts[i][0];
+    }
+    return opts[opts.length - 1][0];
+  }
+
+  // Low cover: sandbags when the prop is loaded, same box collider either way.
+  function addLowWall(seg, x, y, z, sx, sy, sz) {
+    if (useProp('prop_sandbags')) {
+      const obj = art.staticInstance('prop_sandbags');
+      art.fitToBox(obj, sx, sy, sz, { keepAspect: true, alignLong: true, longStretch: 1.5 });
+      obj.position.x += x;
+      obj.position.z += z;
+      seg.group.add(obj);
+      return addInvisibleBox(seg, x, y, z, sx, sy, sz);
+    }
+    return addBox(seg, matWall, x, y, z, sx, sy, sz);
+  }
+
+  function maybeFrontWall(seg, rng, side, cz, lot) {
+    if (rng() < 0.45) {
+      const wz = cz + (rng() - 0.5) * lot * 0.5;
+      const wallLen = 2.2 + rng() * 2;
+      addLowWall(seg, side * 5.5, 0.4, wz, 0.4, 0.8, wallLen);
+      seg.coverPoints.push({ pos: new THREE.Vector3(side * 5.5, 0.9, wz), type: 'wall' });
+    }
+  }
+
+  // Front (+Z) faces the street. Width (local X) becomes the lot length along Z.
+  function placeArtBuilding(seg, rng, name, side, zCursor, lot, doors) {
+    const model = art.staticInstance(name);
+    model.position.set(0, 0, 0);
+    model.rotation.set(0, 0, 0);
+    model.scale.set(1, 1, 1);
+    model.updateMatrixWorld(true);
+    const raw = new THREE.Box3().setFromObject(model);
+    const sizeX = Math.max(1e-4, raw.max.x - raw.min.x);
+    const sizeY = Math.max(1e-4, raw.max.y - raw.min.y);
+    const s = (lot - 0.35) / sizeX;
+    let yMul = 1;
+    const h = sizeY * s;
+    if (h < 4.5) yMul = Math.min(1.35, 4.5 / h);
+    else if (h > 11) yMul = Math.max(1 / 1.35, 11 / h);
+    model.scale.set(s, s * yMul, s);
+    model.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+    model.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(model);
+    const facadeX = side * 6.2;
+    const frontX = side < 0 ? box.max.x : box.min.x;
+    const cz = zCursor - lot * 0.5;
+    model.position.x += facadeX - frontX;
+    model.position.y += -box.min.y;
+    model.position.z += cz - (box.min.z + box.max.z) * 0.5;
+    model.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(model);
+    seg.group.add(model);
+    addInvisibleBox(
+      seg,
+      (box.min.x + box.max.x) * 0.5,
+      (box.min.y + box.max.y) * 0.5,
+      (box.min.z + box.max.z) * 0.5,
+      box.max.x - box.min.x,
+      box.max.y - box.min.y,
+      box.max.z - box.min.z
+    );
+    const spanZ = Math.max(0.5, box.max.z - box.min.z);
+    const doorZ = box.min.z + (0.12 + rng() * 0.76) * spanZ;
+    doors.push(doorZ);
+    seg.coverPoints.push({
+      pos: new THREE.Vector3(facadeX - side * 0.4, 1.2, doorZ),
+      type: 'door',
+    });
+    if (ROOF_OK[name]) {
+      seg.coverPoints.push({
+        pos: new THREE.Vector3(facadeX + side * 0.45, box.max.y + 0.15, cz),
+        type: 'roof',
+      });
+    }
+    maybeFrontWall(seg, rng, side, cz, lot);
+  }
+
+  function nearDoor(z, half, doors) {
+    const need = half + 0.8;
+    for (let i = 0; i < doors.length; i++) {
+      if (Math.abs(doors[i] - z) < need) return true;
+    }
+    return false;
+  }
+
+  function placeDecor(seg, rng, side, oz, doors) {
+    if (art.tier !== 'high' || !art.done) return;
+    const choices = [];
+    if (art.get('prop_crates')) choices.push(['prop_crates', 1.4, 1.6, 1.4]);
+    if (art.get('prop_cart')) choices.push(['prop_cart', 1.6, 1.6, 2.6]);
+    if (!choices.length) return;
+    if (rng() >= 0.5) return;
+    const choice = choices[(rng() * choices.length) | 0];
+    const obj = art.staticInstance(choice[0]);
+    const dims = art.fitToBox(obj, choice[1], choice[2], choice[3], { keepAspect: true, alignLong: true });
+    const half = dims.z * 0.5;
+    let z = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const tryZ = oz - 4 - rng() * (SEG_LEN - 8);
+      if (!nearDoor(tryZ, half, doors)) { z = tryZ; break; }
+    }
+    if (z == null) return;
+    const x = side * (5.3 + rng() * 0.6);
+    obj.position.x += x;
+    obj.position.z += z;
+    seg.group.add(obj);
+    addInvisibleBox(seg, x, dims.y * 0.5, z, dims.x, dims.y, dims.z);
+    seg.coverPoints.push({
+      pos: new THREE.Vector3(x - side * (dims.x * 0.5), 0.9, z),
+      type: 'wall',
+    });
+  }
+
   function fill(seg) {
     const set = new Set(seg.owned);
     for (let i = colliders.length - 1; i >= 0; i--) {
@@ -138,9 +287,21 @@ export function createWorld(scene, seed) {
       const side = rng() < 0.5 ? -1 : 1;
       const z = oz - 4 - rng() * (SEG_LEN - 8);
       const x = side * (5.4 + rng() * 1.2);
-      const m = new THREE.Mesh(barrelGeo, matBarrel);
+      let m;
+      if (useProp('prop_drum')) {
+        const drum = art.staticInstance('prop_drum');
+        art.fitToBox(drum, 0.62, 0.9, 0.62, { keepAspect: true, alignLong: true });
+        drum.position.x += x;
+        drum.position.z += z;
+        seg.group.add(drum);
+        m = new THREE.Mesh(barrelGeo, matInvisible);
+        m.castShadow = false;
+        m.visible = true;
+      } else {
+        m = new THREE.Mesh(barrelGeo, matBarrel);
+        m.castShadow = true;
+      }
       m.position.set(x, 0.45, z);
-      m.castShadow = true;
       m.receiveShadow = true;
       m.userData.segId = seg.id;
       seg.group.add(m);
@@ -151,6 +312,7 @@ export function createWorld(scene, seed) {
   }
 
   function buildSide(seg, rng, side, oz) {
+    const doors = [];
     let z = oz - 3;
     const end = oz - SEG_LEN + 2;
     while (z - 6 > end) {
@@ -163,13 +325,19 @@ export function createWorld(scene, seed) {
           type: 'alley',
         });
         if (rng() < 0.6) {
-          addBox(seg, matWall, side * 6.2, 0.45, z - gap * 0.5, 0.35, 0.9, Math.min(gap - 0.5, 3.5));
+          addLowWall(seg, side * 6.2, 0.45, z - gap * 0.5, 0.35, 0.9, Math.min(gap - 0.5, 3.5));
           seg.coverPoints.push({
             pos: new THREE.Vector3(side * 6.2, 1.0, z - gap * 0.5),
             type: 'wall',
           });
         }
         z -= gap;
+        continue;
+      }
+      // Extra roll only once art is in, so low tier and the pre-load fill stay identical.
+      if (buildingsReady() && rng() < 0.75) {
+        placeArtBuilding(seg, rng, pickBuilding(rng), side, z, lot, doors);
+        z -= lot;
         continue;
       }
       const depth = 6 + rng() * 3;
@@ -183,6 +351,7 @@ export function createWorld(scene, seed) {
       // Roof spot sits on the street-side parapet edge (not the roof centre, which put enemies inside the building).
       seg.coverPoints.push({ pos: new THREE.Vector3(facadeX + side * 0.45, h + 0.7, cz), type: 'roof' });
       const doorZ = cz + (rng() - 0.5) * lot * 0.3;
+      doors.push(doorZ);
       addBox(seg, matDark, facadeX - side * 0.12, 1.15, doorZ, 0.28, 2.3, 1.15);
       seg.coverPoints.push({
         pos: new THREE.Vector3(facadeX - side * 0.4, 1.2, doorZ),
@@ -208,22 +377,33 @@ export function createWorld(scene, seed) {
         }
       }
 
-      if (rng() < 0.45) {
-        const wz = cz + (rng() - 0.5) * lot * 0.5;
-        addBox(seg, matWall, side * 5.5, 0.4, wz, 0.4, 0.8, 2.2 + rng() * 2);
-        seg.coverPoints.push({ pos: new THREE.Vector3(side * 5.5, 0.9, wz), type: 'wall' });
-      }
+      maybeFrontWall(seg, rng, side, cz, lot);
 
       z -= lot;
     }
+    placeDecor(seg, rng, side, oz, doors);
   }
 
   function addCar(seg, rng, x, z) {
     const bodyMat = carColors[(rng() * carColors.length) | 0];
     const yaw = rng() < 0.5 ? 0 : Math.PI;
-    addBox(seg, bodyMat, x, 0.48, z, 1.75, 0.62, 4.15);
-    const cabin = addBox(seg, matGlass, x, 1.05, z + 0.15, 1.5, 0.52, 2.0);
-    cabin.rotation.y = yaw;
+    if (useProp('prop_burnedcar')) {
+      const jitter = (rng() - 0.5) * 0.3;
+      const obj = art.staticInstance('prop_burnedcar');
+      art.fitToBox(obj, 1.8, 1.5, 4.3, { keepAspect: true, alignLong: true });
+      const pivot = new THREE.Group();
+      pivot.add(obj);
+      pivot.rotation.y = yaw + jitter;
+      pivot.position.set(x, 0, z);
+      seg.group.add(pivot);
+      addInvisibleBox(seg, x, 0.48, z, 1.75, 0.62, 4.15);
+      const cabin = addInvisibleBox(seg, x, 1.05, z + 0.15, 1.5, 0.52, 2.0);
+      cabin.rotation.y = yaw;
+    } else {
+      addBox(seg, bodyMat, x, 0.48, z, 1.75, 0.62, 4.15);
+      const cabin = addBox(seg, matGlass, x, 1.05, z + 0.15, 1.5, 0.52, 2.0);
+      cabin.rotation.y = yaw;
+    }
     seg.coverPoints.push({ pos: new THREE.Vector3(x, 1.15, z), type: 'car' });
   }
 
@@ -242,7 +422,22 @@ export function createWorld(scene, seed) {
     fill(seg);
   }
 
-  function update(playerZ) {
+  let playerZ = 0;
+
+  // Art loads after the first fill. Before Play, rebuild every segment; during a run, only segments whose near end is > 25 m ahead.
+  art.onReady(() => {
+    if (art.tier !== 'high') return;
+    const ss = typeof window !== 'undefined' ? window.SS : null;
+    const running = !!(ss && ss.running);
+    const pz = (ss && ss.camera) ? ss.camera.position.z : playerZ;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (!running || seg.originZ < pz - 25) fill(seg);
+    }
+  });
+
+  function update(playerZIn) {
+    playerZ = playerZIn;
     desert.position.z = playerZ;
     sun.position.set(26, 46, playerZ + 18);
     sun.target.position.set(0, 0, playerZ - 30);

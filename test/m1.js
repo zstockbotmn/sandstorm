@@ -11,6 +11,9 @@ const res = {};
   const p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push('console: ' + m.text()));
   await p.goto('http://127.0.0.1:8795/?seed=7&calm=1'); await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
   await p.screenshot({ path: OUT + '/1-start.png' });
+  // High tier loads on the start screen. Record it before Play.
+  await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 40000 });
+  res.art = await p.evaluate(() => ({ tier: SS.art.tier, loaded: SS.art.loaded.slice(), failed: SS.art.failed.slice() }));
   await p.tap('#play'); await p.waitForTimeout(4000); res.ammoAfterPlay = await p.evaluate(() => SS.weapon.ammo);
   const d0 = await p.evaluate(() => SS.distance); await p.waitForTimeout(6000); const d1 = await p.evaluate(() => SS.distance);
   res.walk = { d0, d1, walking: await p.evaluate(() => SS.walking) };
@@ -61,6 +64,17 @@ const res = {};
   await p.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 30000 }).catch(() => {}); res.caches = await p.evaluate(() => caches.keys());
   await ctx.setOffline(true); await p.reload(); await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 30000 }).then(() => res.offline = true).catch(() => res.offline = false); await ctx.setOffline(false);
   await p.screenshot({ path: OUT + '/7-offline.png' });
+  // Low tier: procedural fighter, no GLBs, and no errors on this page.
+  { const p3 = await ctx.newPage(), lowErrs = [];
+    p3.on('pageerror', e => lowErrs.push(e.message)); p3.on('console', m => m.type() === 'error' && lowErrs.push('console: ' + m.text()));
+    await p3.goto('http://127.0.0.1:8795/?art=0&calm=1&seed=7');
+    await p3.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
+    await p3.tap('#play');
+    await p3.evaluate(() => { SS.debug.spawnEnemy('popper'); });
+    await p3.waitForTimeout(2000);
+    res.lowTier = await p3.evaluate(() => SS.art.tier);
+    res.lowErrors = lowErrs;
+    await p3.close(); }
   res.ammoOverlap = await p.evaluate(() => { const a = document.querySelector('#ammo').getBoundingClientRect(); return [...document.querySelectorAll('[data-ctl]')].some(b => { const r = b.getBoundingClientRect(); return !(a.right < r.left || a.left > r.right || a.bottom < r.top || a.top > r.bottom); }); }); res.errors = errs; console.log(JSON.stringify(res, null, 1));
   assert.equal(res.ammoAfterPlay, 30, 'Play tap fires no shots'); assert.ok(d1 > d0, 'walks'); assert.notEqual(res.aim.y1, y0, 'aim'); assert.ok(res.aim.pt1 < res.aim.pt0, 'drag up looks up (pitch decreases; camera.rotation.x=-pitch)'); assert.ok(a1 < a0, 'fires'); assert.ok(res.scopeFov < 32, 'scope ~2.5x'); assert.equal(res.scopeReleased, false, 'scope is hold'); assert.ok(res.noCoverBtn, 'no COVER button');
   assert.ok(res.halt.engaged > 0 && /ENEMIES \d/.test(res.halt.hud), 'halt HUD count'); assert.ok(res.halt.cover === 'in' && res.halt.ducked && res.halt.eyeY < 1.4, 'auto-cover engaged and ducked');
@@ -71,5 +85,10 @@ const res = {};
   assert.ok(res.softlock.spawned && res.softlock.despawned && res.softlock.walking && res.softlock.d1 > res.softlock.d0, 'soft-lock enemy inside building is cleared and walking resumes');
   assert.deepEqual(res.deathFreeze.f0, res.deathFreeze.f1, 'death freezes walking/world');
   assert.ok(res.caches.some(k => k.startsWith('ss-')), 'ss- cache'); assert.ok(res.offline, 'offline'); assert.equal(res.ammoOverlap, false, 'ammo clear of buttons'); assert.equal(errs.length, 0, 'no page errors');
+  assert.equal(res.art.tier, 'high', 'art tier high');
+  assert.ok(['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter1.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'].every(n => res.art.loaded.indexOf(n) >= 0), 'art loaded rigs and buildings');
+  assert.equal(res.art.failed.length, 0, 'art failed empty');
+  assert.equal(res.lowTier, 'low', 'art=0 tier');
+  assert.equal(res.lowErrors.length, 0, 'no page errors on low tier');
   console.log('M1 PASS');
  } finally { await b.close(); srv.close(); } })().catch(e => { console.error('M1 FAIL', e.message); process.exit(1); });
