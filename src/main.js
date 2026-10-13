@@ -10,6 +10,7 @@ import { createScore } from './score.js';
 import { createAudio } from './audio.js';
 import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
+import { createSky } from './sky.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -18,7 +19,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 220);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 420);
 camera.position.set(0, 1.7, 4);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
@@ -31,6 +32,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const world = createWorld(scene, 0x5a7d);
 if (softGL && world.sun) world.sun.castShadow = false;
 const post = createPostFx(renderer, scene, camera);
+const sky = createSky(scene);
 
 // Daytime HDRI for high tier. The warm fog stays so the street still reads as desert.
 if (art.tier === 'high') {
@@ -38,7 +40,6 @@ if (art.tier === 'high') {
     const pmrem = new THREE.PMREMGenerator(renderer);
     const env = pmrem.fromEquirectangular(hdr).texture;
     scene.environment = env;
-    scene.background = env;
     if (scene.environmentIntensity != null) scene.environmentIntensity = 0.72;
     hdr.dispose();
     pmrem.dispose();
@@ -145,6 +146,7 @@ function simStep(dt) {
   applyCamera(0);
   input.endFrame();
   if (!frozen) world.update(camera.position.z);
+  sky.update(camera);
 }
 
 function frame(now) {
