@@ -10,33 +10,54 @@ const _look = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
 const _aim = new THREE.Vector3();
 
+const ENEMY_SCALE = 1.2; // ~20% larger; adult silhouette ~1.85–2.1 m
+
 function shemaghTexture() {
   const c = document.createElement('canvas');
   c.width = 128;
   c.height = 128;
   const g = c.getContext('2d');
-  g.fillStyle = '#7a332c';
+  g.fillStyle = '#4a1410';
   g.fillRect(0, 0, 128, 128);
-  g.strokeStyle = '#f0ddb0';
-  g.lineWidth = 4;
-  for (let i = -128; i < 256; i += 18) {
+  g.strokeStyle = '#1a0c0a';
+  g.lineWidth = 10;
+  for (let i = -128; i < 256; i += 16) {
     g.beginPath();
     g.moveTo(i, 0);
-    g.lineTo(i + 96, 128);
+    g.lineTo(i + 128, 128);
     g.stroke();
   }
-  g.strokeStyle = '#221814';
-  g.lineWidth = 2;
-  for (let y = 10; y < 128; y += 16) {
+  g.strokeStyle = '#c45c42';
+  g.lineWidth = 5;
+  for (let i = -120; i < 256; i += 16) {
+    g.beginPath();
+    g.moveTo(i + 8, 0);
+    g.lineTo(i + 136, 128);
+    g.stroke();
+  }
+  g.strokeStyle = '#f2e6d4';
+  g.lineWidth = 3;
+  for (let y = 0; y < 128; y += 16) {
     g.beginPath();
     g.moveTo(0, y);
-    g.lineTo(128, y + 2);
+    g.lineTo(128, y);
     g.stroke();
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
+}
+
+function visMat(color, extra = {}) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: extra.roughness ?? 0.82,
+    metalness: extra.metalness ?? 0.02,
+    map: extra.map || null,
+    emissive: extra.emissive != null ? extra.emissive : color,
+    emissiveIntensity: extra.emissiveIntensity ?? 0.06,
+  });
 }
 
 function soft(r, g, b) {
@@ -63,20 +84,36 @@ export function createEnemies(scene, camera, world, weapon, player) {
   scene.add(root);
   const ragdolls = createRagdollSystem(scene);
 
+  const S = ENEMY_SCALE;
   const scarfMap = shemaghTexture();
-  const matSkin = new THREE.MeshStandardMaterial({ color: 0xc48a62, roughness: 0.72 });
-  const matCloth = new THREE.MeshStandardMaterial({ color: 0x6a7040, roughness: 0.86 });
-  const matClothDark = new THREE.MeshStandardMaterial({ color: 0x3e4428, roughness: 0.88 });
-  const matScarf = new THREE.MeshStandardMaterial({ color: 0xffffff, map: scarfMap, roughness: 0.92 });
-  const matRifle = new THREE.MeshStandardMaterial({ color: 0x2a2c28, roughness: 0.55, metalness: 0.45 });
-  const matWood = new THREE.MeshStandardMaterial({ color: 0x4a3424, roughness: 0.7 });
+  const matSkin = visMat(0xa56b48, { roughness: 0.72, emissive: 0x3a2014 });
+  const matCloth = visMat(0x2c3228, { roughness: 0.88, emissive: 0x121510 });
+  const matClothDark = visMat(0x161814, { roughness: 0.9, emissive: 0x080907 });
+  const matVest = visMat(0x0c0d0c, { roughness: 0.86, emissive: 0x050505 });
+  const matScarf = visMat(0xffffff, { map: scarfMap, roughness: 0.92, emissive: 0x3a1810, emissiveIntensity: 0.08 });
+  const matRifle = visMat(0x0a0b0a, { roughness: 0.5, metalness: 0.35, emissive: 0x050505 });
+  const matWood = visMat(0x2a1c12, { roughness: 0.78, emissive: 0x120c08 });
+  const matRim = new THREE.MeshBasicMaterial({
+    color: 0x0a0c0a,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
 
   const capsule = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 6);
-  const geoTorso = capsule(0.17, 0.42);
-  const geoHead = new THREE.SphereGeometry(0.125, 10, 8);
-  const geoLimb = capsule(0.055, 0.28);
-  const geoLeg = capsule(0.07, 0.38);
-  const geoScar = new THREE.SphereGeometry(0.14, 8, 6);
+  const geoTorso = capsule(0.17 * S, 0.42 * S);
+  const geoHead = new THREE.SphereGeometry(0.125 * S, 10, 8);
+  const geoLimb = capsule(0.055 * S, 0.28 * S);
+  const geoLeg = capsule(0.07 * S, 0.38 * S);
+  const geoScar = new THREE.SphereGeometry(0.14 * S, 8, 6);
+
+  function addRim(mesh, extra = 1.07) {
+    const rim = new THREE.Mesh(mesh.geometry, matRim);
+    rim.scale.setScalar(extra);
+    rim.castShadow = false;
+    rim.receiveShadow = false;
+    mesh.add(rim);
+    return rim;
+  }
 
   const bloodMat = new THREE.SpriteMaterial({
     map: soft(160, 16, 12),
@@ -161,41 +198,45 @@ export function createEnemies(scene, camera, world, weapon, player) {
       flankTo: anchor.pos.clone(),
     };
 
-    const torso = new THREE.Mesh(geoTorso, matCloth);
-    torso.position.y = 1.15;
+    const torso = new THREE.Mesh(geoTorso, matVest);
+    torso.position.y = 1.15 * S;
     torso.castShadow = true;
     group.add(torso);
+    addRim(torso, 1.08);
     const head = new THREE.Mesh(geoHead, matSkin);
-    head.position.y = 1.68;
+    head.position.y = 1.68 * S;
     head.castShadow = true;
     group.add(head);
+    addRim(head, 1.1);
     const wrap = new THREE.Mesh(geoScar, matScarf);
     wrap.scale.set(1.08, 0.78, 1.12);
-    wrap.position.y = 1.64;
+    wrap.position.y = 1.64 * S;
     group.add(wrap);
+    addRim(wrap, 1.06);
 
-    function limb(geo, x, y, z) {
-      const m = new THREE.Mesh(geo, matClothDark);
-      m.position.set(x, y, z);
+    function limb(geo, x, y, z, mat) {
+      const m = new THREE.Mesh(geo, mat || matClothDark);
+      m.position.set(x * S, y * S, z * S);
       m.castShadow = true;
       group.add(m);
+      addRim(m, 1.1);
       return m;
     }
-    limb(geoLimb, -0.24, 1.2, 0.02);
-    limb(geoLimb, 0.24, 1.15, 0.12);
-    limb(geoLeg, -0.09, 0.55, 0);
-    limb(geoLeg, 0.09, 0.55, 0);
+    limb(geoLimb, -0.24, 1.2, 0.02, matCloth);
+    limb(geoLimb, 0.24, 1.15, 0.12, matCloth);
+    limb(geoLeg, -0.09, 0.55, 0, matClothDark);
+    limb(geoLeg, 0.09, 0.55, 0, matClothDark);
 
     const rifle = new THREE.Group();
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.22), matWood);
-    stock.position.set(0.18, 1.2, 0.12);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.07, 0.36), matRifle);
-    body.position.set(0.18, 1.24, -0.08);
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.42), matRifle);
-    barrel.position.set(0.18, 1.27, -0.4);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.05 * S, 0.08 * S, 0.22 * S), matWood);
+    stock.position.set(0.18 * S, 1.2 * S, 0.12 * S);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.045 * S, 0.07 * S, 0.36 * S), matRifle);
+    body.position.set(0.18 * S, 1.24 * S, -0.08 * S);
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.02 * S, 0.02 * S, 0.42 * S), matRifle);
+    barrel.position.set(0.18 * S, 1.27 * S, -0.4 * S);
     rifle.add(stock, body, barrel);
     group.add(rifle);
-    enemy.muzzleLocal = new THREE.Vector3(0.18, 1.27, -0.62);
+    enemy.muzzleLocal = new THREE.Vector3(0.18 * S, 1.27 * S, -0.62 * S);
 
     register(head, enemy, 'head');
     register(torso, enemy, 'body');
@@ -215,7 +256,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function standPos(anchor) {
     const elevated = anchor.type === 'window' || anchor.type === 'roof';
     const y = elevated ? Math.max(0, anchor.pos.y - 1.2) : 0;
-    return new THREE.Vector3(anchor.pos.x, y, anchor.pos.z);
+    const side = Math.sign(anchor.pos.x) || 1;
+    // Nudge 0.3 m out of cover toward the street so pop-outs are not clipped in walls.
+    return new THREE.Vector3(anchor.pos.x - side * 0.3, y, anchor.pos.z);
   }
 
   function hidePos(enemy) {
@@ -414,7 +457,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
         best = p;
       }
     }
-    return best ? new THREE.Vector3(best.x, 0, best.z) : null;
+    if (!best) return null;
+    const side = Math.sign(best.x) || 1;
+    return new THREE.Vector3(best.x - side * 0.3, 0, best.z);
   }
 
   function updateEnemy(enemy, dt, diff) {

@@ -3,24 +3,34 @@ import * as CANNON from 'cannon-es';
 
 const _q = new THREE.Quaternion();
 
+const ENEMY_SCALE = 1.2;
+
 function shemaghTexture() {
   const c = document.createElement('canvas');
   c.width = 128;
   c.height = 128;
   const g = c.getContext('2d');
-  g.fillStyle = '#6e2e2a';
+  g.fillStyle = '#4a1410';
   g.fillRect(0, 0, 128, 128);
-  g.strokeStyle = '#e6d2a2';
-  g.lineWidth = 3;
+  g.strokeStyle = '#1a0c0a';
+  g.lineWidth = 10;
   for (let i = -128; i < 256; i += 16) {
     g.beginPath();
     g.moveTo(i, 0);
     g.lineTo(i + 128, 128);
     g.stroke();
   }
-  g.strokeStyle = '#1c1a18';
-  g.lineWidth = 2;
-  for (let y = 8; y < 128; y += 14) {
+  g.strokeStyle = '#c45c42';
+  g.lineWidth = 5;
+  for (let i = -120; i < 256; i += 16) {
+    g.beginPath();
+    g.moveTo(i + 8, 0);
+    g.lineTo(i + 136, 128);
+    g.stroke();
+  }
+  g.strokeStyle = '#f2e6d4';
+  g.lineWidth = 3;
+  for (let y = 0; y < 128; y += 16) {
     g.beginPath();
     g.moveTo(0, y);
     g.lineTo(128, y);
@@ -40,6 +50,8 @@ function makeMat(color, opts = {}) {
     roughness: opts.roughness ?? 0.78,
     metalness: opts.metalness ?? 0.02,
     map: opts.map || null,
+    emissive: opts.emissive != null ? opts.emissive : color,
+    emissiveIntensity: opts.emissiveIntensity ?? 0.06,
   });
 }
 
@@ -62,10 +74,24 @@ export function createRagdollSystem(scene) {
   phys.addBody(ground);
 
   const dolls = [];
-  const skin = makeMat(0xc48a62);
-  const cloth = makeMat(0x6d7344);
-  const clothDark = makeMat(0x4e5630);
-  const scarf = makeMat(0x6e2e2a, { map: scarfMap, roughness: 0.9 });
+  const S = ENEMY_SCALE;
+  const skin = makeMat(0xa56b48, { roughness: 0.72, emissive: 0x3a2014 });
+  const cloth = makeMat(0x2c3228, { roughness: 0.88, emissive: 0x121510 });
+  const clothDark = makeMat(0x161814, { roughness: 0.9, emissive: 0x080907 });
+  const vest = makeMat(0x0c0d0c, { roughness: 0.86, emissive: 0x050505 });
+  const scarf = makeMat(0xffffff, { map: scarfMap, roughness: 0.9, emissive: 0x3a1810, emissiveIntensity: 0.08 });
+  const matRim = new THREE.MeshBasicMaterial({
+    color: 0x0a0c0a,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+
+  function addRim(mesh, extra = 1.08) {
+    const rim = new THREE.Mesh(mesh.geometry, matRim);
+    rim.scale.setScalar(extra);
+    rim.castShadow = false;
+    mesh.add(rim);
+  }
 
   function addPart(doll, name, mesh, shape, mass, x, y, z) {
     mesh.castShadow = true;
@@ -120,35 +146,39 @@ export function createRagdollSystem(scene) {
 
     const pelvis = addPart(
       doll, 'pelvis',
-      new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.18), clothDark),
-      new CANNON.Box(new CANNON.Vec3(0.14, 0.1, 0.09)),
-      8, cx, baseY + 0.92, cz
+      new THREE.Mesh(new THREE.BoxGeometry(0.28 * S, 0.2 * S, 0.18 * S), clothDark),
+      new CANNON.Box(new CANNON.Vec3(0.14 * S, 0.1 * S, 0.09 * S)),
+      8, cx, baseY + 0.92 * S, cz
     );
+    addRim(pelvis.mesh);
     const torso = addPart(
       doll, 'torso',
-      new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.44, 0.2), cloth),
-      new CANNON.Box(new CANNON.Vec3(0.18, 0.22, 0.1)),
-      12, cx, baseY + 1.28, cz
+      new THREE.Mesh(new THREE.BoxGeometry(0.36 * S, 0.44 * S, 0.2 * S), vest),
+      new CANNON.Box(new CANNON.Vec3(0.18 * S, 0.22 * S, 0.1 * S)),
+      12, cx, baseY + 1.28 * S, cz
     );
+    addRim(torso.mesh);
     const head = addPart(
       doll, 'head',
-      new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), skin),
-      new CANNON.Sphere(0.13),
-      4, cx, baseY + 1.66, cz
+      new THREE.Mesh(new THREE.SphereGeometry(0.13 * S, 10, 8), skin),
+      new CANNON.Sphere(0.13 * S),
+      4, cx, baseY + 1.66 * S, cz
     );
-    const scarfMesh = new THREE.Mesh(new THREE.SphereGeometry(0.145, 8, 6), scarf);
+    addRim(head.mesh, 1.1);
+    const scarfMesh = new THREE.Mesh(new THREE.SphereGeometry(0.145 * S, 8, 6), scarf);
     scarfMesh.scale.set(1.05, 0.72, 1.05);
     head.mesh.add(scarfMesh);
+    addRim(scarfMesh, 1.06);
 
     const limbs = [
-      ['uarmL', -0.28, 1.38, 0.09, 0.28, 0.09, 2.2],
-      ['uarmR', 0.28, 1.38, 0.09, 0.28, 0.09, 2.2],
-      ['larmL', -0.28, 1.06, 0.08, 0.26, 0.08, 1.6],
-      ['larmR', 0.28, 1.06, 0.08, 0.26, 0.08, 1.6],
-      ['ulegL', -0.1, 0.66, 0.12, 0.4, 0.12, 5],
-      ['ulegR', 0.1, 0.66, 0.12, 0.4, 0.12, 5],
-      ['llegL', -0.1, 0.26, 0.1, 0.38, 0.1, 3.5],
-      ['llegR', 0.1, 0.26, 0.1, 0.38, 0.1, 3.5],
+      ['uarmL', -0.28 * S, 1.38 * S, 0.09 * S, 0.28 * S, 0.09 * S, 2.2],
+      ['uarmR', 0.28 * S, 1.38 * S, 0.09 * S, 0.28 * S, 0.09 * S, 2.2],
+      ['larmL', -0.28 * S, 1.06 * S, 0.08 * S, 0.26 * S, 0.08 * S, 1.6],
+      ['larmR', 0.28 * S, 1.06 * S, 0.08 * S, 0.26 * S, 0.08 * S, 1.6],
+      ['ulegL', -0.1 * S, 0.66 * S, 0.12 * S, 0.4 * S, 0.12 * S, 5],
+      ['ulegR', 0.1 * S, 0.66 * S, 0.12 * S, 0.4 * S, 0.12 * S, 5],
+      ['llegL', -0.1 * S, 0.26 * S, 0.1 * S, 0.38 * S, 0.1 * S, 3.5],
+      ['llegR', 0.1 * S, 0.26 * S, 0.1 * S, 0.38 * S, 0.1 * S, 3.5],
     ];
     const byName = { pelvis, torso, head };
     for (let i = 0; i < limbs.length; i++) {
@@ -162,6 +192,7 @@ export function createRagdollSystem(scene) {
         new CANNON.Box(new CANNON.Vec3(hx, hy, hz)),
         L[6], cx + L[1], baseY + L[2], cz
       );
+      addRim(byName[L[0]].mesh, 1.1);
     }
 
     if (yaw) {
@@ -179,16 +210,16 @@ export function createRagdollSystem(scene) {
       }
     }
 
-    doll.constraints.push(hinge(pelvis, torso, [0, 0.1, 0], [0, -0.22, 0], 0.35, 0.2));
-    doll.constraints.push(hinge(torso, head, [0, 0.22, 0], [0, -0.14, 0], 0.7, 0.4));
-    doll.constraints.push(hinge(torso, byName.uarmL, [-0.2, 0.16, 0], [0, 0.14, 0], 1.2, 0.6));
-    doll.constraints.push(hinge(torso, byName.uarmR, [0.2, 0.16, 0], [0, 0.14, 0], 1.2, 0.6));
-    doll.constraints.push(point(byName.uarmL, byName.larmL, [0, -0.14, 0], [0, 0.13, 0]));
-    doll.constraints.push(point(byName.uarmR, byName.larmR, [0, -0.14, 0], [0, 0.13, 0]));
-    doll.constraints.push(hinge(pelvis, byName.ulegL, [-0.09, -0.1, 0], [0, 0.2, 0], 0.8, 0.3));
-    doll.constraints.push(hinge(pelvis, byName.ulegR, [0.09, -0.1, 0], [0, 0.2, 0], 0.8, 0.3));
-    doll.constraints.push(point(byName.ulegL, byName.llegL, [0, -0.2, 0], [0, 0.19, 0]));
-    doll.constraints.push(point(byName.ulegR, byName.llegR, [0, -0.2, 0], [0, 0.19, 0]));
+    doll.constraints.push(hinge(pelvis, torso, [0, 0.1 * S, 0], [0, -0.22 * S, 0], 0.35, 0.2));
+    doll.constraints.push(hinge(torso, head, [0, 0.22 * S, 0], [0, -0.14 * S, 0], 0.7, 0.4));
+    doll.constraints.push(hinge(torso, byName.uarmL, [-0.2 * S, 0.16 * S, 0], [0, 0.14 * S, 0], 1.2, 0.6));
+    doll.constraints.push(hinge(torso, byName.uarmR, [0.2 * S, 0.16 * S, 0], [0, 0.14 * S, 0], 1.2, 0.6));
+    doll.constraints.push(point(byName.uarmL, byName.larmL, [0, -0.14 * S, 0], [0, 0.13 * S, 0]));
+    doll.constraints.push(point(byName.uarmR, byName.larmR, [0, -0.14 * S, 0], [0, 0.13 * S, 0]));
+    doll.constraints.push(hinge(pelvis, byName.ulegL, [-0.09 * S, -0.1 * S, 0], [0, 0.2 * S, 0], 0.8, 0.3));
+    doll.constraints.push(hinge(pelvis, byName.ulegR, [0.09 * S, -0.1 * S, 0], [0, 0.2 * S, 0], 0.8, 0.3));
+    doll.constraints.push(point(byName.ulegL, byName.llegL, [0, -0.2 * S, 0], [0, 0.19 * S, 0]));
+    doll.constraints.push(point(byName.ulegR, byName.llegR, [0, -0.2 * S, 0], [0, 0.19 * S, 0]));
 
     const ix = impulse ? impulse.x : 0;
     const iy = impulse ? impulse.y : 0.4;
