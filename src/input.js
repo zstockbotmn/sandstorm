@@ -1,7 +1,7 @@
 const YAW_LIMIT = 60 * Math.PI / 180; // keep the street in view
 const PITCH_LIMIT = 35 * Math.PI / 180;
 const SENS = 0.0023; // tester: twitchy (-40%, then -20%)
-const SENS_SCOPED = 0.0009;
+const SENS_SCOPED = 0.0007; // steadier scoped aim
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));

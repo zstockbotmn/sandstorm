@@ -13,7 +13,9 @@ import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
+const PHONE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+const renderer = new THREE.WebGLRenderer({ antialias: !PHONE, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
@@ -25,12 +27,13 @@ camera.rotation.order = 'YXZ';
 scene.add(camera);
 
 const softGL = wantLow(renderer);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : 1.5));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5));
 renderer.shadowMap.enabled = !softGL;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = PHONE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
 const world = createWorld(scene, 0x5a7d);
 if (softGL && world.sun) world.sun.castShadow = false;
+if (PHONE && world.sun) world.sun.shadow.mapSize.set(1024, 1024);
 const post = createPostFx(renderer, scene, camera);
 const sky = createSky(scene);
 
@@ -114,7 +117,7 @@ let started = false;
 
 function applyCamera(dt) {
   const st = input.state;
-  const aim = 1 - Math.exp(-24 * dt); // snappier ADS so soft-GL / low fps still reaches ~2.5x
+  const aim = 1 - Math.exp(-36 * dt); // snappier ADS so soft-GL / low fps still reaches ~2.5x
   const duck = 1 - Math.exp(-14 * dt);
   fov += ((st.scope ? SCOPE_FOV : BASE_FOV) - fov) * aim;
   eye += ((st.cover ? 1.28 : 1.7) - eye) * duck; // crouched eye clears lowered sandbags (~0.9 m)
@@ -175,7 +178,7 @@ function frame(now) {
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : 1.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
 }

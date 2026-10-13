@@ -7,7 +7,7 @@ const RELOAD_TIME = 2.0;
 const SHOT_INTERVAL = 60 / 600;
 const PITCH_LIMIT = 35 * Math.PI / 180;
 const HIP_SPREAD = 0.6 * Math.PI / 180;
-const ADS_SPREAD = 0.08 * Math.PI / 180; // steadier scope
+const ADS_SPREAD = 0.04 * Math.PI / 180; // steadier scope
 const COVER_SPREAD = 2.2 * Math.PI / 180; // blind fire: tighter so some hits land
 const ASSIST_COVER = 4.0 * Math.PI / 180, ASSIST_PULL_COVER = 0.45; // weak blind-fire pull toward torso
 
@@ -22,7 +22,7 @@ const _ads = new THREE.Vector3(0.0, -0.2, -0.4);
 const _cover = new THREE.Vector3(0.28, -0.78, -0.32);
 const _desired = new THREE.Vector3();
 const _tp = new THREE.Vector3();
-const ASSIST_HIP = 3.0 * Math.PI / 180, ASSIST_ADS = 1.2 * Math.PI / 180, ASSIST_PULL = 0.6; // slight aim assist
+const ASSIST_HIP = 3.0 * Math.PI / 180, ASSIST_ADS = 1.8 * Math.PI / 180, ASSIST_PULL = 0.6; // slight aim assist
 const ASSIST_TOUCH = 5.0 * Math.PI / 180, ASSIST_PULL_TOUCH = 0.8; // stronger on touch
 
 function softCircle(r, g, b, a) {
@@ -157,7 +157,7 @@ export function createWeapon(camera, world, scene) {
     flashT = 0.05;
     flash.intensity = 5;
     flashSprite.visible = true;
-    const kickAmt = input.scope ? 0.005 : 0.02;
+    const kickAmt = input.scope ? 0.003 : 0.02;
     input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt));
     recoil += kickAmt; // recovered over time in update()
     kick = input.scope ? 0.03 : 0.07;
