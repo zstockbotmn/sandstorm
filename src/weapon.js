@@ -55,6 +55,7 @@ export function createWeapon(camera, world, scene) {
     targets,
     onHit: null,
     onShot: null,
+    onReload: null,
   };
 
   const rig = new THREE.Group();
@@ -123,6 +124,7 @@ export function createWeapon(camera, world, scene) {
     if (weapon.reloading || weapon.ammo >= MAG) return;
     weapon.reloading = true;
     reloadT = 0;
+    if (weapon.onReload) weapon.onReload('start');
   }
 
   function shoot(input) {
@@ -210,6 +212,7 @@ export function createWeapon(camera, world, scene) {
       if (reloadT >= RELOAD_TIME) {
         weapon.reloading = false;
         weapon.ammo = MAG;
+        if (weapon.onReload) weapon.onReload('end');
       }
     } else if (input.reloadPressed) {
       startReload();
@@ -220,6 +223,19 @@ export function createWeapon(camera, world, scene) {
     cooldown -= dt;
     const wants = input.fire && !input.cover && !weapon.reloading && weapon.ammo > 0;
     if (wants && cooldown <= 0) shoot(input);
+  };
+
+  weapon.reset = function reset() {
+    weapon.ammo = MAG;
+    weapon.reloading = false;
+    weapon.shotsFired = 0;
+    weapon.shotsHit = 0;
+    cooldown = 0;
+    reloadT = 0;
+    kick = 0;
+    flashT = 0;
+    flash.intensity = 0;
+    flashSprite.visible = false;
   };
 
   return weapon;

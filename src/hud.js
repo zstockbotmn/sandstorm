@@ -50,12 +50,17 @@ export function createHud() {
   arrow.className = 'arrow';
   dir.appendChild(arrow);
 
-  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir);
+  const hs = document.createElement('div');
+  hs.id = 'hs-icon';
+  hs.textContent = 'HS';
+
+  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, hs);
 
   let health = 100;
   let score = 0;
   let hitTimer = 0;
   let dirTimer = 0;
+  let hsTimer = 0;
 
   function applyHealth() {
     const h = Math.max(0, Math.min(100, health));
@@ -91,6 +96,12 @@ export function createHud() {
     applyHealth();
   }
 
+  function headshotFlash() {
+    hs.classList.add('show');
+    clearTimeout(hsTimer);
+    hsTimer = setTimeout(() => hs.classList.remove('show'), 420);
+  }
+
   function setScore(v) {
     score = v | 0;
     scoreEl.textContent = String(score);
@@ -123,5 +134,6 @@ export function createHud() {
     damageDirection,
     setHealth,
     setScore,
+    headshotFlash,
   };
 }

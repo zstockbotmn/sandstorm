@@ -5,6 +5,8 @@ import { createWeapon } from './weapon.js';
 import { createHud } from './hud.js';
 import { createPlayer } from './player.js';
 import { createEnemies } from './enemies.js';
+import { createScore } from './score.js';
+import { createAudio } from './audio.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -26,6 +28,8 @@ const weapon = createWeapon(camera, world, scene);
 const hud = createHud();
 const player = createPlayer(camera, input, hud);
 const enemies = createEnemies(scene, camera, world, weapon, player);
+const audio = createAudio();
+const score = createScore(hud, audio);
 
 window.SS = {
   scene,
@@ -36,12 +40,41 @@ window.SS = {
   hud,
   player,
   enemies,
+  audio,
+  scoreSys: score,
   walking: true,
   distance: 0,
   running: false,
+  bursting: false,
   score: 0,
   health: 100,
   onDeath() {},
+};
+
+const priorHit = weapon.onHit;
+weapon.onHit = function onHit(info) {
+  if (priorHit) priorHit(info);
+  score.registerHit();
+  audio.hit();
+};
+weapon.onShot = function onShot() {
+  score.registerShot();
+  audio.gunfire();
+};
+weapon.onReload = function onReload(which) {
+  audio.reload(which);
+};
+
+window.SS.debug = {
+  spawnEnemy(behavior) {
+    return enemies.spawnEnemy(behavior);
+  },
+  killAll() {
+    enemies.killAll();
+  },
+  damage(n) {
+    player.damage(n);
+  },
 };
 
 const SPEED = 2.2;
@@ -82,6 +115,8 @@ function frame(now) {
   player.update(step);
   enemies.update(step);
   weapon.update(dt, input.state);
+  score.setDistance(window.SS.distance);
+  audio.update(step);
   applyCamera(0);
   input.endFrame();
   world.update(camera.position.z);
@@ -104,7 +139,74 @@ function onResize() {
 }
 window.addEventListener('resize', onResize);
 
+const overEl = document.getElementById('over');
+const overNew = document.getElementById('over-new');
+const overStats = document.getElementById('over-stats');
+const overTable = document.getElementById('over-table');
+const bestEl = document.getElementById('best');
+
+function showBest() {
+  bestEl.textContent = 'Best: ' + score.best();
+}
+
+function showOver(result) {
+  const e = result.entry;
+  overNew.style.display = result.isNewBest ? 'block' : 'none';
+  if (e) {
+    overStats.textContent =
+      'Score ' + e.score +
+      ' · ' + e.distance + ' m' +
+      ' · Kills ' + e.kills +
+      ' · Headshots ' + e.headshots +
+      ' · Accuracy ' + e.accuracy + '%';
+  }
+  overTable.innerHTML = '<tr><th>#</th><th>Score</th><th>Dist</th><th>Kills</th><th>HS</th><th>Acc</th><th>Date</th></tr>';
+  const rows = result.table || [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const tr = document.createElement('tr');
+    const when = (r.date || '').slice(0, 10);
+    tr.innerHTML =
+      '<td>' + (i + 1) + '</td><td>' + r.score + '</td><td>' + r.distance +
+      '</td><td>' + r.kills + '</td><td>' + r.headshots + '</td><td>' + r.accuracy +
+      '%</td><td>' + when + '</td>';
+    overTable.appendChild(tr);
+  }
+  overEl.style.display = 'flex';
+  showBest();
+}
+
+function restartRun() {
+  overEl.style.display = 'none';
+  player.reset();
+  enemies.reset();
+  weapon.reset();
+  score.reset();
+  input.yaw = 0;
+  input.pitch = 0;
+  input.fire = false;
+  camera.position.set(0, 1.7, 4);
+  fov = BASE_FOV;
+  eye = 1.7;
+  window.SS.distance = 0;
+  window.SS.health = 100;
+  window.SS.bursting = false;
+  window.SS.walking = true;
+  window.SS.running = true;
+  world.reset(camera.position.z);
+  score.setDistance(0);
+}
+
+window.SS.onDeath = function onDeath() {
+  if (!window.SS.running && overEl.style.display === 'flex') return;
+  window.SS.running = false;
+  window.SS.walking = false;
+  const result = score.finish();
+  showOver(result);
+};
+
 document.getElementById('play').addEventListener('click', () => {
+  audio.unlock();
   document.getElementById('start').style.display = 'none';
   window.SS.walking = true;
   window.SS.running = true;
@@ -113,3 +215,10 @@ document.getElementById('play').addEventListener('click', () => {
     requestAnimationFrame(frame);
   }
 });
+
+document.getElementById('restart').addEventListener('click', () => {
+  audio.unlock();
+  restartRun();
+});
+
+showBest();

@@ -46,5 +46,13 @@ export function createPlayer(camera, input, hud) {
     if (hud) hud.setHealth(player.health);
   };
 
+  player.reset = function reset() {
+    player.health = 100;
+    player.alive = true;
+    regenDelay = 0;
+    if (window.SS) window.SS.health = 100;
+    if (hud) hud.setHealth(100);
+  };
+
   return player;
 }

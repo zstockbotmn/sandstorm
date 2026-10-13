@@ -263,7 +263,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     mesh.scale.setScalar(0.7 + Math.random() * 0.5);
   }
 
-  function kill(enemy, point) {
+  function kill(enemy, point, part) {
     if (!enemy.alive) return;
     enemy.alive = false;
     unregister(enemy);
@@ -275,6 +275,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     ragdolls.addNearbyStatics(doll, world.colliders, origin);
     enemy.group.visible = false;
     root.remove(enemy.group);
+    if (window.SS && window.SS.scoreSys) window.SS.scoreSys.addKill(part === 'head');
   }
 
   function hitEnemy(enemy, part, point) {
@@ -282,7 +283,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const dmg = part === 'head' ? HEAD_DMG : BODY_DMG;
     enemy.health -= dmg;
     if (point) spray(point);
-    if (enemy.health <= 0) kill(enemy, point);
+    if (enemy.health <= 0) kill(enemy, point, part);
   }
 
   weapon.onHit = function onHit(info) {
@@ -334,6 +335,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     muzzleFlash(_muzzle);
     tracer(_muzzle, _aim);
+    if (window.SS && window.SS.audio) window.SS.audio.enemyShot(_muzzle);
     if (hit) {
       const amount = 8 + diff * 6 + Math.random() * 4;
       player.damage(amount, _muzzle);
@@ -514,12 +516,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (phase === 'quiet') {
       if (phaseT <= 0) {
         phase = 'burst';
+        if (window.SS) window.SS.bursting = true;
         burstCap = 3 + Math.min(3, (diff * 3 + Math.random() * 2) | 0);
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;
       }
     } else if (phaseT <= 0 || (alive === 0 && phaseT < 6)) {
       phase = 'quiet';
+      if (window.SS) window.SS.bursting = false;
       quietCap = Math.random() < 0.4 ? 0 : (Math.random() < 0.5 ? 1 : 2);
       phaseT = 7 + Math.random() * 6 - diff * 2;
       spawnCd = 0.8;
@@ -593,6 +597,43 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
     ragdolls.update(dt, pz);
   }
+
+  function despawn(enemy) {
+    if (enemy.alive) unregister(enemy);
+    enemy.alive = false;
+    enemy.group.visible = false;
+    root.remove(enemy.group);
+  }
+
+  function reset() {
+    for (let i = list.length - 1; i >= 0; i--) despawn(list[i]);
+    list.length = 0;
+    if (ragdolls.clear) ragdolls.clear();
+    for (let i = 0; i < decals.length; i++) decals[i].visible = false;
+    for (let i = 0; i < blood.length; i++) {
+      blood[i].life = 0;
+      blood[i].sprite.visible = false;
+    }
+    phase = 'quiet';
+    phaseT = 2.5;
+    quietCap = 1;
+    burstCap = 4;
+    spawnCd = 1.2;
+    if (window.SS) window.SS.bursting = false;
+  }
+
+  function killAll() {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].alive) kill(list[i], null, 'body');
+    }
+  }
+
+  api.update = update;
+  api.reset = reset;
+  api.spawnEnemy = function spawnEnemy(behavior) {
+    return spawnOne(behavior || undefined);
+  };
+  api.killAll = killAll;
 
   return api;
 }

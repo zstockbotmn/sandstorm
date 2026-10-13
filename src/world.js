@@ -254,5 +254,15 @@ export function createWorld(scene, seed) {
     }
   }
 
-  return { update, segments, colliders };
+  function reset(playerZ) {
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      seg.gen = 0;
+      seg.originZ = -i * SEG_LEN;
+      fill(seg);
+    }
+    update(playerZ == null ? 0 : playerZ);
+  }
+
+  return { update, reset, segments, colliders };
 }

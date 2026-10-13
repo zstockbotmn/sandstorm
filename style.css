@@ -66,6 +66,79 @@ canvas {
 
 #best { margin: 0; font-size: 18px; opacity: 0.9; }
 
+#over {
+  position: fixed;
+  z-index: 6;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(20, 10, 6, 0.82);
+  text-align: center;
+  pointer-events: auto;
+}
+
+#over h2 {
+  margin: 0;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+#over-new {
+  display: none;
+  margin: 0;
+  font: 800 22px system-ui, sans-serif;
+  letter-spacing: 0.16em;
+  color: #ffd27a;
+}
+
+#over-stats {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+#over-table {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+#over-table th, #over-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(255, 244, 220, 0.25);
+}
+
+#restart {
+  font: 700 20px system-ui, sans-serif;
+  padding: 12px 40px;
+  border: 0;
+  border-radius: 8px;
+  background: #e0a04a;
+  color: #2a1608;
+}
+
+#hs-icon {
+  position: fixed;
+  left: 50%;
+  top: calc(50% - 52px);
+  width: 36px;
+  height: 22px;
+  margin-left: -18px;
+  border: 2px solid #ffd27a;
+  border-radius: 11px;
+  color: #ffd27a;
+  font: 800 12px system-ui, sans-serif;
+  line-height: 18px;
+  text-align: center;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000;
+}
+#hs-icon.show { opacity: 1; }
+
 #rotate {
   display: none;
   z-index: 10;

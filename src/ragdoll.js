@@ -262,5 +262,9 @@ export function createRagdollSystem(scene) {
     }
   }
 
-  return { spawn, update, addNearbyStatics, dolls };
+  function clear() {
+    while (dolls.length) removeDoll(dolls[0]);
+  }
+
+  return { spawn, update, addNearbyStatics, dolls, clear };
 }
