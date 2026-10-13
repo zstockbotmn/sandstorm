@@ -97,7 +97,7 @@ export function createInput(canvas) {
     e.preventDefault();
     e.stopPropagation();
     if (name === 'fire') fireBtn = true;
-    else if (name === 'scope') { input.scope = true; try { buttons.scope.setPointerCapture(e.pointerId); } catch (_) {} } // hold to scope / pop out of cover
+    else if (name === 'scope') input.scope = !input.scope; // tap-to-toggle: pop out of cover / duck back
     else if (name === 'reload') input.reloadPressed = true;
     sync();
   });
@@ -105,10 +105,6 @@ export function createInput(canvas) {
   buttons.fire.addEventListener('pointerdown', (e) => {
     try { buttons.fire.setPointerCapture(e.pointerId); } catch (_) {}
   });
-  const releaseScope = () => { input.scope = false; sync(); };
-  buttons.scope.addEventListener('pointerup', releaseScope);
-  buttons.scope.addEventListener('pointercancel', releaseScope);
-  buttons.scope.addEventListener('lostpointercapture', releaseScope);
   const releaseFireBtn = () => { fireBtn = false; sync(); };
   buttons.fire.addEventListener('pointerup', releaseFireBtn);
   buttons.fire.addEventListener('pointercancel', releaseFireBtn);
@@ -119,7 +115,7 @@ export function createInput(canvas) {
     if (e.code === 'Space') {
       fireKey = true;
       e.preventDefault();
-    } else if (e.code === 'KeyQ') input.scope = true; // hold Q to scope
+    } else if (e.code === 'KeyQ') input.scope = !input.scope; // Q toggles scope
     else if (e.code === 'KeyR') input.reloadPressed = true;
     else return;
     sync();
@@ -128,7 +124,7 @@ export function createInput(canvas) {
     if (e.code === 'Space') {
       fireKey = false;
       sync();
-    } else if (e.code === 'KeyQ') { input.scope = false; sync(); }
+    }
   });
 
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());

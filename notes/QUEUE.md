@@ -1,7 +1,7 @@
 # Sandstorm fix queue (for next build, after art merge)
 ## Zack (12:29 PM Oct 13) — must do
-- SCOPE is tap-to-toggle (not hold); Q toggles too. Tap again to duck back into cover.
-- FIRE button on the LEFT side of the screen (move other buttons accordingly).
+- [x] SCOPE is tap-to-toggle (not hold); Q toggles too. Tap again to duck back into cover.
+- [x] FIRE button on the LEFT side of the screen (move other buttons accordingly).
 ## Tester review ss-5c55629b6d
 - ENEMIES counter: only count engaged enemies, keep stable; no silent adds; "WAVE CLEARED" cue.
 - Real walk/breather between waves (>= ~25-40 m), verify actual 3 m/s.

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 // Automatic cover: when the walk halts for a fight, move behind the nearest cover ahead (or drop a sandbag wall) and duck.
-// Holding SCOPE pops up to aim; otherwise the player stays ducked (input.cover) and can blind-fire.
+// Tap SCOPE (or Q) to pop up and aim; tap again to duck back. While ducked (input.cover) the player can blind-fire.
 const SEARCH_AHEAD = 7, STREET_X = 4.4, BEHIND = 1.0, MOVE_SPEED = 4.5;
 export function createCover(scene, camera, world, input) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x9c8a62, roughness: 0.95 });

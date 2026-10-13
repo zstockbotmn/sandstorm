@@ -154,12 +154,12 @@ canvas {
 #controls {
   position: fixed;
   z-index: 4;
-  right: calc(14px + env(safe-area-inset-right));
+  left: calc(14px + env(safe-area-inset-left));
   bottom: calc(14px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 12px;
-  align-items: flex-end;
+  align-items: flex-start;
   touch-action: none;
 }
 
@@ -251,14 +251,14 @@ canvas {
   background: #c0392b;
 }
 
-#ammo { /* bottom-left, clear of the right-hand buttons */
-  bottom: calc(14px + env(safe-area-inset-bottom));
+#ammo { /* above left FIRE cluster so mag count stays readable */
+  bottom: calc(280px + env(safe-area-inset-bottom));
   left: calc(16px + env(safe-area-inset-left));
   font: 700 28px system-ui, sans-serif;
 }
 
 #reloading {
-  bottom: calc(50px + env(safe-area-inset-bottom));
+  bottom: calc(310px + env(safe-area-inset-bottom));
   left: calc(16px + env(safe-area-inset-left));
   font: 800 16px system-ui, sans-serif;
   letter-spacing: 0.14em;
