@@ -192,7 +192,7 @@ function restartRun() {
   window.SS.health = 100;
   window.SS.bursting = false;
   window.SS.walking = true;
-  window.SS.running = true;
+  window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.input) window.SS.input.fire = false;
   world.reset(camera.position.z);
   score.setDistance(0);
 }
@@ -209,7 +209,7 @@ document.getElementById('play').addEventListener('click', () => {
   audio.unlock();
   document.getElementById('start').style.display = 'none';
   window.SS.walking = true;
-  window.SS.running = true;
+  window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.input) window.SS.input.fire = false;
   if (!started) {
     started = true;
     requestAnimationFrame(frame);

@@ -224,15 +224,15 @@ canvas {
   background: #c0392b;
 }
 
-#ammo {
-  top: calc(12px + env(safe-area-inset-top));
-  right: calc(16px + env(safe-area-inset-right));
+#ammo { /* bottom-left, clear of the right-hand buttons */
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: calc(16px + env(safe-area-inset-left));
   font: 700 28px system-ui, sans-serif;
 }
 
 #reloading {
-  top: calc(48px + env(safe-area-inset-top));
-  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(50px + env(safe-area-inset-bottom));
+  left: calc(16px + env(safe-area-inset-left));
   font: 800 16px system-ui, sans-serif;
   letter-spacing: 0.14em;
   color: #ffd27a;

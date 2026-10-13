@@ -54,6 +54,8 @@ export function createInput(canvas) {
 
   canvas.addEventListener('pointerdown', (e) => {
     if (controlName(e.target)) return;
+    // The Play tap (and its synthetic follow-up events) must never fire: ignore canvas presses until 400 ms after the run starts.
+    if (!window.SS || !window.SS.running || performance.now() - (window.SS.startedAt || 0) < 400) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, mouse: e.pointerType === 'mouse' });
