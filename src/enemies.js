@@ -457,8 +457,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return new THREE.Vector3(x, y, anchor.pos.z);
   }
 
+  // Cars/barrels shield along the street axis: crouch on the FAR side (away from the player, -z), and lean out past the
+  // street-side edge to fire. Walls run along the street, so for them tuck outward in x (old behaviour).
+  const FAR = { car: 2.75, barrel: 0.75 }, EDGE = { car: 1.3, barrel: 0.6 };
+  function farHide(anchor) { const a = anchor.pos, side = Math.sign(a.x) || 1; return new THREE.Vector3(a.x + side * 0.15, 0, a.z - FAR[anchor.type]); }
+  function edgePeek(anchor) { const a = anchor.pos, side = Math.sign(a.x) || 1; return new THREE.Vector3(a.x - side * EDGE[anchor.type], 0, a.z - FAR[anchor.type] + 0.25); }
   // Behind ground cover, away from the street center. Feet stay on y=0.
-  function tuckOf(home) {
+  function tuckOf(home, anchor) {
+    if (anchor && FAR[anchor.type]) return farHide(anchor);
     const side = Math.sign(home.x) || 1;
     return new THREE.Vector3(side * Math.min(Math.abs(home.x) + 0.7, 6.5), 0, home.z);
   }
@@ -697,7 +703,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const toward = c.pos.z - enemy.home.z; if (toward < 1 || toward > 18) continue; if (occupiedBy(c.pos, enemy)) continue;
         const d = Math.abs(toward - 8) + Math.abs(c.pos.x - enemy.home.x) * 0.5; if (d < bd) { bd = d; dest = c; } }
       enemy.flankCover = dest;
-      if (dest) enemy.flankTo.copy(tuckOf(standPos(dest)));
+      if (dest) enemy.flankTo.copy(tuckOf(standPos(dest), dest));
       else enemy.flankTo.set(side * 5.6, 0, enemy.home.z + 2 + Math.random() * 3); // hug the facade line at the alley mouth
     }
     setupLoco(enemy);
@@ -737,7 +743,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.path = [at];
       enemy.group.position.copy(start);
     } else {
-      const tuck = tuckOf(home);
+      const tuck = tuckOf(home, enemy.anchor);
       const start = new THREE.Vector3(tuck.x, 0, tuck.z + zOff);
       start.x = Math.sign(start.x || 1) * Math.min(Math.abs(start.x), STREET_X);
       enemy.phase = 'approach';
@@ -759,6 +765,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function firePoint(enemy) {
     if (isElevated(enemy.anchor.type)) return enemy.home.clone();
+    if (FAR[enemy.anchor.type]) return edgePeek(enemy.anchor);
     const p = enemy.home.clone();
     p.y = 0;
     return p;
@@ -766,7 +773,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function hidePoint(enemy) {
     if (isElevated(enemy.anchor.type)) return sillTuck(enemy.home, enemy.anchor);
-    return tuckOf(enemy.home);
+    return tuckOf(enemy.home, enemy.anchor);
   }
 
   function startPeek(enemy) {
@@ -794,7 +801,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const pts = [];
     if (here.y > 0.45) pts.push(groundPoint(here.x, here.z));
     const elev = isElevated(anchor.type);
-    const at = elev ? groundPoint(home.x, home.z) : (anchor.type === 'door' || anchor.type === 'alley' ? home.clone().setY(0) : tuckOf(home));
+    const at = elev ? groundPoint(home.x, home.z) : (anchor.type === 'door' || anchor.type === 'alley' ? home.clone().setY(0) : tuckOf(home, anchor));
     pts.push(at);
     if (elev) pts.push(home);
     return pts;
