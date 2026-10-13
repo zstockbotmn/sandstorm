@@ -114,7 +114,7 @@ export function createHud() {
   function setNext(m) { nextTxt = m > 0 ? 'NEXT WAVE ' + Math.ceil(m) + ' m' : ''; }
   // Scope overlay: dark lens vignette + fine reticle, shown while zoomed.
   const scopeEl = document.createElement('div'); scopeEl.id = 'scope-overlay';
-  scopeEl.innerHTML = '<div class="lens"></div><div class="rh"></div><div class="rv"></div><div class="rd"></div>'; root.appendChild(scopeEl);
+  scopeEl.innerHTML = '<div class="lens"></div><div class="rh"></div><div class="rv"></div><div class="rd"></div>'; root.prepend(scopeEl); // first child: HUD text (ammo, ENEMIES) stays on top
   function setScope(on) { if (scopeEl.classList.contains('on') !== !!on) { scopeEl.classList.toggle('on', !!on); cross.style.visibility = on ? 'hidden' : ''; dot.style.visibility = on ? 'hidden' : ''; } }
   const bannerEl = document.createElement('div'); bannerEl.id = 'wave-banner'; root.appendChild(bannerEl); let bannerTimer = 0;
   function banner(text) { bannerEl.textContent = text; bannerEl.classList.remove('show'); void bannerEl.offsetWidth; bannerEl.classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => bannerEl.classList.remove('show'), 1300); }
