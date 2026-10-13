@@ -78,8 +78,8 @@ function soft(r, g, b) {
 const HOLD_RANGE = 45;        // walking pauses only for exposed enemies within this range
 const STALL_LIMIT = 20;       // s stalled without a hit before the failsafe kicks in
 const STALL_GRACE = 6;        // s of forced walking after the failsafe
-const PRESSURE_RAMP = 45;     // s standing still to reach full pressure
-const PRESSURE_HIT = 1.3;     // extra hit chance multiplier at full pressure
+const PRESSURE_RAMP = 55;     // s standing still to reach full pressure
+const PRESSURE_HIT = 1.0;     // extra hit chance multiplier at full pressure
 const PRESSURE_TEMPO = 0.8;   // extra enemy tempo (fire rate, push-in speed) at full pressure
 const RUN_RAMP = 300;         // s of run time adding up to +30% pressure
 function difficulty() {
