@@ -2,3 +2,4 @@ node_modules/
 logs/
 .buildcache
 dist/
+assets-src/meshy/*.raw.glb
