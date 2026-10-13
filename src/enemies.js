@@ -1,3 +1,4 @@
+const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.search); // tests: no auto spawns
 import * as THREE from 'three';
 import { createRagdollSystem } from './ragdoll.js';
 
@@ -531,7 +532,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
     const cap = phase === 'quiet' ? quietCap : burstCap;
     spawnCd -= dt;
-    if (window.SS && window.SS.running && alive < cap && spawnCd <= 0) {
+    if (window.SS && window.SS.running && !CALM && alive < cap && spawnCd <= 0) {
       const made = spawnOne();
       spawnCd = made ? (phase === 'burst' ? 0.45 + (1 - diff) * 0.55 : 2.2) : 0.6;
     }
