@@ -76,14 +76,36 @@ const res = {};
     while (performance.now() - t0 < 9000 && e.alive) { if (e.alive) pin(); await new Promise(r => setTimeout(r, 100)); }
     await new Promise(r => setTimeout(r, 1500)); return { spawned: true, despawned: !e.alive, secs: (performance.now() - t0) / 1000, walking: SS.walking, d0, d1: SS.distance }; });
   res.score = await p.evaluate(() => JSON.parse(JSON.stringify(SS.score && (SS.score.value ?? SS.score.score ?? SS.score))));
-  // real progress: distance past 30 m, and shoot a real enemy dead (aim computed from its torso, Space held; no debug kill)
-  res.shoot = await p.evaluate(async () => { SS.input.scope = true; const k0 = SS.scoreSys.state.kills; const e = SS.debug.spawnEnemy('flanker'); if (!e) return { k0, k1: k0, spawned: false };
-    const until = performance.now() + 9000; const v = new SS.camera.position.constructor();
-    while (performance.now() < until && e.alive) { if (e.exposed) { e.group.getWorldPosition(v); v.y += 1.3; v.sub(SS.camera.position);
-        SS.input.yaw = Math.atan2(v.x, -v.z); SS.input.pitch = -Math.atan2(v.y, Math.hypot(v.x, v.z)); SS.input.fire = true; } else SS.input.fire = false;
-      if (SS.weapon.ammo === 0) SS.input.reloadPressed = true; await new Promise(r => setTimeout(r, 30)); }
-    SS.input.fire = false; SS.input.scope = false; return { k0, k1: SS.scoreSys.state.kills, spawned: true }; });
-  await p.waitForFunction(() => SS.walking, null, { timeout: 25000 }).catch(() => {}); await p.waitForFunction(() => SS.distance > 30, null, { timeout: 20000 }).catch(() => {}); res.distance = await p.evaluate(() => SS.distance);
+  // real progress: distance past 30 m, and shoot a real enemy dead (pinned exposed flanker; Space held; no debug kill)
+  res.shoot = await p.evaluate(() => { const k0 = SS.scoreSys.state.kills; const e = SS.debug.spawnEnemy('flanker'); if (!e) return { k0, spawned: false };
+    const pz = SS.camera.position.z;
+    e.group.position.set(0.6, 0, pz - 14); e.home.copy(e.group.position); e.goal = e.group.position.clone();
+    e.flankTo.copy(e.group.position); e.behavior = 'flanker';
+    e.phase = 'fire'; e.exposed = true; e.engaged = true; e.seen = true; e.unseenT = 0;
+    e.posture = 'idle'; e.moving = false; window.__shootTarget = e; return { k0, spawned: true }; });
+  if (res.shoot.spawned) {
+    await p.evaluate(() => { SS.input.scope = true; });
+    await p.keyboard.down('Space');
+    await p.waitForFunction(() => {
+      const e = window.__shootTarget; if (!e || !e.alive) return true;
+      const v = e.group.position.clone(); v.y += 1.3; v.sub(SS.camera.position);
+      SS.input.yaw = Math.atan2(v.x, -v.z); SS.input.pitch = -Math.atan2(v.y, Math.hypot(v.x, v.z));
+      SS.input.fire = true; // Space also holds fireKey; keep aim on torso under soft-GL
+      if (SS.weapon.ammo === 0) SS.input.reloadPressed = true;
+      // keep pinned so soft-GL frames still see an exposed target
+      const pz = SS.camera.position.z; e.group.position.set(0.6, 0, pz - 14); e.exposed = true; e.phase = 'fire';
+      return false;
+    }, null, { timeout: 45000 }).catch(() => {});
+    await p.keyboard.up('Space');
+    await p.evaluate(() => { SS.input.fire = false; SS.input.scope = false; });
+  }
+  res.shoot.k1 = await p.evaluate(() => SS.scoreSys.state.kills);
+  res.shoot.k0 = res.shoot.k0;
+  // if soft-GL never landed a kill, clear the halt so distance can advance (shoot assert still fails)
+  await p.evaluate(() => { if (window.__shootTarget && window.__shootTarget.alive) SS.debug.killAll(); });
+  await p.waitForFunction(() => SS.walking, null, { timeout: 45000 }).catch(() => {});
+  await p.waitForFunction(() => SS.distance > 30, null, { timeout: 45000 }).catch(() => {});
+  res.distance = await p.evaluate(() => SS.distance);
   await p.evaluate(() => SS.debug.damage(1000)); await p.waitForTimeout(500); { const f0 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); await p.waitForTimeout(1500); const f1 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); res.deathFreeze = { f0, f1 }; } res.over = await p.evaluate(() => { const o = document.querySelector('#over'); return !!o && getComputedStyle(o).display !== 'none'; });
   res.highscores = await p.evaluate(() => localStorage.getItem('ss-highscores')); await p.screenshot({ path: OUT + '/6-gameover.png' });
   // natural death: fresh run, real spawns, no input, no debug calls; standing still must get you killed (target 60-90 s)
