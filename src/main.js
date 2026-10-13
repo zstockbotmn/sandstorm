@@ -11,6 +11,7 @@ import { createAudio } from './audio.js';
 import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
+import { preloadRapier } from './ragdoll.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
@@ -39,7 +40,7 @@ const sky = createSky(scene);
 
 // Daytime HDRI for high tier. The warm fog stays so the street still reads as desert.
 if (art.tier === 'high') {
-  new RGBELoader().load('assets/env/noon_grass_1k.hdr', (hdr) => {
+  new RGBELoader().load('assets/env/noon_grass_512.hdr', (hdr) => {
     const pmrem = new THREE.PMREMGenerator(renderer);
     const env = pmrem.fromEquirectangular(hdr).texture;
     scene.environment = env;
@@ -281,3 +282,8 @@ if (/[?&]debug\b/.test(location.search)) {
 
 // Swap the code-built box rifle for the CC0 rifle model once art is loaded (box rifle stays if it fails / low tier).
 art.onReady(() => { const r = art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search)); });
+
+// Rapier (ragdoll physics, ~4 MB) is fetched after the first rendered frames, never before Play/first paint.
+let rapierQueued = false;
+function queueRapier() { if (rapierQueued) return; rapierQueued = true; setTimeout(() => (window.requestIdleCallback || setTimeout)(() => preloadRapier(), 1500), 0); }
+document.getElementById('play').addEventListener('click', () => requestAnimationFrame(() => requestAnimationFrame(queueRapier)));
