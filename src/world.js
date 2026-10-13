@@ -227,8 +227,8 @@ export function createWorld(scene, seed) {
     const s = (lot - 0.35) / sizeX;
     let yMul = 1;
     const h = sizeY * s;
-    if (h < 4.5) yMul = Math.min(1.35, 4.5 / h);
-    else if (h > 11) yMul = Math.max(1 / 1.35, 11 / h);
+    if (h < 3.6) yMul = Math.min(1.12, 3.6 / h); // max 12% vertical stretch (tester: stretched facades)
+    else if (h > 11) yMul = Math.max(1 / 1.12, 11 / h);
     // bldg3's Meshy texture has its shop sign baked mirrored ('NAIVATS'): mirror the mesh along its width so it reads forward
     // (three.js flips the face winding for negative scale, so lighting/culling stay correct).
     model.scale.set(name === 'bldg3' ? -s : s, s * yMul, s);
@@ -384,7 +384,7 @@ export function createWorld(scene, seed) {
         continue;
       }
       // Extra roll only once art is in, so low tier and the pre-load fill stay identical.
-      if (buildingsReady() && rng() < 0.75) {
+      if (buildingsReady() && rng() < 1.01) {
         placeArtBuilding(seg, rng, pickBuilding(rng), side, z, lot, doors);
         z -= lot;
         continue;
