@@ -77,3 +77,180 @@ canvas {
 @media (orientation: portrait) {
   #rotate { display: flex; }
 }
+
+#controls {
+  position: fixed;
+  z-index: 4;
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+  touch-action: none;
+}
+
+#controls button {
+  touch-action: none;
+  min-width: 92px;
+  min-height: 68px;
+  padding: 8px 14px;
+  font: 700 15px system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  color: #f4efe4;
+  background: rgba(20, 14, 8, 0.5);
+  border: 2px solid rgba(255, 244, 220, 0.4);
+  border-radius: 14px;
+}
+
+#controls button[data-ctl="fire"] {
+  min-width: 118px;
+  min-height: 118px;
+  border-radius: 50%;
+  font-size: 20px;
+  background: rgba(168, 42, 28, 0.62);
+}
+
+#controls button.on {
+  background: rgba(224, 160, 74, 0.82);
+  color: #2a1608;
+}
+
+#distance, #score, #ammo, #reloading {
+  position: fixed;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+#distance {
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(14px + env(safe-area-inset-left));
+  font: 700 22px system-ui, sans-serif;
+}
+
+#score {
+  top: calc(40px + env(safe-area-inset-top));
+  left: calc(14px + env(safe-area-inset-left));
+  font: 600 18px system-ui, sans-serif;
+}
+
+#health {
+  position: fixed;
+  top: calc(68px + env(safe-area-inset-top));
+  left: calc(14px + env(safe-area-inset-left));
+  width: 180px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+#health > div {
+  height: 100%;
+  width: 100%;
+  background: #c0392b;
+}
+
+#ammo {
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(16px + env(safe-area-inset-right));
+  font: 700 28px system-ui, sans-serif;
+}
+
+#reloading {
+  top: calc(48px + env(safe-area-inset-top));
+  right: calc(16px + env(safe-area-inset-right));
+  font: 800 16px system-ui, sans-serif;
+  letter-spacing: 0.14em;
+  color: #ffd27a;
+}
+
+#crosshair, #red-dot, #hit-marker, #dmg-vignette, #dmg-dir {
+  position: fixed;
+  pointer-events: none;
+}
+
+#crosshair {
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+#crosshair .arm {
+  position: absolute;
+  background: rgba(244, 239, 228, 0.92);
+}
+
+#crosshair .a0, #crosshair .a1 {
+  width: 10px;
+  height: 2px;
+  top: -1px;
+}
+#crosshair .a0 { left: -16px; }
+#crosshair .a1 { left: 6px; }
+#crosshair .a2, #crosshair .a3 {
+  width: 2px;
+  height: 10px;
+  left: -1px;
+}
+#crosshair .a2 { top: -16px; }
+#crosshair .a3 { top: 6px; }
+
+#red-dot {
+  display: none;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #ff2a2a;
+  box-shadow: 0 0 6px #ff1a1a;
+}
+
+#hit-marker {
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+#hit-marker.show { opacity: 1; }
+#hit-marker span {
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  background: #fff;
+}
+#hit-marker span:nth-child(1) { left: 6px; top: 6px; transform: rotate(45deg); }
+#hit-marker span:nth-child(2) { left: -16px; top: 6px; transform: rotate(-45deg); }
+#hit-marker span:nth-child(3) { left: 6px; top: -8px; transform: rotate(-45deg); }
+#hit-marker span:nth-child(4) { left: -16px; top: -8px; transform: rotate(45deg); }
+
+#dmg-vignette {
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(circle at center, rgba(120, 0, 0, 0) 42%, rgba(140, 0, 0, 0.72) 100%);
+}
+
+#dmg-dir {
+  left: 50%;
+  top: 50%;
+  width: 180px;
+  height: 180px;
+  margin: -90px 0 0 -90px;
+  opacity: 0;
+  transition: opacity 0.35s linear;
+}
+#dmg-dir .arrow {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  margin-left: -9px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 16px solid rgba(255, 40, 40, 0.95);
+}
