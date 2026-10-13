@@ -74,6 +74,14 @@ function soft(r, g, b) {
   return tex;
 }
 
+// Pressure / stall tuning
+const HOLD_RANGE = 45;        // walking pauses only for exposed enemies within this range
+const STALL_LIMIT = 20;       // s stalled without a hit before the failsafe kicks in
+const STALL_GRACE = 6;        // s of forced walking after the failsafe
+const PRESSURE_RAMP = 45;     // s standing still to reach full pressure
+const PRESSURE_HIT = 1.3;     // extra hit chance multiplier at full pressure
+const PRESSURE_TEMPO = 0.8;   // extra enemy tempo (fire rate, push-in speed) at full pressure
+const RUN_RAMP = 300;         // s of run time adding up to +30% pressure
 function difficulty() {
   const dist = window.SS && window.SS.distance ? window.SS.distance : 0;
   return Math.max(0, Math.min(1, dist / 700));
@@ -165,6 +173,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let quietCap = 1;
   let burstCap = 4;
   let spawnCd = 1.2;
+  let stallT = 0, standT = 0, graceT = 0, runT = 0, pressure = 0;
 
   function register(mesh, enemy, part) {
     mesh.userData.enemy = enemy;
@@ -255,7 +264,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function standPos(anchor) {
     const elevated = anchor.type === 'window' || anchor.type === 'roof';
-    const y = elevated ? Math.max(0, anchor.pos.y - 1.2) : 0;
+    // Feet on the parapet top (h+0.55) for roofs; at the sill for windows (front of the facade, never inside it).
+    const y = anchor.type === 'roof' ? anchor.pos.y - 0.15 : elevated ? Math.max(0, anchor.pos.y - 1.2) : 0;
     const side = Math.sign(anchor.pos.x) || 1;
     // Nudge 0.3 m out of cover toward the street so pop-outs are not clipped in walls.
     return new THREE.Vector3(anchor.pos.x - side * 0.3, y, anchor.pos.z);
@@ -331,6 +341,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   weapon.onHit = function onHit(info) {
+    stallT = 0;
     if (!info || !info.enemy || !info.enemy.takeHit) return;
     const dirPoint = info.point;
     info.enemy.takeHit(info.part, dirPoint);
@@ -369,7 +380,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const dist = _muzzle.distanceTo(camera.position);
     let chance = (0.42 - dist * 0.006) * (0.55 + 0.7 * diff);
     if (window.SS && window.SS.input && window.SS.input.cover) chance *= 0.18;
-    chance = Math.max(0.02, Math.min(0.72, chance));
+    chance *= 1 + PRESSURE_HIT * pressure;
+    chance = Math.max(0.02, Math.min(0.85, chance));
     const hit = Math.random() < chance && player && player.alive;
     _aim.copy(camera.position);
     if (!hit) {
@@ -602,6 +614,23 @@ export function createEnemies(scene, camera, world, weapon, player) {
       spawnCd = made ? (phase === 'burst' ? 0.45 + (1 - diff) * 0.55 : 2.2) : 0.6;
     }
 
+    const running = !!(window.SS && window.SS.running);
+    if (running) runT += dt;
+    if (running && window.SS.walking) { standT = Math.max(0, standT - 2 * dt); stallT = 0; }
+    else if (running) { standT += dt; stallT += dt; }
+    pressure = Math.min(1, standT / PRESSURE_RAMP + Math.min(0.3, runT / RUN_RAMP));
+    if (graceT > 0) graceT -= dt;
+    if (stallT > STALL_LIMIT) {
+      // Failsafe: drop enemies hiding out of reach, pull the rest into the street, resume walking.
+      for (let i = list.length - 1; i >= 0; i--) {
+        const e = list[i];
+        if (!e.alive) continue;
+        if (!e.exposed || e.group.position.y > 0.5) { despawn(e); list.splice(i, 1); }
+        else if (e.behavior !== 'flanker') { e.behavior = 'flanker'; e.flankTo.set((Math.sign(e.group.position.x) || 1) * 2, 0, e.group.position.z); }
+      }
+      stallT = 0; graceT = STALL_GRACE; squadCall('Fall back!');
+    }
+    const tempo = 1 + PRESSURE_TEMPO * pressure;
     const pz = camera.position.z;
     let hold = false;
     for (let i = list.length - 1; i >= 0; i--) {
@@ -617,15 +646,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
         list.splice(i, 1);
         continue;
       }
-      updateEnemy(e, dt, diff);
+      updateEnemy(e, dt * tempo, diff);
       const dx = e.group.position.x - camera.position.x;
       const dy = e.group.position.y - camera.position.y;
       const dz = e.group.position.z - camera.position.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (dist < 60 && e.group.position.z < pz + 3) hold = true;
+      if (e.exposed && dist < HOLD_RANGE && e.group.position.z < pz + 3) hold = true;
     }
 
-    if (window.SS && window.SS.running) window.SS.walking = !hold;
+    if (running) window.SS.walking = !hold || graceT > 0;
+    if (window.SS) window.SS.pressure = { pressure, standT, stallT, graceT };
 
     for (let i = 0; i < flashes.length; i++) {
       const f = flashes[i];
@@ -685,6 +715,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     quietCap = 1;
     burstCap = 4;
     spawnCd = 1.2;
+    stallT = standT = graceT = runT = pressure = 0;
     if (window.SS) window.SS.bursting = false;
   }
 

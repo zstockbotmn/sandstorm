@@ -176,9 +176,9 @@ export function createWorld(scene, seed) {
       const cz = z - lot * 0.5;
       addBox(seg, matPlaster, cx, h * 0.5, cz, depth, h, lot - 0.35);
       addBox(seg, matPlaster, cx, h + 0.28, cz, depth + 0.35, 0.55, lot, { collide: false });
-      seg.coverPoints.push({ pos: new THREE.Vector3(cx, h + 0.7, cz), type: 'roof' });
-
       const facadeX = cx - side * (depth * 0.5);
+      // Roof spot sits on the street-side parapet edge (not the roof centre, which put enemies inside the building).
+      seg.coverPoints.push({ pos: new THREE.Vector3(facadeX + side * 0.45, h + 0.7, cz), type: 'roof' });
       const doorZ = cz + (rng() - 0.5) * lot * 0.3;
       addBox(seg, matDark, facadeX - side * 0.12, 1.15, doorZ, 0.28, 2.3, 1.15);
       seg.coverPoints.push({
