@@ -75,11 +75,11 @@ export function createHud() {
   function hitMarker() {
     marker.classList.add('show');
     clearTimeout(hitTimer);
-    hitTimer = setTimeout(() => marker.classList.remove('show'), 120);
+    hitTimer = setTimeout(() => marker.classList.remove('show'), 220);
   }
 
   function damageVignette(amount) {
-    const a = Math.max(0.35, Math.min(1, amount == null ? 1 : amount));
+    const a = Math.max(0.6, Math.min(1, amount == null ? 1 : amount));
     vignette.style.transition = 'none';
     vignette.style.opacity = String(a);
     requestAnimationFrame(() => {
@@ -108,6 +108,8 @@ export function createHud() {
   }
 
   let radioLast = '';
+  const remainEl = document.createElement('div'); remainEl.id = 'enemies-left'; root.appendChild(remainEl);
+  function setRemaining(n) { const t = n > 0 ? 'ENEMIES ' + n : ''; if (remainEl.textContent !== t) remainEl.textContent = t; remainEl.style.display = n > 0 ? 'block' : 'none'; }
   const bannerEl = document.createElement('div'); bannerEl.id = 'wave-banner'; root.appendChild(bannerEl); let bannerTimer = 0;
   function banner(text) { bannerEl.textContent = text; bannerEl.classList.remove('show'); void bannerEl.offsetWidth; bannerEl.classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => bannerEl.classList.remove('show'), 1300); }
   function onTarget(on) { cross.classList.toggle('on-target', !!on); }
@@ -163,6 +165,7 @@ export function createHud() {
     headshotFlash,
     callout,
     banner,
+    setRemaining,
     onTarget,
   };
 }

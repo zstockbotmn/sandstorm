@@ -391,7 +391,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     _muzzle.copy(enemy.muzzleLocal).applyMatrix4(enemy.group.matrixWorld);
     const dist = _muzzle.distanceTo(camera.position);
     let chance = (0.42 - dist * 0.006) * (0.55 + 0.7 * diff);
-    if (window.SS && window.SS.input && window.SS.input.cover) chance *= 0.18;
+    enemy.engaged = true; // shooting engages: the walk halts until this enemy is dead
+    if (window.SS && window.SS.input && window.SS.input.cover) chance *= 0.3; // ducked in cover
     chance *= 1 + PRESSURE_HIT * pressure;
     chance = Math.max(0.02, Math.min(0.85, chance));
     const hit = Math.random() < chance && player && player.alive;
@@ -407,11 +408,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.rounds = (enemy.rounds || 0) + 1;
     if (enemy.rounds >= 6) {
       enemy.rounds = 0;
-      squadCall('Reloading!');
     }
     if (hit) {
       const amount = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4));
-      player.damage(amount, _muzzle);
+      player.damage(window.SS && window.SS.input && window.SS.input.cover ? amount * 0.6 : amount, _muzzle); // cover also softens hits
     }
   }
 
@@ -655,14 +655,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
         losRay.set(camera.position, _ed); losRay.far = d - 0.6;
         e.seen = e.exposed && losRay.intersectObjects(world.colliders, false).length === 0;
         e.unseenT = e.seen ? 0 : (e.unseenT || 0) + 0.25;
-        if (e.seen && d < HOLD_RANGE) anySeen = true;
+        if (e.seen && d < HOLD_RANGE) { anySeen = true; e.engaged = true; }
         if (e.unseenT > UNSEEN_LIMIT) { despawn(e); list.splice(i, 1); }
       }
     }
     if (noProgT > NOPROGRESS_LIMIT && !anySeen && graceT <= 0) { graceT = 3; noProgT = 0; }
     const tempo = 1 + PRESSURE_TEMPO * pressure;
     const pz = camera.position.z;
-    let hold = false;
+    let hold = false, engagedN = 0;
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];
       if (!e.alive) {
@@ -682,10 +682,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const dy = e.group.position.y - camera.position.y;
       const dz = e.group.position.z - camera.position.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (e.seen && dist < HOLD_RANGE && e.group.position.z < pz + 3) hold = true;
+      if (e.engaged) { hold = true; engagedN += 1; } // halt until ALL engaged enemies are dead (hidden ones still despawn after 5 s)
     }
 
-    if (running) window.SS.walking = !hold || graceT > 0;
+    if (running) window.SS.walking = !hold || (graceT > 0 && !anySeen);
+    if (window.SS) { window.SS.engaged = engagedN; if (window.SS.hud && window.SS.hud.setRemaining) window.SS.hud.setRemaining(running && hold ? engagedN : 0); }
     if (window.SS) window.SS.pressure = { pressure, standT, stallT, graceT };
 
     for (let i = 0; i < flashes.length; i++) {

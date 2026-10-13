@@ -366,3 +366,7 @@ canvas {
 #wave-banner { position: absolute; left: 0; right: 0; top: 28%; text-align: center; font: 800 44px/1 system-ui, sans-serif; letter-spacing: 8px; color: #ff4a3a; text-shadow: 0 2px 8px #000; opacity: 0; pointer-events: none; }
 #wave-banner.show { animation: wave 1.3s ease-out; }
 @keyframes wave { 0% { opacity: 0; transform: scale(1.4); } 15% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
+/* halt: enemies remaining */
+#enemies-left { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: none; font: 700 18px/1 system-ui, sans-serif; letter-spacing: 2px; color: #fff; background: rgba(150, 20, 10, 0.75); padding: 5px 12px; border-radius: 4px; pointer-events: none; }
+/* stronger hit marker */
+#hit-marker span { width: 18px; height: 4px; background: #fff; box-shadow: 0 0 4px #000, 0 0 2px #f33; }

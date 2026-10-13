@@ -7,6 +7,7 @@ import { createPlayer } from './player.js';
 import { createEnemies } from './enemies.js';
 import { createScore } from './score.js';
 import { createAudio } from './audio.js';
+import { createCover } from './cover.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -30,6 +31,7 @@ const player = createPlayer(camera, input, hud);
 const enemies = createEnemies(scene, camera, world, weapon, player);
 const audio = createAudio();
 const score = createScore(hud, audio);
+const cover = createCover(scene, camera, world, input);
 
 window.SS = {
   scene,
@@ -42,6 +44,7 @@ window.SS = {
   enemies,
   audio,
   scoreSys: score,
+  cover,
   walking: true,
   distance: 0,
   running: false,
@@ -77,9 +80,9 @@ window.SS.debug = {
   },
 };
 
-const SPEED = 2.2;
+const SPEED = 3.0; // a bit faster between fights
 const BASE_FOV = 70;
-const SCOPE_FOV = 40;
+const SCOPE_FOV = 28; // ~2.5x
 let fov = BASE_FOV;
 let eye = 1.7;
 let last = 0;
@@ -111,6 +114,7 @@ function frame(now) {
     camera.position.z -= SPEED * dt;
     window.SS.distance += SPEED * dt;
   }
+  if (!frozen) cover.update(dt || 0.016, window.SS.walking && window.SS.running);
   applyCamera(dt || 0.016);
   const step = dt || 0.016;
   player.update(step);
@@ -195,6 +199,7 @@ function restartRun() {
   window.SS.bursting = false;
   window.SS.walking = true;
   window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.input) window.SS.input.fire = false;
+  cover.reset();
   world.reset(camera.position.z);
   score.setDistance(0);
 }

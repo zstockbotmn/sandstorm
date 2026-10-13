@@ -1,7 +1,7 @@
 const YAW_LIMIT = 60 * Math.PI / 180; // keep the street in view
 const PITCH_LIMIT = 35 * Math.PI / 180;
-const SENS = 0.0029; // -40% (tester: too twitchy)
-const SENS_SCOPED = 0.00114;
+const SENS = 0.0023; // tester: twitchy (-40%, then -20%)
+const SENS_SCOPED = 0.0009;
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
@@ -29,7 +29,7 @@ export function createInput(canvas) {
   const controls = document.createElement('div');
   controls.id = 'controls';
   const buttons = {};
-  for (const name of ['reload', 'scope', 'cover', 'fire']) {
+  for (const name of ['reload', 'scope', 'fire']) { // no COVER button: cover is automatic
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.ctl = name;
@@ -43,7 +43,6 @@ export function createInput(canvas) {
   function sync() {
     input.fire = fireBtn || fireKey || fireMouse;
     buttons.scope.classList.toggle('on', input.scope);
-    buttons.cover.classList.toggle('on', input.cover);
   }
 
   function controlName(target) {
@@ -59,7 +58,8 @@ export function createInput(canvas) {
     if (!window.SS || !window.SS.running || performance.now() - (window.SS.startedAt || 0) < 400) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, mouse: e.pointerType === 'mouse' });
+    input.touch = e.pointerType !== 'mouse';
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, mouse: e.pointerType === 'mouse', shots0: window.SS.weapon ? window.SS.weapon.shotsFired : 0 });
     // Mouse: never fire on press. A click (released <=4 px from press) fires one shot; holding still 100 ms starts auto-fire.
     if (e.pointerType === 'mouse') { const id = e.pointerId; pressTimer = setTimeout(() => { const q = pointers.get(id); if (q && !q.moved) { fireMouse = true; q.held = true; sync(); } }, 100); }
     sync();
@@ -85,7 +85,7 @@ export function createInput(canvas) {
     const p = pointers.get(e.pointerId);
     if (!p) return;
     pointers.delete(e.pointerId);
-    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && !p.held && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4) input.clickShot = true; fireMouse = false; }
+    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) input.clickShot = true; fireMouse = false; } // a still click always gets its shot, even if the 100 ms hold began and no frame fired
     sync();
   }
   window.addEventListener('pointerup', endPointer);
@@ -97,8 +97,7 @@ export function createInput(canvas) {
     e.preventDefault();
     e.stopPropagation();
     if (name === 'fire') fireBtn = true;
-    else if (name === 'scope') input.scope = !input.scope;
-    else if (name === 'cover') input.cover = !input.cover;
+    else if (name === 'scope') { input.scope = true; try { buttons.scope.setPointerCapture(e.pointerId); } catch (_) {} } // hold to scope / pop out of cover
     else if (name === 'reload') input.reloadPressed = true;
     sync();
   });
@@ -106,6 +105,10 @@ export function createInput(canvas) {
   buttons.fire.addEventListener('pointerdown', (e) => {
     try { buttons.fire.setPointerCapture(e.pointerId); } catch (_) {}
   });
+  const releaseScope = () => { input.scope = false; sync(); };
+  buttons.scope.addEventListener('pointerup', releaseScope);
+  buttons.scope.addEventListener('pointercancel', releaseScope);
+  buttons.scope.addEventListener('lostpointercapture', releaseScope);
   const releaseFireBtn = () => { fireBtn = false; sync(); };
   buttons.fire.addEventListener('pointerup', releaseFireBtn);
   buttons.fire.addEventListener('pointercancel', releaseFireBtn);
@@ -116,8 +119,7 @@ export function createInput(canvas) {
     if (e.code === 'Space') {
       fireKey = true;
       e.preventDefault();
-    } else if (e.code === 'KeyQ') input.scope = !input.scope;
-    else if (e.code === 'KeyC') input.cover = !input.cover;
+    } else if (e.code === 'KeyQ') input.scope = true; // hold Q to scope
     else if (e.code === 'KeyR') input.reloadPressed = true;
     else return;
     sync();
@@ -126,7 +128,7 @@ export function createInput(canvas) {
     if (e.code === 'Space') {
       fireKey = false;
       sync();
-    }
+    } else if (e.code === 'KeyQ') { input.scope = false; sync(); }
   });
 
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());

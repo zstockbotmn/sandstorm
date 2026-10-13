@@ -12,7 +12,7 @@ export function createPlayer(camera, input, hud) {
     if (window.SS) window.SS.health = player.health;
     if (hud) {
       hud.setHealth(player.health);
-      hud.damageVignette(Math.min(1, 0.35 + dmg / 28));
+      hud.damageVignette(Math.min(1, 0.6 + dmg / 28));
       if (fromPosition && camera) {
         const dx = fromPosition.x - camera.position.x;
         const dz = fromPosition.z - camera.position.z;
@@ -39,7 +39,7 @@ export function createPlayer(camera, input, hud) {
       regenDelay -= dt;
       return;
     }
-    const inCover = !!(input && input.cover);
+    const inCover = !!(input && (input.cover || (window.SS && window.SS.cover && window.SS.cover.state === 'in')));
     const rate = inCover ? 16 : 4; // limited: slow in the open
     player.health = Math.min(100, player.health + rate * dt);
     if (window.SS) window.SS.health = player.health;

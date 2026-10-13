@@ -7,7 +7,8 @@ const RELOAD_TIME = 2.0;
 const SHOT_INTERVAL = 60 / 600;
 const PITCH_LIMIT = 35 * Math.PI / 180;
 const HIP_SPREAD = 0.6 * Math.PI / 180;
-const ADS_SPREAD = 0.15 * Math.PI / 180;
+const ADS_SPREAD = 0.08 * Math.PI / 180; // steadier scope
+const COVER_SPREAD = 3.5 * Math.PI / 180; // blind fire from cover
 
 const _dir = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -21,6 +22,7 @@ const _cover = new THREE.Vector3(0.28, -0.78, -0.32);
 const _desired = new THREE.Vector3();
 const _tp = new THREE.Vector3();
 const ASSIST_HIP = 3.0 * Math.PI / 180, ASSIST_ADS = 1.2 * Math.PI / 180, ASSIST_PULL = 0.6; // slight aim assist
+const ASSIST_TOUCH = 5.0 * Math.PI / 180, ASSIST_PULL_TOUCH = 0.8; // stronger on touch
 
 function softCircle(r, g, b, a) {
   const c = document.createElement('canvas');
@@ -140,7 +142,7 @@ export function createWeapon(camera, world, scene) {
     flashT = 0.05;
     flash.intensity = 5;
     flashSprite.visible = true;
-    const kickAmt = input.scope ? 0.008 : 0.02;
+    const kickAmt = input.scope ? 0.005 : 0.02;
     input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt));
     recoil += kickAmt; // recovered over time in update()
     kick = input.scope ? 0.03 : 0.07;
@@ -153,21 +155,21 @@ export function createWeapon(camera, world, scene) {
     _camUp.crossVectors(_right, _dir).normalize();
     camera.getWorldPosition(_origin);
     { // Slight aim assist: bend the shot part-way toward the nearest enemy torso near the crosshair.
-      const lim = input.scope ? ASSIST_ADS : ASSIST_HIP; let best = null, bestA = lim;
+      const lim = input.scope ? ASSIST_ADS : input.touch ? ASSIST_TOUCH : ASSIST_HIP; let best = null, bestA = lim;
       for (let i = 0; i < targets.length; i++) {
         const t = targets[i]; if (!t.userData || t.userData.part === 'head' || !t.visible) continue;
         t.getWorldPosition(_tp); _tp.sub(_origin); const a = _tp.angleTo(_dir);
         if (a < bestA) { bestA = a; best = _tp.clone().normalize(); }
       }
-      if (best) _dir.lerp(best, ASSIST_PULL).normalize();
+      if (best) _dir.lerp(best, input.touch && !input.scope ? ASSIST_PULL_TOUCH : ASSIST_PULL).normalize();
     }
-    const spread = input.scope ? ADS_SPREAD : HIP_SPREAD;
+    if (input.cover) _origin.y += 0.5; // blind fire over the top of cover
+    const spread = input.cover ? COVER_SPREAD : input.scope ? ADS_SPREAD : HIP_SPREAD;
     const a = Math.random() * Math.PI * 2;
     const r = Math.tan(spread) * Math.sqrt(Math.random());
     _dir.addScaledVector(_right, Math.cos(a) * r);
     _dir.addScaledVector(_camUp, Math.sin(a) * r);
     _dir.normalize();
-    camera.getWorldPosition(_origin);
     raycaster.set(_origin, _dir);
 
     const worldHits = raycaster.intersectObjects(world.colliders, false);
@@ -244,9 +246,9 @@ export function createWeapon(camera, world, scene) {
       for (let i = 0; i < targets.length && !on; i++) { const t = targets[i]; if (!t.visible) continue; t.getWorldPosition(_tp); _tp.sub(_origin); if (_tp.length() < 180 && _tp.angleTo(_dir) < lim) on = true; }
       weapon.onTarget = on; }
     cooldown -= dt;
-    if (input.clickShot && !input.cover && !weapon.reloading && weapon.ammo > 0 && cooldown <= 0) { input.clickShot = false; shoot(input); }
-    else if (input.clickShot && (weapon.reloading || weapon.ammo <= 0 || input.cover)) input.clickShot = false;
-    const wants = input.fire && !input.cover && !weapon.reloading && weapon.ammo > 0;
+    if (input.clickShot && !weapon.reloading && weapon.ammo > 0 && cooldown <= 0) { input.clickShot = false; shoot(input); }
+    else if (input.clickShot && (weapon.ammo <= 0)) input.clickShot = false; // a click during reload fires when it ends
+    const wants = input.fire && !weapon.reloading && weapon.ammo > 0;
     if (wants && cooldown <= 0) shoot(input);
   };
 
