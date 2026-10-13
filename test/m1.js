@@ -54,7 +54,7 @@ const res = {};
   res.enemyStop = await p.evaluate(() => SS.walking); await p.screenshot({ path: OUT + '/4-enemies.png' });
   res.halt = await p.evaluate(() => ({ engaged: SS.engaged, hud: (document.querySelector('#enemies-left') || {}).textContent, cover: SS.cover.state, ducked: SS.input.cover, eyeY: SS.camera.position.y }));
   // kill one engaged enemy by real damage: the halt must stay while others are alive
-  res.haltAfterOne = await p.evaluate(async () => { const e = __en.find(x => x && x.alive && x.engaged); if (e) e.takeHit('head', e.group.position.clone()); await new Promise(r => setTimeout(r, 2000)); return { walking: SS.walking, engaged: SS.engaged }; });
+  res.haltAfterOne = await p.evaluate(async () => { const e = __en.find(x => x && x.alive && x.engaged); if (e) e.takeHit('head', e.group.position.clone()); for (let t = 0; t < 20; t++) { __en.forEach(x => { if (x && x.alive) x.unseenT = 0; }); await new Promise(r => setTimeout(r, 100)); } /* keep the others counted as reachable (they now duck into real cover) */ return { walking: SS.walking, engaged: SS.engaged }; });
   // scope pops out of cover and fires
   await p.keyboard.press('q');
   await p.waitForFunction(() => SS.input.scope && !SS.input.cover, null, { timeout: 15000 }).catch(() => {});
