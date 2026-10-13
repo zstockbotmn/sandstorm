@@ -533,9 +533,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     dropDecal(origin);
     const yaw = enemy.group.rotation.y;
     enemy.group.updateMatrixWorld(true);
-    const doll = ragdolls.spawn(origin, yaw, _aim.copy(origin).sub(camera.position).normalize());
-    ragdolls.addNearbyStatics(doll, world.colliders, origin);
-    if (enemy.art) {
+    // A ragdoll/physics failure must never block a kill (tester soft-lock: hit markers but nobody died, loop frozen).
+    let doll = null;
+    try { doll = ragdolls.spawn(origin, yaw, _aim.copy(origin).sub(camera.position).normalize()); ragdolls.addNearbyStatics(doll, world.colliders, origin); }
+    catch (err) { reportErr('ragdoll spawn', err); doll = null; }
+    if (enemy.art && doll) try {
       const model = enemy.art.root;
       scene.attach(model); // keeps the world transform
       // Sample the death clip, then freeze that pose for the ragdoll skin.
@@ -555,7 +557,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // Bones leave the mesh origin as the body falls; don't frustum-cull the skin.
       model.traverse((obj) => { if (obj.isMesh) obj.frustumCulled = false; });
       doll.skin = { model, links: ragdolls.bindSkin(doll, enemy.bones) };
-    }
+    } catch (err) { reportErr('ragdoll skin', err); if (enemy.art && enemy.art.root.parent) enemy.art.root.parent.remove(enemy.art.root); }
+    else if (enemy.art && enemy.art.root.parent === scene) scene.remove(enemy.art.root);
     enemy.group.visible = false;
     root.remove(enemy.group);
     if (window.SS && window.SS.scoreSys) window.SS.scoreSys.addKill(part === 'head');
@@ -642,6 +645,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
   }
 
+  const reported = new Set();
+  function reportErr(where, err) {
+    const key = where + ':' + (err && err.message);
+    if (reported.has(key)) return; reported.add(key);
+    console.error('[sandstorm] ' + where + ' failed:', err && (err.stack || err.message || err));
+    if (window.SS) (window.SS.errors = window.SS.errors || []).push(key);
+  }
   function squadCall(text) {
     const hud = window.SS && window.SS.hud;
     if (hud && typeof hud.callout === 'function') hud.callout(text);
@@ -1097,7 +1107,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         continue;
       }
       if (e.art) stepArt(e, dt);
-      updateEnemy(e, dt * tempo, diff);
+      try { updateEnemy(e, dt * tempo, diff); }
+      catch (err) { reportErr('enemy update', err); despawn(e); list.splice(i, 1); continue; } // a broken enemy is removed, never freezes the fight
       if (e.art) syncArt(e);
       if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 12;
       const dx = e.group.position.x - camera.position.x;
@@ -1154,7 +1165,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       old.geometry.dispose();
     }
 
-    ragdolls.update(dt, pz);
+    try { ragdolls.update(dt, pz); } catch (err) { reportErr('ragdoll update', err); try { ragdolls.clear && ragdolls.clear(); } catch (_) {} }
   }
 
   function despawn(enemy) {

@@ -149,6 +149,7 @@ function simStep(dt) {
   sky.update(camera);
 }
 
+const frameErrs = new Set();
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = last ? (now - last) / 1000 : 0;
@@ -156,7 +157,9 @@ function frame(now) {
   // Catch up when frames are late (software GL): up to 4 x 50 ms so fire/walk still advance.
   const steps = raw > 0 ? Math.min(4, Math.max(1, Math.ceil(raw / 0.05))) : 1;
   const dt = raw > 0 ? Math.min(0.05, raw / steps) : 0;
-  for (let i = 0; i < steps; i++) simStep(dt);
+  try { for (let i = 0; i < steps; i++) simStep(dt); }
+  catch (err) { // never freeze HUD/render on a sim error; report once per message
+    const k = String(err && err.message); if (!frameErrs.has(k)) { frameErrs.add(k); console.error('[sandstorm] sim step failed:', err && (err.stack || err)); (window.SS.errors = window.SS.errors || []).push('sim:' + k); } }
   hud.onTarget(weapon.onTarget);
   hud.update({
     distance: window.SS.distance,
