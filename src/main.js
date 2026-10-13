@@ -272,3 +272,6 @@ if (/[?&]debug\b/.test(location.search)) {
   document.body.appendChild(tag);
   fetch('sw.js', { cache: 'no-store' }).then(r => r.text()).then(t => { const m = t.match(/ss-[0-9a-f]{10}/); tag.textContent = 'build ' + (m ? m[0] : 'dev'); }).catch(() => { tag.textContent = 'build ?'; });
 }
+
+// Swap the code-built box rifle for the CC0 rifle model once art is loaded (box rifle stays if it fails / low tier).
+art.onReady(() => { const r = art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search)); });

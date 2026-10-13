@@ -69,13 +69,27 @@ export function createWeapon(camera, world, scene) {
   rig.position.copy(_hip);
   camera.add(rig);
 
-  addBox(rig, 0x4a3424, 0, -0.02, 0.16, 0.055, 0.09, 0.22, 0.05);
-  addBox(rig, 0x2a2c28, 0, 0.02, -0.06, 0.05, 0.075, 0.28, 0.55);
-  addBox(rig, 0x1a1c1a, 0, 0.03, -0.42, 0.02, 0.02, 0.46, 0.7);
-  addBox(rig, 0x242624, 0, -0.09, -0.04, 0.03, 0.14, 0.07, 0.3);
-  addBox(rig, 0x3a2a1c, 0, -0.07, 0.08, 0.038, 0.1, 0.05, 0.1);
-  addBox(rig, 0x111111, 0, 0.075, -0.1, 0.012, 0.028, 0.08, 0.8);
+  const boxGun = new THREE.Group(); rig.add(boxGun); // code-built fallback rifle
+  addBox(boxGun, 0x4a3424, 0, -0.02, 0.16, 0.055, 0.09, 0.22, 0.05);
+  addBox(boxGun, 0x2a2c28, 0, 0.02, -0.06, 0.05, 0.075, 0.28, 0.55);
+  addBox(boxGun, 0x1a1c1a, 0, 0.03, -0.42, 0.02, 0.02, 0.46, 0.7);
+  addBox(boxGun, 0x242624, 0, -0.09, -0.04, 0.03, 0.14, 0.07, 0.3);
+  addBox(boxGun, 0x3a2a1c, 0, -0.07, 0.08, 0.038, 0.1, 0.05, 0.1);
+  addBox(boxGun, 0x111111, 0, 0.075, -0.1, 0.012, 0.028, 0.08, 0.8);
 
+  // Real rifle model (CC0 Quaternius AK47): fit its long axis to -Z (barrel forward), ~0.86 m, replacing the boxes.
+  weapon.setModel = function setModel(obj, flip) {
+    if (!obj) return;
+    obj.updateMatrixWorld(true); let b = new THREE.Box3().setFromObject(obj); const sz = b.getSize(new THREE.Vector3());
+    if (sz.x > sz.z) obj.rotation.y = flip ? Math.PI / 2 : -Math.PI / 2; else if (flip) obj.rotation.y = Math.PI;
+    obj.updateMatrixWorld(true); b = new THREE.Box3().setFromObject(obj); b.getSize(sz);
+    const k = 0.74 / Math.max(sz.z, 1e-4); obj.scale.multiplyScalar(k); obj.updateMatrixWorld(true);
+    b = new THREE.Box3().setFromObject(obj); const ctr = b.getCenter(new THREE.Vector3());
+    const holder = new THREE.Group(); holder.add(obj); obj.position.sub(ctr); holder.position.set(0.02, -0.04, -0.12);
+    obj.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.frustumCulled = false; if (m.material) { m.material = m.material.clone(); m.material.roughness = Math.max(0.5, m.material.roughness ?? 0.6);
+        if (!/wood/i.test(m.material.name || '')) { m.material.color.multiplyScalar(0.45); m.material.metalness = 0.35; } } // gunmetal, not toy grey } });
+    rig.add(holder); boxGun.visible = false; weapon.model = holder;
+  };
   const flash = new THREE.PointLight(0xffb060, 0, 3.2, 2);
   flash.position.set(0, 0.03, -0.66);
   rig.add(flash);

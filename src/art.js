@@ -6,7 +6,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 // Names match assets/models/<name>.glb. dist/ serves index.html with assets/ beside it.
 const PRIMARY = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter.quaternius.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'];
 const ANIM_FALLBACK = 'fighter1.anim';
-const PROPS = ['prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart'];
+const PROPS = ['rifle_ak47', 'prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart'];
 const RIGS = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig'];
 const BONE_NAMES = ['Hips', 'Spine01', 'Spine', 'Head', 'RightHand', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'];
 const CLIP_KEYS = {
