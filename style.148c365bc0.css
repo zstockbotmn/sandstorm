@@ -354,3 +354,15 @@ canvas {
   border-right: 9px solid transparent;
   border-bottom: 16px solid rgba(255, 40, 40, 0.95);
 }
+
+/* aim feedback: crosshair turns red over a target (aim assist range) */
+#crosshair.on-target .arm { background: #ff3030; box-shadow: 0 0 4px #ff0000; }
+#hit-marker span { width: 14px; height: 3px; background: #fff; box-shadow: 0 0 3px #000; }
+/* stronger damage feedback */
+#dmg-vignette { background: radial-gradient(circle at center, rgba(160, 0, 0, 0.12) 30%, rgba(200, 0, 0, 0.88) 100%); }
+#dmg-dir { width: 240px; height: 240px; margin: -120px 0 0 -120px; }
+#dmg-dir .arrow { margin-left: -16px; border-left-width: 16px; border-right-width: 16px; border-bottom: 30px solid #ff2020; filter: drop-shadow(0 0 4px #000); }
+/* wave intro */
+#wave-banner { position: absolute; left: 0; right: 0; top: 28%; text-align: center; font: 800 44px/1 system-ui, sans-serif; letter-spacing: 8px; color: #ff4a3a; text-shadow: 0 2px 8px #000; opacity: 0; pointer-events: none; }
+#wave-banner.show { animation: wave 1.3s ease-out; }
+@keyframes wave { 0% { opacity: 0; transform: scale(1.4); } 15% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
