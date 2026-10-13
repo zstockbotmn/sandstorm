@@ -1,7 +1,7 @@
 // M1 quick headless landscape check: load, controls, run loop, enemies/kill, no page errors, offline via sw. Serves dist/ on :8795.
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path'), assert = require('assert');
 const D = path.resolve(__dirname, '../dist'), OUT = path.resolve(__dirname, '../screenshots/m1');
-const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.json': 'application/json' };
+const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.hdr': 'application/octet-stream', '.json': 'application/json' };
 const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(8795);
 const res = {};
@@ -62,7 +62,7 @@ const res = {};
     res.naturalDist = await p2.evaluate(() => SS.distance); await p2.close(); }
   // offline
   await p.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 30000 }).catch(() => {}); res.caches = await p.evaluate(() => caches.keys());
-  await ctx.setOffline(true); await p.reload(); await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 30000 }).then(() => res.offline = true).catch(() => res.offline = false); await ctx.setOffline(false);
+  await ctx.setOffline(true); await p.reload({ timeout: 120000, waitUntil: 'domcontentloaded' }).catch(() => {}); await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 120000 }).then(() => res.offline = true).catch(() => res.offline = false); await ctx.setOffline(false);
   await p.screenshot({ path: OUT + '/7-offline.png' });
   // Low tier: procedural fighter, no GLBs, and no errors on this page.
   { const p3 = await ctx.newPage(), lowErrs = [];

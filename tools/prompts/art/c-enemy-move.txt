@@ -1,0 +1,21 @@
+You are in /workspace/sandstorm (branch main, commit 3d48f28 or later). Do NOT touch Starfall Gambit.
+
+TASK — Zack rule 3: no enemies popping straight up in windows. Movement must look realistic and use animation clips.
+
+Rewrite enemy locomotion / cover behavior in src/enemies.js (and minimal helpers in src/art.js if needed) so that:
+
+1) Window / doorway enemies NEVER teleport or lerp straight up from a hidePos below the sill into the window. They must PATH on the ground (or along the facade sidewalk) to the doorway/window approach point, then climb/enter with a short move, then LEAN out to fire using the `lean` clip (or crouch→stand). Roofs: approach via door/stairs proxy on the ground first is OK if no stairs mesh; do not pop from underground.
+
+2) Ground cover (car, barrel, wall, sandbags): enemies CROUCH behind cover (`crouch` clip), then STAND / lean out to fire (`idle` or `lean`), then can duck again. Between covers they RUN (`run`) or WALK (`walk`) along the street — no sliding without foot anims.
+
+3) Flankers already run; ensure `run`/`walk`/`strafe` map to Quaternius clips loaded by art.js (`walk`,`run`,`crouch`,`lean`,`death`,`idle`,`hit`). desiredAnim() must pick: walk/run while moving, crouch while ducked in cover, lean while peeking/firing from cover edge, idle when standing exposed still, hit on damage, death on kill (before ragdoll).
+
+4) Keep game rules intact: halt while any engaged enemy alive; auto-cover; soft-lock; blind fire; non-inverted aim; art timeout/budget; Rapier ragdolls; postfx.
+
+5) Replace the old `popper` hide/show Y-lerp with a small state machine per enemy, e.g. approach → takeCover → peek/lean → fire → hide/crouch → relocate. Short comments. Prefer editing enemies.js; avoid huge unrelated refactors.
+
+6) Do NOT call Meshy. Do NOT publish. Do NOT run playwright. You may `node tools/build.js --force`. Commit when done with message like "Realistic enemy approach/lean/crouch using Quaternius clips".
+
+Also update test/art-shots.js if it assumes instant popper exposure — spawn enemies and wait long enough for approach+lean (e.g. 4–6 s) before screenshots of leaning/at-window.
+
+DELIVERABLE: commit on main; build succeeds.

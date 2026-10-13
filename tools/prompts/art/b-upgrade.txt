@@ -1,0 +1,52 @@
+You are working in /workspace/sandstorm (git repo zstockbotmn/sandstorm, branch main). Do NOT touch /workspace/starfall* or Starfall Gambit.
+
+GOAL (Zack rule: free open-source no-login tools only; no Mixamo; never buy Meshy credits; never print MESHY_API_KEY; ~203 Meshy credits — do NOT call Meshy unless truly required; prefer what is already on disk):
+
+Integrate these already-downloaded assets and new deps into the playable Sandstorm M1 FPS:
+
+1) Rapier physics (@dimforge/rapier3d-compat is already in package.json / node_modules). Replace cannon-es ragdolls in src/ragdoll.js with Rapier ragdolls + hit impulse physics. Keep the public API used by src/enemies.js (spawn, update, addNearbyStatics, etc.) so enemies still wire into ragdolls on death. Bone-driven Meshy fighter skins should follow Rapier bodies when a ragdoll is active (art path already attaches the skinned mesh in enemies.js).
+
+2) Poly Haven CC0 (already on disk):
+   - assets/env/noon_grass_1k.hdr — daytime HDRI sky / env lighting (RGBELoader + PMREMGenerator). Keep bright desert daytime look.
+   - assets/textures/*.webp — sand_01, asphalt_01, dirty_concrete (diff/nor/arm) for ground/road/building materials in world.js when art tier is high; keep code-built colored materials as low-tier / load-failure fallback.
+   Cap total dist/ download ~12 MB (currently assets ~6.8 MB + JS). Prefer 512 webp; do not re-add huge sources. Compress anything new with existing tools/compress.mjs + gltfpack -cc.
+
+3) Quaternius CC0 Universal Animation Library Standard (already at assets-src/quaternius/AnimationLibrary_Godot_Standard.gltf+.bin, CC0 LICENSE). Clips available include: Walk_Loop, Jog_Fwd_Loop, Sprint_Loop, Crouch_Idle_Loop, Crouch_Fwd_Loop, Death01, Hit_Chest, Hit_Head, Idle_Loop, Pistol_Aim_Neutral, Pistol_Shoot. Retarget needed clips onto the Meshy fighters (bone names: Hips, Spine02, Spine01, Spine, neck, Head, Left/Right Shoulder/Arm/ForeArm/Hand, Left/Right UpLeg/Leg/Foot/ToeBase). Write a build-time script tools/retarget-quaternius.mjs that:
+   - Loads the Quaternius glTF + one Meshy rig (assets/models/fighter1.rig.glb)
+   - Maps humanoid bones by name heuristics
+   - Exports a compact meshopt+webp-free clips-only GLB to assets/models/fighter.quaternius.anim.glb with clips named: walk, run, crouch, lean, death, idle, hit (lean can be derived from Pistol_Aim_Neutral or Crouch_Idle with a slight torso yaw/lean if no true lean clip)
+   - Pin Hips X/Z root motion like art.js already does for Meshy clips
+   Then update src/art.js to load fighter.quaternius.anim.glb (preferred) and fall back to fighter1.anim.glb Meshy clips, then to no-anim code-built enemies.
+
+4) pmndrs postprocessing (package "postprocessing" already installed). In main.js (or new src/postfx.js): EffectComposer with Bloom + SMAA + tone mapping for high tier; LOW tier for iPhone / ?art=0 / weak GPU: skip bloom+SMAA, use renderer.toneMapping only (ACES or Neutral). Do not tank FPS — target desktop >=45 FPS in swiftshader tests, low tier still playable.
+
+5) Service worker: tools/build.js already caches assets under ss-* with scope ./. Ensure new env/textures/anim glbs are copied into dist/ and precached. Do not change SW scope away from ./.
+
+6) CREDITS.md at repo root listing every third-party asset/lib with license + source URL:
+   - Meshy AI generated models (Zack account) for fighters/bldgs/props
+   - Poly Haven noon_grass, sand_01, asphalt_01, dirty_concrete (CC0) + URLs
+   - Quaternius Universal Animation Library (CC0) + github mirror used
+   - three.js, @dimforge/rapier3d-compat, postprocessing, meshopt, gltfpack, etc.
+
+KEEP EXISTING GAME RULES INTACT (do not regress):
+- Walking halts while any engaged enemy is alive; resumes only when all engaged are dead (enemies.js)
+- Auto-cover only (no COVER button, no C key); scope pops out; blind fire from cover
+- Soft-lock aim assist
+- Non-inverted vertical aim: drag up looks up (pitch += dy; camera.rotation.x = -pitch)
+- Crouched eye ~1.28; low sandbags (~0.7–0.9 m) so ducked view sees the street
+- art.js 12s timeout + 12 MB byte budget with graceful code-built fallback
+
+CONSTRAINTS:
+- One coding session; commit when done with a clear message.
+- Do not publish to gh-pages.
+- Do not run long playwright tests (parent will). You may run node tools/build.js --force and a quick syntax check.
+- Do not print secrets. Do not npm install paid packages. Do not use Mixamo.
+- Prefer editing existing files; keep code style consistent with the repo (short comments, no huge refactors).
+- If retargeting is too hard for perfect bone mapping, ship best-effort clips that play on Meshy rigs without exploding transforms; keep Meshy fighter1.anim as fallback.
+
+DELIVERABLES:
+- Working build (node tools/build.js --force)
+- assets/models/fighter.quaternius.anim.glb
+- CREDITS.md
+- Rapier ragdolls, Poly Haven sky/textures wired, postfx with low tier
+- git commit on main

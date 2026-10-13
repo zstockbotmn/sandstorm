@@ -2,7 +2,7 @@
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const D = path.resolve(__dirname, '../dist'), OUT = path.resolve(__dirname, '../screenshots/m2-art');
 fs.mkdirSync(OUT, { recursive: true });
-const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.json': 'application/json' };
+const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.hdr': 'application/octet-stream', '.json': 'application/json' };
 const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(8796);
 const res = {};
