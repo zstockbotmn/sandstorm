@@ -1,0 +1,12 @@
+Work in /workspace/sandstorm only. Do not touch Starfall.
+
+PROBLEM: `@dimforge/rapier3d-compat` is inlined into dist/game.*.js (~5.1 MB). Under Playwright/swiftshader the game runs ~0.5 FPS so m1.js fails (no fire, almost no walk, scope incomplete). Total dist is ~11.9 MB raw.
+
+FIX:
+1) Remove top-level `await RAPIER.init()` from src/ragdoll.js. Lazy-load Rapier with `import('@dimforge/rapier3d-compat')` on first need (createRagdollSystem start + first spawn). Until ready, spawn/update/addNearbyStatics/bindSkin/clear must be safe no-ops or queue (no throw). After init, create the Rapier world as today. Keep the same public API for enemies.js.
+
+2) Update tools/build.js to emit ESM code-splitting so the Rapier chunk is a separate hashed file under dist/ (esbuild `splitting: true`, `outdir`, hashed entry/chunk names). Update index.html to point at the entry game.*.js. Precache ALL dist *.js chunks plus assets in sw.js (scope still ./). Prefer keeping main entry under ~1 MB raw.
+
+3) Optionally prefer `@dimforge/rapier3d` + copy `rapier_wasm3d_bg.wasm` to assets/ if that yields a smaller main chunk; either approach is fine if main game JS is much smaller and ragdolls still work.
+
+4) Do not regress game rules. Do not publish. Do not run playwright. Run `node tools/build.js --force` and print dist file sizes. Commit when done.
