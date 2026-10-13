@@ -1,0 +1,1 @@
+Drag-to-aim must never fire: only the on-screen FIRE button or a mouse click (pointer type mouse, no drag beyond a few px) fires. Lower drag aim sensitivity (SENS and SENS_SCOPED) by about 40%. Keep the vertical flip.

@@ -162,7 +162,7 @@ export function createWorld(scene, seed) {
     if (rng() < 0.45) {
       const wz = cz + (rng() - 0.5) * lot * 0.5;
       const wallLen = 2.2 + rng() * 2;
-      addLowWall(seg, side * 5.5, 0.4, wz, 0.4, 0.8, wallLen);
+      addLowWall(seg, side * 5.5, 0.35, wz, 0.4, 0.7, wallLen);
       seg.coverPoints.push({ pos: new THREE.Vector3(side * 5.5, 0.9, wz), type: 'wall' });
     }
   }
@@ -325,7 +325,7 @@ export function createWorld(scene, seed) {
           type: 'alley',
         });
         if (rng() < 0.6) {
-          addLowWall(seg, side * 6.2, 0.45, z - gap * 0.5, 0.35, 0.9, Math.min(gap - 0.5, 3.5));
+          addLowWall(seg, side * 6.2, 0.35, z - gap * 0.5, 0.35, 0.7, Math.min(gap - 0.5, 3.5));
           seg.coverPoints.push({
             pos: new THREE.Vector3(side * 6.2, 1.0, z - gap * 0.5),
             type: 'wall',

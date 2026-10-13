@@ -1,0 +1,1 @@
+Add a slight aim assist (gentle yaw/pitch pull or slightly enlarged hit tolerance toward the nearest visible enemy near the crosshair, unscoped stronger than scoped, subtle). Make enemies easier to see without the scope (e.g. slightly bigger silhouette outline/contrast rim or a small marker above them at range).

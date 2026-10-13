@@ -1,0 +1,1 @@
+Cap rendering resolution: renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)) everywhere the pixel ratio is set, including resize.

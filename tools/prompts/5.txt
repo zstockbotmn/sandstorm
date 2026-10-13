@@ -1,0 +1,1 @@
+Fix camera on 90 degree street turns: empty sky shows under the road and the horizon tilts. Clamp camera roll to 0 always (use rotation order YXZ, rotation.z = 0) and limit yaw during turns if needed so the road fills the lower view.

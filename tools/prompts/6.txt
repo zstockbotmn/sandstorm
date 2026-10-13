@@ -1,0 +1,1 @@
+Show the build hash (the ss- service worker version produced by tools/build.js) on screen when the URL has ?debug, small corner text. Have tools/build.js inject it into the bundle or index.html.

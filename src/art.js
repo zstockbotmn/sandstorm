@@ -233,20 +233,64 @@ function finish() {
   }
 }
 
-async function loadGroup(names, optional) {
-  const pending = names.map(async (name) => {
-    try {
-      return { name, gltf: await loadOne(name) };
-    } catch (err) {
-      return { name, err, missing: isMissing(err) };
-    }
+// Soft caps: abandon remaining downloads past the wall-clock timeout or byte budget and keep code-built fallbacks.
+const LOAD_TIMEOUT_MS = 12000;
+const BYTE_BUDGET = 12 * 1024 * 1024;
+let bytesUsed = 0;
+let timedOut = false;
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(Object.assign(new Error('art load timeout'), { timeout: true })), ms);
+    promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
   });
-  const rows = await Promise.all(pending);
+}
+
+async function loadOneBudget(name) {
+  if (timedOut || bytesUsed >= BYTE_BUDGET) {
+    return { name, skipped: true };
+  }
+  const url = 'assets/models/' + name + '.glb';
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = new Error('HTTP ' + res.status);
+      err.response = res;
+      throw err;
+    }
+    const buf = await res.arrayBuffer();
+    bytesUsed += buf.byteLength;
+    if (bytesUsed > BYTE_BUDGET) {
+      // Keep this last asset only if primary; otherwise drop to stay near the cap.
+      if (PROPS.indexOf(name) >= 0) {
+        return { name, skipped: true, overBudget: true };
+      }
+    }
+    const gltf = await makeLoader().parseAsync(buf, 'assets/models/');
+    return { name, gltf, bytes: buf.byteLength };
+  } catch (err) {
+    return { name, err, missing: isMissing(err), timeout: !!(err && err.timeout) };
+  }
+}
+
+async function loadGroup(names, optional) {
+  const remaining = Math.max(500, LOAD_TIMEOUT_MS - (performance.now() - loadStarted));
+  let rows;
+  try {
+    rows = await withTimeout(Promise.all(names.map(loadOneBudget)), remaining);
+  } catch (err) {
+    timedOut = true;
+    console.warn('art load timeout; falling back to code-built art for remaining assets');
+    rows = names.map((name) => ({ name, skipped: true, timeout: true }));
+  }
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (row.gltf) {
       adopt(row.name, row.gltf);
       art.loaded.push(row.name);
+      art.bytes = bytesUsed;
+    } else if (row.skipped) {
+      art.failed.push(row.name);
     } else if (!(optional && row.missing)) {
       art.failed.push(row.name);
       if (!optional) console.warn('art failed:', row.name, row.err && (row.err.message || row.err));
@@ -259,6 +303,8 @@ const art = {
   loaded: [],
   failed: [],
   done: false,
+  bytes: 0,
+  budget: BYTE_BUDGET,
   get(name) {
     return assets[name] || null;
   },
@@ -272,9 +318,11 @@ const art = {
   measureHeight,
 };
 
+let loadStarted = 0;
 if (art.tier === 'low') {
   finish();
 } else {
+  loadStarted = performance.now();
   loadGroup(PRIMARY, false).then(() => loadGroup(PROPS, true)).then(finish).catch((err) => {
     console.warn('art load', err);
     finish();
