@@ -39,6 +39,7 @@ export function createInput(canvas) {
   }
   document.body.appendChild(controls);
 
+  let pressTimer = 0;
   function sync() {
     input.fire = fireBtn || fireKey || fireMouse;
     buttons.scope.classList.toggle('on', input.scope);
@@ -59,7 +60,8 @@ export function createInput(canvas) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, mouse: e.pointerType === 'mouse' });
-    if (e.pointerType === 'mouse') fireMouse = true;
+    // Mouse: never fire on press. A click (released <=4 px from press) fires one shot; holding still 100 ms starts auto-fire.
+    if (e.pointerType === 'mouse') { const id = e.pointerId; pressTimer = setTimeout(() => { const q = pointers.get(id); if (q && !q.moved) { fireMouse = true; q.held = true; sync(); } }, 100); }
     sync();
     try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* already released */ }
   });
@@ -73,7 +75,7 @@ export function createInput(canvas) {
     p.x = e.clientX;
     p.y = e.clientY;
     // A drag is aiming, never shooting: cancel the mouse shot once it moves past 6 px.
-    if (p.mouse && fireMouse && Math.hypot(p.x - p.sx, p.y - p.sy) > 6) { fireMouse = false; sync(); }
+    if (p.mouse && Math.hypot(p.x - p.sx, p.y - p.sy) > 4) { p.moved = true; clearTimeout(pressTimer); if (fireMouse) { fireMouse = false; sync(); } }
     const sens = input.scope ? SENS_SCOPED : SENS;
     input.yaw = clamp(input.yaw + dx * sens, -YAW_LIMIT, YAW_LIMIT);
     input.pitch = clamp(input.pitch + dy * sens, -PITCH_LIMIT, PITCH_LIMIT);
@@ -83,7 +85,7 @@ export function createInput(canvas) {
     const p = pointers.get(e.pointerId);
     if (!p) return;
     pointers.delete(e.pointerId);
-    if (p.mouse) fireMouse = false;
+    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && !p.held && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4) input.clickShot = true; fireMouse = false; }
     sync();
   }
   window.addEventListener('pointerup', endPointer);

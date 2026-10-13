@@ -106,20 +106,22 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
   last = now;
-  if (window.SS.walking) {
+  const frozen = !player.alive; // death freezes the world: no walking, no enemy/world updates
+  if (window.SS.walking && !frozen) {
     camera.position.z -= SPEED * dt;
     window.SS.distance += SPEED * dt;
   }
   applyCamera(dt || 0.016);
   const step = dt || 0.016;
   player.update(step);
-  enemies.update(step);
+  if (!frozen) enemies.update(step);
   weapon.update(dt, input.state);
   score.setDistance(window.SS.distance);
   audio.update(step);
   applyCamera(0);
   input.endFrame();
-  world.update(camera.position.z);
+  if (!frozen) world.update(camera.position.z);
+  hud.onTarget(weapon.onTarget);
   hud.update({
     distance: window.SS.distance,
     ammo: weapon.ammo,

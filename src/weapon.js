@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 
 const MAG = 30;
-const RELOAD_TIME = 2.2;
+const RECOIL_RECOVER = 6; // 1/s, recoil pitch recovery
+let reloadEnd = 0;
+const RELOAD_TIME = 2.0;
 const SHOT_INTERVAL = 60 / 600;
 const PITCH_LIMIT = 35 * Math.PI / 180;
 const HIP_SPREAD = 0.6 * Math.PI / 180;
@@ -122,10 +124,12 @@ export function createWeapon(camera, world, scene) {
     slot.sprite.scale.setScalar(0.12);
   }
 
+  let recoil = 0;
   function startReload() {
     if (weapon.reloading || weapon.ammo >= MAG) return;
     weapon.reloading = true;
     reloadT = 0;
+    reloadEnd = performance.now() + RELOAD_TIME * 1000; // real time: slow frames must not stretch the reload
     if (weapon.onReload) weapon.onReload('start');
   }
 
@@ -138,6 +142,7 @@ export function createWeapon(camera, world, scene) {
     flashSprite.visible = true;
     const kickAmt = input.scope ? 0.008 : 0.02;
     input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt));
+    recoil += kickAmt; // recovered over time in update()
     kick = input.scope ? 0.03 : 0.07;
     if (weapon.onShot) weapon.onShot();
 
@@ -221,7 +226,7 @@ export function createWeapon(camera, world, scene) {
 
     if (weapon.reloading) {
       reloadT += dt;
-      if (reloadT >= RELOAD_TIME) {
+      if (performance.now() >= reloadEnd) {
         weapon.reloading = false;
         weapon.ammo = MAG;
         if (weapon.onReload) weapon.onReload('end');
@@ -232,7 +237,15 @@ export function createWeapon(camera, world, scene) {
       startReload();
     }
 
+    // Recoil recovery: return the kicked pitch toward where the player aimed (no upward creep).
+    if (recoil > 0) { const r = Math.min(recoil, recoil * (1 - Math.exp(-RECOIL_RECOVER * dt)) + 0.002 * dt * 60); recoil -= r; input.pitch = Math.min(PITCH_LIMIT, input.pitch + r); }
+    // On-target check for the crosshair (same cone as the aim assist).
+    { camera.getWorldDirection(_dir); camera.getWorldPosition(_origin); const lim = input.scope ? ASSIST_ADS : ASSIST_HIP; let on = false;
+      for (let i = 0; i < targets.length && !on; i++) { const t = targets[i]; if (!t.visible) continue; t.getWorldPosition(_tp); _tp.sub(_origin); if (_tp.length() < 180 && _tp.angleTo(_dir) < lim) on = true; }
+      weapon.onTarget = on; }
     cooldown -= dt;
+    if (input.clickShot && !input.cover && !weapon.reloading && weapon.ammo > 0 && cooldown <= 0) { input.clickShot = false; shoot(input); }
+    else if (input.clickShot && (weapon.reloading || weapon.ammo <= 0 || input.cover)) input.clickShot = false;
     const wants = input.fire && !input.cover && !weapon.reloading && weapon.ammo > 0;
     if (wants && cooldown <= 0) shoot(input);
   };
@@ -244,6 +257,7 @@ export function createWeapon(camera, world, scene) {
     weapon.shotsHit = 0;
     cooldown = 0;
     reloadT = 0;
+    recoil = 0;
     kick = 0;
     flashT = 0;
     flash.intensity = 0;

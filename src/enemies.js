@@ -75,6 +75,9 @@ function soft(r, g, b) {
 }
 
 // Pressure / stall tuning
+const UNSEEN_LIMIT = 5;       // s an enemy may stay out of sight before it is despawned
+const NOPROGRESS_LIMIT = 5;   // s without progress and no visible enemy -> resume walking
+const STREET_X = 5.6;         // ground enemies stay on the street side of the facades (|x| <= this)
 const HOLD_RANGE = 45;        // walking pauses only for exposed enemies within this range
 const STALL_LIMIT = 20;       // s stalled without a hit before the failsafe kicks in
 const STALL_GRACE = 6;        // s of forced walking after the failsafe
@@ -84,7 +87,7 @@ const PRESSURE_TEMPO = 0.8;   // extra enemy tempo (fire rate, push-in speed) at
 const RUN_RAMP = 300;         // s of run time adding up to +30% pressure
 function difficulty() {
   const dist = window.SS && window.SS.distance ? window.SS.distance : 0;
-  return Math.max(0, Math.min(1, dist / 700));
+  return Math.max(0, Math.min(1, dist / 500)); // ramps with distance: full at 500 m
 }
 
 export function createEnemies(scene, camera, world, weapon, player) {
@@ -177,6 +180,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let quietCap = 1;
   let burstCap = 4;
   let spawnCd = 1.2;
+  let lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
+  const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
   let stallT = 0, standT = 0, graceT = 0, runT = 0, pressure = 0;
 
   function register(mesh, enemy, part) {
@@ -274,7 +279,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const y = anchor.type === 'roof' ? anchor.pos.y - 0.15 : elevated ? Math.max(0, anchor.pos.y - 1.2) : 0;
     const side = Math.sign(anchor.pos.x) || 1;
     // Nudge 0.3 m out of cover toward the street so pop-outs are not clipped in walls.
-    return new THREE.Vector3(anchor.pos.x - side * 0.3, y, anchor.pos.z);
+    let x = anchor.pos.x - side * 0.3;
+    if (y === 0) x = side * Math.min(Math.abs(x), STREET_X); // alley/door spots at the street mouth, never inside a building
+    return new THREE.Vector3(x, y, anchor.pos.z);
   }
 
   function hidePos(enemy) {
@@ -347,7 +354,6 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   weapon.onHit = function onHit(info) {
-    stallT = 0;
     if (!info || !info.enemy || !info.enemy.takeHit) return;
     const dirPoint = info.point;
     info.enemy.takeHit(info.part, dirPoint);
@@ -460,6 +466,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (roll === 'flanker') {
       const side = Math.sign(pick.pos.x) || (Math.random() < 0.5 ? -1 : 1);
       enemy.flankFrom.copy(enemy.home);
+      // flankers emerge from the alley but start at the street mouth if the alley spot is deep
+      enemy.flankFrom.x = Math.sign(enemy.flankFrom.x) * Math.min(Math.abs(enemy.flankFrom.x), 6.9);
       enemy.flankTo.set(side * (1.6 + Math.random() * 1.2), 0, enemy.home.z + (Math.random() - 0.5) * 2);
       enemy.group.position.copy(enemy.flankFrom);
       enemy.exposed = false;
@@ -487,7 +495,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     if (!best) return null;
     const side = Math.sign(best.x) || 1;
-    return new THREE.Vector3(best.x - side * 0.3, 0, best.z);
+    return new THREE.Vector3(side * Math.min(Math.abs(best.x - side * 0.3), STREET_X), 0, best.z);
   }
 
   function updateEnemy(enemy, dt, diff) {
@@ -600,7 +608,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (phaseT <= 0) {
         phase = 'burst';
         if (window.SS) window.SS.bursting = true;
-        squadCall('Contact!');
+        squadCall('Contact!'); if (window.SS && window.SS.hud && window.SS.hud.banner) window.SS.hud.banner('CONTACT');
         burstCap = 3 + Math.min(3, (diff * 3 + Math.random() * 2) | 0);
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;
@@ -622,8 +630,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
     const running = !!(window.SS && window.SS.running);
     if (running) runT += dt;
-    if (running && window.SS.walking) { standT = Math.max(0, standT - 2 * dt); stallT = 0; }
-    else if (running) { standT += dt; stallT += dt; }
+    const prog = window.SS ? window.SS.distance : 0;
+    if (running && prog > lastProg + 0.05) { lastProg = prog; noProgT = 0; stallT = 0; standT = Math.max(0, standT - 2 * dt); }
+    else if (running) { standT += dt; stallT += dt; noProgT += dt; }
     pressure = Math.min(1, standT / PRESSURE_RAMP + Math.min(0.3, runT / RUN_RAMP));
     if (graceT > 0) graceT -= dt;
     if (stallT > STALL_LIMIT) {
@@ -636,6 +645,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
       }
       stallT = 0; graceT = STALL_GRACE; squadCall('Fall back!');
     }
+    // Line-of-sight watchdog (4x/s): an enemy counts only if exposed and not blocked by geometry.
+    losT -= dt;
+    if (losT <= 0) {
+      losT = 0.25; anySeen = false;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const e = list[i]; if (!e.alive) continue;
+        e.group.getWorldPosition(_ep); _ep.y += 1.3; _ed.copy(_ep).sub(camera.position); const d = _ed.length(); _ed.divideScalar(d);
+        losRay.set(camera.position, _ed); losRay.far = d - 0.6;
+        e.seen = e.exposed && losRay.intersectObjects(world.colliders, false).length === 0;
+        e.unseenT = e.seen ? 0 : (e.unseenT || 0) + 0.25;
+        if (e.seen && d < HOLD_RANGE) anySeen = true;
+        if (e.unseenT > UNSEEN_LIMIT) { despawn(e); list.splice(i, 1); }
+      }
+    }
+    if (noProgT > NOPROGRESS_LIMIT && !anySeen && graceT <= 0) { graceT = 3; noProgT = 0; }
     const tempo = 1 + PRESSURE_TEMPO * pressure;
     const pz = camera.position.z;
     let hold = false;
@@ -658,7 +682,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const dy = e.group.position.y - camera.position.y;
       const dz = e.group.position.z - camera.position.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (e.exposed && dist < HOLD_RANGE && e.group.position.z < pz + 3) hold = true;
+      if (e.seen && dist < HOLD_RANGE && e.group.position.z < pz + 3) hold = true;
     }
 
     if (running) window.SS.walking = !hold || graceT > 0;
@@ -722,7 +746,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     quietCap = 1;
     burstCap = 4;
     spawnCd = 1.2;
-    stallT = standT = graceT = runT = pressure = 0;
+    stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     if (window.SS) window.SS.bursting = false;
   }
 

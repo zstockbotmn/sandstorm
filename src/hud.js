@@ -92,7 +92,7 @@ export function createHud() {
     dir.style.transform = 'rotate(' + angle + 'rad)';
     dir.style.opacity = '1';
     clearTimeout(dirTimer);
-    dirTimer = setTimeout(() => { dir.style.opacity = '0'; }, 450);
+    dirTimer = setTimeout(() => { dir.style.opacity = '0'; }, 900);
   }
 
   function setHealth(v) {
@@ -107,10 +107,14 @@ export function createHud() {
     hsTimer = setTimeout(() => hs.classList.remove('show'), 420);
   }
 
+  let radioLast = '';
+  const bannerEl = document.createElement('div'); bannerEl.id = 'wave-banner'; root.appendChild(bannerEl); let bannerTimer = 0;
+  function banner(text) { bannerEl.textContent = text; bannerEl.classList.remove('show'); void bannerEl.offsetWidth; bannerEl.classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => bannerEl.classList.remove('show'), 1300); }
+  function onTarget(on) { cross.classList.toggle('on-target', !!on); }
   function callout(text) {
     const now = performance.now();
-    if (now < radioNext) return;
-    radioNext = now + 1500;
+    if (now < radioNext || text === radioLast) return; // max one line per 4 s, never the same line twice in a row
+    radioNext = now + 4000; radioLast = text;
     const line = document.createElement('div');
     line.className = 'radio-line';
     line.textContent = '[RADIO] ' + text;
@@ -158,5 +162,7 @@ export function createHud() {
     setScore,
     headshotFlash,
     callout,
+    banner,
+    onTarget,
   };
 }

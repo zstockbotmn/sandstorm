@@ -16,7 +16,8 @@ const res = {};
   res.walk = { d0, d1, walking: await p.evaluate(() => SS.walking) };
   await p.screenshot({ path: OUT + '/2-walking.png' });
   // aim drag
-  const y0 = await p.evaluate(() => SS.input.yaw); const pt0 = await p.evaluate(() => SS.input.pitch); await p.mouse.move(300, 200); await p.mouse.down(); await p.mouse.move(200, 180, { steps: 8 }); await p.mouse.up(); res.aim = { y0, y1: await p.evaluate(() => SS.input.yaw), pt0, pt1: await p.evaluate(() => SS.input.pitch) };
+  const y0 = await p.evaluate(() => SS.input.yaw); const pt0 = await p.evaluate(() => SS.input.pitch); const am0 = await p.evaluate(() => SS.weapon.ammo); await p.mouse.move(300, 200); await p.mouse.down(); await p.mouse.move(200, 180, { steps: 8 }); await p.mouse.up(); await p.mouse.move(310, 200); await p.mouse.down(); await p.mouse.move(320, 200, { steps: 3 }); await p.mouse.up(); await p.waitForTimeout(300); res.dragAmmo = [am0, await p.evaluate(() => SS.weapon.ammo)];
+  await p.mouse.click(400, 200); await p.waitForTimeout(300); res.clickAmmo = await p.evaluate(() => SS.weapon.ammo); res.aim = { y0, y1: await p.evaluate(() => SS.input.yaw), pt0, pt1: await p.evaluate(() => SS.input.pitch) };
   // fire / scope / cover / reload via keys
   await p.keyboard.press('r'); await p.waitForFunction(() => SS.weapon.ammo === 30, null, { timeout: 30000 }).catch(() => {}); const a0 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); await p.keyboard.down('Space'); await p.waitForTimeout(700); await p.keyboard.up('Space'); const a1 = await p.evaluate(() => SS.weapon.ammo ?? SS.weapon.mag); res.fire = { a0, a1 };
   await p.keyboard.press('q'); await p.waitForTimeout(800); res.scopeFov = await p.evaluate(() => SS.camera.fov); await p.screenshot({ path: OUT + '/3-scoped.png' }); await p.keyboard.press('q');
@@ -26,6 +27,12 @@ const res = {};
   await p.evaluate(() => { SS.debug.spawnEnemy('popper'); SS.debug.spawnEnemy('shifter'); SS.debug.spawnEnemy('flanker'); }); await p.waitForTimeout(3000);
   res.enemyStop = await p.evaluate(() => SS.walking); await p.screenshot({ path: OUT + '/4-enemies.png' });
   await p.evaluate(() => SS.debug.killAll()); await p.waitForTimeout(1500); await p.screenshot({ path: OUT + '/5-ragdoll.png' }); await p.waitForFunction(() => SS.walking, null, { timeout: 20000 }).catch(() => {}); res.resumed = await p.evaluate(() => SS.walking);
+  // soft-lock: an enemy stuck inside a building must not hold the player; despawned within ~5 s and walking resumes
+  res.softlock = await p.evaluate(async () => { const e = SS.debug.spawnEnemy('shifter'); if (!e) return { spawned: false };
+    const pin = () => { e.group.position.set(12, 0, SS.camera.position.z - 20); e.goal = e.group.position.clone(); e.home.copy(e.goal); e.moveT = 99; e.exposed = true; };
+    pin(); const t0 = performance.now(); const d0 = SS.distance;
+    while (performance.now() - t0 < 9000 && e.alive) { if (e.alive) pin(); await new Promise(r => setTimeout(r, 100)); }
+    await new Promise(r => setTimeout(r, 1500)); return { spawned: true, despawned: !e.alive, secs: (performance.now() - t0) / 1000, walking: SS.walking, d0, d1: SS.distance }; });
   res.score = await p.evaluate(() => JSON.parse(JSON.stringify(SS.score && (SS.score.value ?? SS.score.score ?? SS.score))));
   // real progress: distance past 30 m, and shoot a real enemy dead (aim computed from its torso, Space held; no debug kill)
   res.shoot = await p.evaluate(async () => { const k0 = SS.scoreSys.state.kills; const e = SS.debug.spawnEnemy('flanker'); if (!e) return { k0, k1: k0, spawned: false };
@@ -35,7 +42,7 @@ const res = {};
       if (SS.weapon.ammo === 0) SS.input.reloadPressed = true; await new Promise(r => setTimeout(r, 30)); }
     SS.input.fire = false; return { k0, k1: SS.scoreSys.state.kills, spawned: true }; });
   await p.waitForFunction(() => SS.walking, null, { timeout: 25000 }).catch(() => {}); await p.waitForFunction(() => SS.distance > 30, null, { timeout: 20000 }).catch(() => {}); res.distance = await p.evaluate(() => SS.distance);
-  await p.evaluate(() => SS.debug.damage(1000)); await p.waitForTimeout(1500); res.over = await p.evaluate(() => { const o = document.querySelector('#over'); return !!o && getComputedStyle(o).display !== 'none'; });
+  await p.evaluate(() => SS.debug.damage(1000)); await p.waitForTimeout(500); { const f0 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); await p.waitForTimeout(1500); const f1 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); res.deathFreeze = { f0, f1 }; } res.over = await p.evaluate(() => { const o = document.querySelector('#over'); return !!o && getComputedStyle(o).display !== 'none'; });
   res.highscores = await p.evaluate(() => localStorage.getItem('ss-highscores')); await p.screenshot({ path: OUT + '/6-gameover.png' });
   // natural death: fresh run, real spawns, no input, no debug calls; standing still must get you killed (target 60-90 s)
   { const p2 = await ctx.newPage(); p2.on('pageerror', e => errs.push('p2: ' + e.message)); await p2.goto('http://127.0.0.1:8795/?seed=7'); await p2.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
@@ -50,6 +57,9 @@ const res = {};
   assert.equal(res.ammoAfterPlay, 30, 'Play tap fires no shots'); assert.ok(d1 > d0, 'walks'); assert.notEqual(res.aim.y1, y0, 'aim'); assert.ok(res.aim.pt1 < res.aim.pt0, 'drag up looks up (pitch decreases; camera.rotation.x=-pitch)'); assert.ok(a1 < a0, 'fires'); assert.ok(res.scopeFov < 60, 'scope'); assert.ok(res.coverY < 1.4, 'cover');
   assert.equal(res.enemyStop, false, 'stops for enemies'); assert.equal(res.resumed, true, 'resumes'); assert.ok(res.over, 'game over'); assert.ok(res.highscores, 'highscore saved');
   assert.ok(res.distance > 30, 'distance > 30 m'); assert.ok(res.shoot.spawned && res.shoot.k1 > res.shoot.k0, 'shot a real enemy dead'); assert.ok(res.naturalDeath != null, 'standing still gets you killed');
+  assert.equal(res.dragAmmo[0], res.dragAmmo[1], 'mouse drag never fires'); assert.equal(res.clickAmmo, res.dragAmmo[1] - 1, 'mouse click fires one shot');
+  assert.ok(res.softlock.spawned && res.softlock.despawned && res.softlock.walking && res.softlock.d1 > res.softlock.d0, 'soft-lock enemy inside building is cleared and walking resumes');
+  assert.deepEqual(res.deathFreeze.f0, res.deathFreeze.f1, 'death freezes walking/world');
   assert.ok(res.caches.some(k => k.startsWith('ss-')), 'ss- cache'); assert.ok(res.offline, 'offline'); assert.equal(res.ammoOverlap, false, 'ammo clear of buttons'); assert.equal(errs.length, 0, 'no page errors');
   console.log('M1 PASS');
  } finally { await b.close(); srv.close(); } })().catch(e => { console.error('M1 FAIL', e.message); process.exit(1); });
