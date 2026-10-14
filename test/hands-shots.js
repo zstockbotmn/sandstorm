@@ -7,7 +7,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 500000 });
   const errs = [], res = {};
   try { const p = await (await b.newContext({ viewport: { width: 640, height: 360 }, isMobile: true, hasTouch: true })).newPage(); p.on('pageerror', e => errs.push(e.message));
-    await p.goto('http://127.0.0.1:8800/?calm=1&seed=7' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+    await p.goto('http://127.0.0.1:8800/?calm=1&arms=1&seed=7' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.tap('#play'); await p.waitForTimeout(1200);
     await p.waitForTimeout(3000);
     res.arms = await p.evaluate(() => !!SS.arms);
