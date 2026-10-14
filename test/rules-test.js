@@ -24,7 +24,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     // pickups
     res.pick = await p.evaluate(async () => { SS.player.health = 40; SS.weapon.reserve = 30; const h0 = SS.player.health, r0 = SS.weapon.reserve; const c = SS.camera.position;
       SS.stakes.drop('health', c.clone().add(new SS.THREE.Vector3(1, 0, -6))); SS.stakes.drop('ammo', c.clone().add(new SS.THREE.Vector3(-1, 0, -6)));
-      for (let k = 0; k < 100 && SS.stakes.items.length; k++) await new Promise((r) => setTimeout(r, 200)); await new Promise((r) => setTimeout(r, 300)); // game-time based: slow swiftshader frames return { h0, h1: SS.player.health, r0, r1: SS.weapon.reserve, left: SS.stakes.items.length, pop: document.querySelectorAll('.ss-pickpop').length }; });
+      for (let k = 0; k < 100 && SS.stakes.items.length; k++) await new Promise((r) => setTimeout(r, 200)); await new Promise((r) => setTimeout(r, 300)); /* game-time based: slow swiftshader frames */ return { h0, h1: SS.player.health, r0, r1: SS.weapon.reserve, left: SS.stakes.items.length, pop: document.querySelectorAll('.ss-pickpop').length }; });
     res.hud = await p.evaluate(() => document.getElementById('ammo').textContent);
     const M = res.motion;
     if (M.maxVy > 0.5) fail.push('vertical speed ' + M.maxVy.toFixed(2) + ' m/s ' + JSON.stringify(M.vyAt));
