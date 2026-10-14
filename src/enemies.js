@@ -1091,7 +1091,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const dist = _fwd.length();
     if (dist <= 0.07) {
       p.copy(dest);
-      enemy.moving = false;
+      enemy.moving = false; enemy.curSpeed = 0;
       return true;
     }
     const horiz = Math.hypot(_fwd.x, _fwd.z);
@@ -1100,8 +1100,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.moveKind = lateral ? 'strafe' : climb ? 'walk' : 'run';
     if (!lateral && !climb && dist < 1.5) enemy.moveKind = 'walk';
     enemy.moving = true;
-    const step = Math.min(dist, speed * dt);
-    p.addScaledVector(_fwd.multiplyScalar(1 / dist), step);
+    // Human locomotion: accelerate ~7 m/s², brake into the last metre, no instant starts/stops (no sliding).
+    const prevV = enemy.curSpeed || 0;
+    const brake = Math.sqrt(2 * 6 * Math.max(0, dist - 0.05)) + 0.3;
+    const want = Math.min(speed, brake);
+    enemy.curSpeed = want > prevV ? Math.min(want, prevV + 7 * dt) : Math.max(want, prevV - 9 * dt);
+    const step = Math.min(dist, enemy.curSpeed * dt);
+    const dy = _fwd.y; _fwd.y = 0; const hd = Math.max(1e-4, horiz);
+    p.addScaledVector(_fwd.multiplyScalar(1 / hd), Math.min(hd, step));
+    p.y += Math.sign(dy) * Math.min(Math.abs(dy), 0.45 * dt); // vertical drift ≤0.45 m/s (stairs-free scene: no hops)
     if (p.y < 0) p.y = 0;
     if (horiz > 0.12) turnTo(enemy, dest.x, dest.z, 9);
     enemy.moveSpeed = step / Math.max(dt, 1e-4);
