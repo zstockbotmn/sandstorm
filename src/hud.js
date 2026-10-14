@@ -146,6 +146,10 @@ export function createHud() {
     }, 2000);
   }
 
+  const multEl = document.createElement('div'); multEl.id = 'mult'; root.appendChild(multEl);
+  function setMult(m, streak) { multEl.textContent = m > 1 ? 'x' + m + ' STREAK ' + streak : ''; multEl.classList.remove('pop'); if (m > 1) { void multEl.offsetWidth; multEl.classList.add('pop'); } }
+  const goalEl = document.createElement('div'); goalEl.id = 'goal'; root.appendChild(goalEl);
+  function setGoal(t) { if (goalEl.textContent !== t) goalEl.textContent = t; }
   function setScore(v) {
     score = v | 0;
     scoreEl.textContent = String(score);
@@ -185,6 +189,8 @@ export function createHud() {
     hint,
     setRemaining,
     onTarget,
+    setMult,
+    setGoal,
     setNext,
     setScope,
   };

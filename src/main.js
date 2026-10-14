@@ -8,6 +8,7 @@ import { createPlayer } from './player.js';
 import { createEnemies } from './enemies.js';
 import { createScore } from './score.js';
 import { createAudio } from './audio.js';
+import { createStakes } from './stakes.js';
 import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
@@ -58,6 +59,7 @@ const enemies = createEnemies(scene, camera, world, weapon, player);
 const audio = createAudio();
 const score = createScore(hud, audio);
 const cover = createCover(scene, camera, world, input);
+const stakes = createStakes(scene, camera, hud, player, weapon, score, audio);
 
 window.SS = {
   scene,
@@ -71,6 +73,7 @@ window.SS = {
   audio,
   scoreSys: score,
   cover,
+  stakes,
   walking: true,
   distance: 0,
   running: false,
@@ -146,6 +149,7 @@ function simStep(dt) {
   const step = dt || 0.016;
   player.update(step);
   if (!frozen) enemies.update(step);
+  if (!frozen && window.SS.running) stakes.update(step);
   weapon.update(dt, input.state);
   score.setDistance(window.SS.distance);
   audio.update(step);
@@ -250,7 +254,7 @@ function restartRun() {
   player.reset();
   enemies.reset();
   weapon.reset();
-  score.reset();
+  score.reset(); stakes.reset();
   input.yaw = 0;
   input.pitch = 0;
   input.fire = false; input.scope = false; input.pendingShots = 0; input.cover = false; hud.setScope(false);
@@ -326,7 +330,7 @@ art.onReady(() => {
     for (const n of ['prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart', 'bldg1', 'bldg2', 'bldg3', 'bldg4']) { const o = art.staticInstance(n); if (o) { o.scale.setScalar(0.001); tmp.add(o); } }
     tmp.traverse((o) => { o.frustumCulled = false; const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
       for (const m of ms) for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap']) if (m[k]) renderer.initTexture(m[k]); });
-    try { tmp.add(enemies.prewarmSet()); tmp.add(cover.prewarmMesh()); } catch (e) {}
+    try { tmp.add(enemies.prewarmSet()); tmp.add(cover.prewarmMesh()); tmp.add(stakes.prewarm()); } catch (e) {}
     // shadow-receive variants change the program too: add receive/cast twins of every prewarm mesh
     { const twins = []; tmp.traverse((o) => { if (o.isMesh && !o.isSkinnedMesh) { const t = o.clone(); t.receiveShadow = !o.receiveShadow; t.castShadow = true; twins.push(t); } }); for (const t of twins) tmp.add(t); }
     // compile hidden pooled objects too (muzzle flashes, tracers, box gun, blood): force visible for the compile only

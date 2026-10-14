@@ -26,6 +26,7 @@ export function createScore(hud, audio) {
     accuracy: 0,
     score: 0,
     ended: false,
+    killPts: 0, bonus: 0, streak: 0, mult: 1, lastKillT: 0,
   };
 
   function accuracyPct() {
@@ -34,7 +35,7 @@ export function createScore(hud, audio) {
   }
 
   function live() {
-    return Math.floor(state.distance) + state.kills * 100 + state.headshots * 50;
+    return Math.floor(state.distance) + Math.floor(state.killPts) + state.bonus; // kill points carry the streak multiplier
   }
 
   function publish() {
@@ -53,6 +54,7 @@ export function createScore(hud, audio) {
     state.accuracy = 0;
     state.score = 0;
     state.ended = false;
+    state.killPts = 0; state.bonus = 0; state.streak = 0; state.mult = 1; state.lastKillT = 0; showMult();
     publish();
   }
 
@@ -69,7 +71,14 @@ export function createScore(hud, audio) {
     state.shotsHit += 1;
   }
 
+  // Kill streak: x1 -> x1.5 at 2 kills, x2 at 4, x2.5 at 6, x3 at 8. Taking damage or 10 s without a kill resets it.
+  function showMult() { if (hud && hud.setMult) hud.setMult(state.mult, state.streak); if (window.SS) window.SS.mult = state.mult; }
+  function breakStreak() { if (state.streak) { state.streak = 0; state.mult = 1; showMult(); } }
+  function addBonus(n) { state.bonus += n | 0; publish(); }
   function addKill(headshot) {
+    const now = performance.now(); if (now - state.lastKillT > 10000) state.streak = 0; state.lastKillT = now;
+    state.streak += 1; state.mult = 1 + Math.min(4, Math.floor(state.streak / 2)) * 0.5; showMult();
+    state.killPts += (100 + (headshot ? 50 : 0)) * state.mult;
     state.kills += 1;
     if (headshot) {
       state.headshots += 1;
@@ -120,7 +129,7 @@ export function createScore(hud, audio) {
     setDistance,
     registerShot,
     registerHit,
-    addKill,
+    addKill, addBonus, breakStreak,
     finish,
     best,
     table: loadTable,

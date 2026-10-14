@@ -9,6 +9,7 @@ export function createPlayer(camera, input, hud) {
     if (!player.alive) return;
     const dmg = Math.max(0, amount || 0);
     player.health = Math.max(0, player.health - dmg);
+    if (dmg >= 20 && window.SS && window.SS.scoreSys && window.SS.scoreSys.breakStreak) window.SS.scoreSys.breakStreak();
     if (window.SS) window.SS.health = player.health;
     if (hud) {
       hud.setHealth(player.health);

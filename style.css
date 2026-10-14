@@ -421,3 +421,8 @@ canvas {
 #switch-cover.on { display: flex; }
 #controls #switch-cover button { min-width: 74px; min-height: 58px; font-size: 22px; padding: 4px; }
 #switch-cover span { width: 100%; text-align: center; font: 700 11px system-ui, sans-serif; letter-spacing: 0.08em; color: #f4efe4; text-shadow: 0 1px 2px #000; }
+
+#mult { position: fixed; left: calc(130px + env(safe-area-inset-left)); top: calc(30px + env(safe-area-inset-top)); font: 900 15px system-ui, sans-serif; color: #ffd23a; text-shadow: 0 1px 3px #000; pointer-events: none; }
+#mult.pop { animation: multpop 0.35s ease-out; }
+@keyframes multpop { 0% { transform: scale(1.6); } 100% { transform: scale(1); } }
+#goal { position: fixed; left: 50%; transform: translateX(-50%); top: calc(44px + env(safe-area-inset-top)); font: 700 12px system-ui, sans-serif; color: #f4efe4; text-shadow: 0 1px 2px #000; pointer-events: none; letter-spacing: 0.05em; }

@@ -570,6 +570,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (SSx.hud && SSx.hud.hitMarker) SSx.hud.hitMarker(part === 'head' ? 'headkill' : 'kill');
     if (SSx.audio && SSx.audio.kill) SSx.audio.kill();
     if (part === 'head') { const hp = (point || origin.clone().setY(origin.y + 1.6)); spray(hp); spray(hp); spray(hp); }
+    if (SSx.stakes && Math.random() < 0.28) SSx.stakes.drop(SSx.health < 65 ? 'health' : (Math.random() < 0.5 ? 'ammo' : 'health'), origin.clone());
     if (aliveCount() === 0) { SSx.slowmoUntil = performance.now() + 750; if (SSx.hud && SSx.hud.banner) setTimeout(() => {}, 0); }
   }
 
@@ -1081,8 +1082,28 @@ export function createEnemies(scene, camera, world, weapon, player) {
         scene.remove(n.m); nades.splice(i, 1); } }
   }
 
+  // Reinforcement truck: drives in from 70 m ahead, stops ~20 m out and unloads 2 fighters (part of this wave's fixed total).
+  let truck = null, truckPending = 0;
+  const truckBody = visMat(0x6b5a3a), truckCab = visMat(0x3c4a3a);
+  function startTruck() {
+    const g = new THREE.Group(); const side = Math.random() < 0.5 ? -1 : 1;
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.3, 3.6), truckBody); bed.position.set(0, 1.15, 1.0); bed.castShadow = true;
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.6, 1.6), truckCab); cab.position.set(0, 1.3, -1.7); cab.castShadow = true;
+    for (const [x, z] of [[-1, 1.8], [1, 1.8], [-1, -1.6], [1, -1.6]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10), truckCab); w.rotation.z = Math.PI / 2; w.position.set(x, 0.42, z); g.add(w); }
+    g.add(bed, cab); g.position.set(side * 2.6, 0, camera.position.z - 70); scene.add(g);
+    truck = { g, stopZ: camera.position.z - 20, unloaded: false, t: 0 }; truckPending = 2; squadCall('Truck inbound!');
+    if (window.SS) { window.SS.trucks = (window.SS.trucks | 0) + 1; if (window.SS.hud && window.SS.hud.banner) window.SS.hud.banner('REINFORCEMENTS'); }
+  }
+  function updateTruck(dt) {
+    if (!truck) return; truck.t += dt;
+    if (!truck.unloaded) { truck.g.position.z = Math.min(truck.stopZ, truck.g.position.z + 9 * dt);
+      if (truck.g.position.z >= truck.stopZ - 0.01) { truck.unloaded = true;
+        for (let k = 0; k < 2; k++) { const e = spawnOne('shifter'); truckPending -= 1; if (e) { e.group.position.set(truck.g.position.x - Math.sign(truck.g.position.x) * 1.4, 0, truck.g.position.z + 2 + k); e.engaged = waveActive; } } truckPending = 0; } }
+    else if (truck.t > 40 || (!waveActive && truck.g.position.z > camera.position.z - 5)) { scene.remove(truck.g); truck = null; }
+  }
+
   function update(dt) {
-    updateGrenades(dt);
+    updateGrenades(dt); updateTruck(dt);
     const diff = difficulty();
     phaseT -= dt;
     const alive = aliveCount();
@@ -1100,7 +1121,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
         // Soften wave 2 / early bursts: fewer simultaneous enemies
         const early = burstIndex <= 2 || (window.SS && window.SS.distance < 120);
         // Tester: 2-3 enemies per wave; the last one of a 3-wave (or 1 in 2 of 2-waves) is a visible flanker.
-        burstCap = early ? 2 : (Math.random() < 0.35 + diff * 0.4 ? 3 : 2);
+        // Step D: escalating waves (2, 2, 3, 3, then 3-4) + a reinforcement truck (+2) every 4th wave.
+        burstCap = burstIndex <= 2 ? 2 : burstIndex <= 4 ? 3 : (Math.random() < 0.5 ? 4 : 3);
+        if (burstIndex >= 4 && burstIndex % 4 === 0) startTruck();
         burstSpawned = 0; roofWave = Math.random() < 0.5;
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;
@@ -1124,7 +1147,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const made = spawnOne(flankSlot ? 'flanker' : roofSlot ? 'roof' : (phase === 'burst' && burstSpawned === 0 ? 'shifter' : undefined)) || ((flankSlot || roofSlot) ? spawnOne() : null);
       if (made && roofSlot && made.anchor && made.anchor.type === 'roof') { squadCall('Rooftop!'); if (window.SS) window.SS.roofShooters = (window.SS.roofShooters | 0) + 1; }
       if (made && phase === 'burst') burstSpawned++;
-      if (made && (window.SS.engaged > 0 || waveActive)) window.SS.spawnsWhileEngaged = (window.SS.spawnsWhileEngaged | 0) + 1; // must stay 0 (no reinforcements)
+      if (made && (window.SS.engaged > 0 || waveActive) && !made.fromTruck) window.SS.spawnsWhileEngaged = (window.SS.spawnsWhileEngaged | 0) + 1; // must stay 0 (no reinforcements)
       spawnCd = made ? 2.2 : 0.6;
     }
 
@@ -1193,11 +1216,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
 
     if (hold) waveActive = true;
-    if (waveActive && aliveCount() === 0) waveActive = false; // clear only when every wave member is dead
+    if (waveActive && aliveCount() === 0 && truckPending === 0) waveActive = false; // clear only when every wave member (incl. truck) is dead
     if (waveActive) hold = true;
     if (running) window.SS.walking = !hold; // halt from first engage until the last engaged enemy is KILLED
     // Stable ENEMIES counter: rises only when newly engaged appear, falls on engaged deaths (no silent mid-fight bumps from unengaged spawns).
-    displayEngaged = aliveCount(); // total remaining in the wave
+    displayEngaged = aliveCount() + truckPending; // total remaining in the wave (incl. truck still driving in)
     if (!hold) displayEngaged = 0;
     if (running && prevHold && !hold && window.SS.hud && window.SS.hud.banner) {
       waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED');
@@ -1253,6 +1276,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function reset() {
+    if (truck) { scene.remove(truck.g); truck = null; } truckPending = 0;
     for (const n of nades) scene.remove(n.m); nades.length = 0; nadeThisWave = false; campT = 0;
     for (let i = list.length - 1; i >= 0; i--) despawn(list[i]);
     list.length = 0;
