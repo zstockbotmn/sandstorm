@@ -182,6 +182,7 @@ function frame(now) {
   try { for (let i = 0; i < steps; i++) simStep(dt * slow); }
   catch (err) { // never freeze HUD/render on a sim error; report once per message
     const k = String(err && err.message); if (!frameErrs.has(k)) { frameErrs.add(k); console.error('[sandstorm] sim step failed:', err && (err.stack || err)); (window.SS.errors = window.SS.errors || []).push('sim:' + k); } }
+  { const sw = document.getElementById('switch-cover'); if (sw) sw.classList.toggle('on', cover.state !== 'none' && player.alive && window.SS.running); }
   hud.onTarget(weapon.onTarget); hud.setScope(!!input.scope && player.alive && window.SS.running);
   hud.update({
     distance: window.SS.distance,

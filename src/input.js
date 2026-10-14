@@ -49,7 +49,11 @@ export function createInput(canvas) {
     b.textContent = name.toUpperCase();
     controls.appendChild(b);
     buttons[name] = b;
-  }
+  }  // SWITCH COVER (Zack): right side, above the ammo counter; two halves = next cover left / right. Shown only in cover.
+  { const sw = document.createElement('div'); sw.id = 'switch-cover';
+    for (const [ctl, label] of [['coverL', '\u25C0'], ['coverR', '\u25B6']]) { const b = document.createElement('button'); b.type = 'button'; b.dataset.ctl = ctl; b.textContent = label; sw.appendChild(b); buttons[ctl] = b; }
+    const cap = document.createElement('span'); cap.textContent = 'SWITCH COVER'; sw.appendChild(cap); controls.appendChild(sw); }
+
   document.body.appendChild(controls);
 
   let pressTimer = 0;
@@ -123,6 +127,7 @@ export function createInput(canvas) {
     if (name === 'fire') { fireBtn = true; fireShots0 = window.SS && window.SS.weapon ? window.SS.weapon.shotsFired : 0; input.pendingShots = Math.min(8, (input.pendingShots | 0) + 1); } // every touch = one queued shot (fire rate respected by the weapon)
     else if (name === 'scope') input.scope = !input.scope; // tap-to-toggle: pop out of cover / duck back
     else if (name === 'reload') input.reloadPressed = true;
+    else if (name === 'coverL' || name === 'coverR') { const cv = window.SS && window.SS.cover; if (cv && cv.relocate) cv.relocate(name === 'coverL' ? -1 : 1, 'switch'); }
     sync();
   });
 
