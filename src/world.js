@@ -130,9 +130,21 @@ export function createWorld(scene, seed) {
   function boxAt(sx, sy, sz, x, y, z, tile) { const g = worldBox(sx, sy, sz, tile); g.translate(x, y, z); return g; }
   // Shell: sides, back and roof of a Meshy building get a textured box just inside the street facade, so no face shows
   // the smeared Meshy back texture from any angle. Height stops under the roof-shooter spot.
-  function addShell(seg, _rng, side, box, roof) {
+  function addShell(seg, _rng, side, box, roof, shellModel) {
     const rng = mulberry32(((box.min.z * 977) | 0) ^ (side * 0x5bd1e995) ^ seed);
-    const front = side < 0 ? box.max.x - 0.35 : box.min.x + 0.35;
+    // Real wall plane: bbox front includes awnings/balconies, so raycast into the model from the street and sit the
+    // shell front behind the deepest common wall hit (90th percentile), capped at 45% of the depth.
+    const fx0 = side < 0 ? box.max.x : box.min.x, depthAll = box.max.x - box.min.x, hits = [];
+    const dir = new THREE.Vector3(side, 0, 0);
+    for (const y of [1.2, 2.4, 3.8, 5.5]) for (let k = 0; k < 7; k++) {
+      const z = box.min.z + (0.12 + 0.76 * k / 6) * (box.max.z - box.min.z);
+      _rc.set(new THREE.Vector3(fx0 - side * 0.5, Math.min(y, box.max.y - 0.3), z), dir); _rc.far = depthAll + 1;
+      const h = _rc.intersectObject(shellModel, true)[0]; if (h) hits.push(Math.abs(h.point.x - fx0));
+    }
+    hits.sort((p, q) => p - q);
+    const wallD = hits.length ? hits[Math.min(hits.length - 1, Math.floor(hits.length * 0.9))] : 0.6;
+    const inset = Math.min(depthAll * 0.45, wallD + 0.3);
+    const front = fx0 + side * inset;
     const back = side < 0 ? box.min.x - 0.06 : box.max.x + 0.06;
     const top = roof ? Math.min(box.max.y, roof.y - 0.25) : box.max.y * 0.985;
     const sx = Math.abs(front - back), sz = box.max.z - box.min.z + 0.12;
@@ -366,8 +378,8 @@ export function createWorld(scene, seed) {
       // Real roof only: raycast down onto the model just behind the facade; need a flat hit (normal.y > 0.8) near the top.
       const roof = findRoof(model, box, side, facadeX, cz);
       if (roof) seg.coverPoints.push({ pos: roof, type: 'roof' });
-      addShell(seg, rng, side, box, roof);
-    } else addShell(seg, rng, side, box, null);
+      addShell(seg, rng, side, box, roof, model);
+    } else addShell(seg, rng, side, box, null, model);
     maybeFrontWall(seg, rng, side, cz, lot);
   }
 
