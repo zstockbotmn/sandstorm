@@ -1,6 +1,6 @@
 const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.search); // tests: no auto spawns
 import * as THREE from 'three';
-import { art } from './art.js';
+import { art, SPLIT_ANIMS } from './art.js';
 import { createRagdollSystem } from './ragdoll.js';
 
 const BODY_DMG = 55;
@@ -395,6 +395,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const next = enemy.actions[name];
       if (next && enemy.currentAction !== next) crossTo(enemy, next, 0.2);
     }
+    if (enemy.actions.upper) enemy.actions.upper.setEffectiveWeight(SPLIT_ANIMS.has(name) ? 1 : 0); // stance arms only under legs-only clips
     enemy.mixer.update(dt);
     proceduralLean(enemy, name, dt);
     if (enemy.hitPlaying && !enemy.actions.hit.enabled) {

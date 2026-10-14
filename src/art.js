@@ -114,7 +114,11 @@ function bakeClips(animations) {
 // so their arm/spine/head tracks twist on the Meshy rigs. Locomotion keeps only Quaternius hips+legs; the upper body
 // plays the Meshy rig's own Combat_Stance (authored on this skeleton, rifle held) as a separate always-on layer.
 const UPPER_RE = /(Spine|neck|Neck|Head|Shoulder|Arm|Hand)/;
-const LOWER_ONLY = ['idle', 'walk', 'run', 'jog', 'crouch', 'crouchIdle', 'aim', 'lean', 'strafe'];
+// Meshy's own clips (authored on these rigs, rifle held) drive idle/aim/walk/strafe/run/hit full-body; only the
+// Quaternius clips with no Meshy equivalent (crouch, crouchIdle, lean) keep the legs-only + Combat_Stance upper split.
+const LOWER_ONLY = ['crouch', 'crouchIdle', 'lean'];
+const NATIVE = { idle: 'idle', aim: 'idle', run: 'run', jog: 'run', strafe: 'strafe', walk: 'run', hit: 'hit', hitHead: 'hit' };
+export const SPLIT_ANIMS = new Set(LOWER_ONLY);
 function splitUpper(meshyStance) {
   const up = meshyStance.tracks.filter((t) => UPPER_RE.test(t.name.split('.')[0].split('/').pop()));
   if (!up.length) return;
@@ -142,7 +146,10 @@ function adopt(name, gltf) {
   fixObject(gltf.scene);
   if (name === 'fighter.quaternius.anim' || name === 'fighter1.anim') {
     const baked = bakeClips(gltf.animations || []);
-    if (name === 'fighter1.anim' && clips && clips !== baked && baked.idle) splitUpper(baked.idle);
+    if (name === 'fighter1.anim' && clips && clips !== baked && baked.idle) {
+      for (const k in NATIVE) if (baked[NATIVE[k]]) clips[k] = baked[NATIVE[k]];
+      splitUpper(baked.idle);
+    }
     else if (clipsUsable(baked)) clips = baked;
   }
   assets[name] = gltf.scene;
