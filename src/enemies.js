@@ -968,10 +968,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const home = enemy.home;
     const zOff = (Math.random() < 0.5 ? -1 : 1) * (2.0 + Math.random() * 1.4);
     if (isElevated(type)) {
-      const start = groundPoint(home.x, home.z + zOff);
-      const atDoor = groundPoint(home.x, home.z);
+      // Already up there (Zack: no facade climbing / vertical hops): roof shooters step out along the parapet from a
+      // roof door ~1 m away at roof height; window shooters appear in the opening.
+      const start = type === 'roof' ? home.clone().setZ(home.z + Math.sign(zOff) * 1.0) : home.clone();
       enemy.phase = 'approach';
-      enemy.path = [atDoor, home.clone()];
+      enemy.path = [home.clone()];
       enemy.group.position.copy(start);
     } else if (type === 'door' || type === 'alley') {
       const start = groundPoint(home.x, home.z + zOff);
@@ -1039,6 +1040,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const pts = [];
     if (here.y > 0.45) pts.push(groundPoint(here.x, here.z));
     const elev = isElevated(anchor.type);
+    if (elev && here.y < 0.45) return [groundPoint(home.x, home.z)]; // never climb a facade from the street
     const at = elev ? groundPoint(home.x, home.z) : (anchor.type === 'door' || anchor.type === 'alley' ? home.clone().setY(0) : tuckOf(home, anchor));
     pts.push(at);
     if (elev) pts.push(home);
@@ -1047,6 +1049,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function startRelocate(enemy) {
     const elevated = isElevated(enemy.anchor.type);
+    if (elevated) { enterCover(enemy); return; } // elevated shooters hold their spot (relocating meant climbing down/up a facade)
     const types = elevated ? ['window', 'roof', 'door'] : ['wall', 'barrel', 'car', 'door'];
     const pool = coverPool(types);
     let best = null;
@@ -1400,6 +1403,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (e.art) stepArt(e, dt);
       try { updateEnemy(e, dt * tempo, diff); }
       catch (err) { reportErr('enemy update', err); despawn(e); list.splice(i, 1); continue; } // a broken enemy is removed, never freezes the fight
+      // Ground snap + gravity for street fighters (no floating, no hops): y eases down at up to 6 m/s, never below 0.
+      if (!(e.anchor && isElevated(e.anchor.type)) && !e.pinned) { const gp = e.group.position; if (gp.y > 0) gp.y = Math.max(0, gp.y - 6 * dt); else gp.y = 0; }
       if (e.art) { try { footIK(e, dt); } catch (err) { e.legs = []; reportErr('foot ik', err); } syncArt(e); } // IK after the body moved this frame
       if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 7;
       const dx = e.group.position.x - camera.position.x;
