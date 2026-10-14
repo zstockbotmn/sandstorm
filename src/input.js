@@ -26,8 +26,15 @@ export function createInput(canvas) {
   const kia = () => !!(window.SS && window.SS.player && window.SS.player.alive === false);
   input.applyAim = function applyAim(dt) {
     if (kia()) { aimDX = aimDY = 0; input.pendingShots = 0; input.fire = false; return; }
+    const now = performance.now();
+    const rdt = Math.min(0.25, Math.max(0, (now - (input._aimT || now)) / 1000)); input._aimT = now;
     if (!aimDX && !aimDY) return;
-    const ax = aimDX, ay = aimDY; // immediate
+    // FPS-independent: queued deltas drain on a real-time exponential (tau 35 ms), so aim speed is the same at 10 or 60 fps
+    // and no input is dropped; tiny remainders snap so the queue empties.
+    const f = 1 - Math.exp(-rdt / 0.035);
+    let ax = aimDX * f, ay = aimDY * f;
+    if (Math.abs(aimDX - ax) < 1e-4) ax = aimDX;
+    if (Math.abs(aimDY - ay) < 1e-4) ay = aimDY;
     aimDX -= ax; aimDY -= ay;
     input.yaw = clamp(input.yaw + ax, -YAW_LIMIT, YAW_LIMIT);
     input.pitch = clamp(input.pitch + ay, -PITCH_LIMIT, PITCH_LIMIT);
@@ -57,7 +64,7 @@ export function createInput(canvas) {
   document.body.appendChild(controls);
 
   let pressTimer = 0;
-  input.resetState = function resetState() { input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; fireBtn = fireKey = fireMouse = false; sync(); };
+  input.resetState = function resetState() { aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; fireBtn = fireKey = fireMouse = false; sync(); };
   function sync() {
     input.fire = fireBtn || fireKey || fireMouse;
     buttons.scope.classList.toggle('on', input.scope);

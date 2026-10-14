@@ -257,6 +257,38 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return 'run';
   }
 
+  // Procedural spine lean (no CC0 rifle-lean clip exists): roll the spine about the body's forward axis toward
+  // the street when peeking, plus a slight forward hunch while aiming. Applied after the mixer, weight eased.
+  const _lnAxis = new THREE.Vector3(), _lnQ = new THREE.Quaternion(), _lnP = new THREE.Quaternion();
+  function bendBone(bone, worldAxis, ang) {
+    if (!bone || !bone.parent || !ang) return;
+    bone.parent.getWorldQuaternion(_lnP).invert();
+    _lnAxis.copy(worldAxis).applyQuaternion(_lnP).normalize();
+    bone.quaternion.premultiply(_lnQ.setFromAxisAngle(_lnAxis, ang));
+  }
+  const _fwdW = new THREE.Vector3(), _rightW = new THREE.Vector3();
+  function proceduralLean(enemy, name, dt) {
+    const b = enemy.bones; if (!b || enemy.dying) { enemy.leanW = 0; return; }
+    const tgtRoll = name === 'lean' ? 1 : 0;
+    const tgtHunch = (name === 'aim' || name === 'lean') ? 1 : 0;
+    const k = Math.min(1, dt * 6);
+    enemy.leanW = (enemy.leanW || 0) + (tgtRoll - (enemy.leanW || 0)) * k;
+    enemy.hunchW = (enemy.hunchW || 0) + (tgtHunch - (enemy.hunchW || 0)) * k;
+    if (enemy.leanW < 0.01 && enemy.hunchW < 0.01) return;
+    const g = enemy.group;
+    _fwdW.set(0, 0, 1).applyQuaternion(g.quaternion);
+    _rightW.set(1, 0, 0).applyQuaternion(g.quaternion);
+    // Lean toward the street centre (x = 0) from whichever side the fighter is on.
+    const side = g.position.x > 0 ? 1 : -1;
+    const roll = 0.32 * enemy.leanW * side * (_rightW.x >= 0 ? 1 : -1);
+    const hunch = 0.12 * enemy.hunchW;
+    g.updateMatrixWorld(true);
+    bendBone(b.Spine01 || b.Spine, _fwdW, roll * 0.5);
+    bendBone(b.Spine01 || b.Spine, _rightW, hunch * 0.5);
+    if (b.Spine && b.Spine01) { b.Spine01.updateMatrixWorld(true); bendBone(b.Spine, _fwdW, roll * 0.5); bendBone(b.Spine, _rightW, hunch * 0.5); }
+    if (b.Head) bendBone(b.Head, _fwdW, -roll * 0.4);
+  }
+
   // Clip ground speeds (m/s) for stride matching: playback rate follows real speed so feet don't slide.
   const STRIDE = { walk: 1.4, jog: 3.0, run: 5.2, crouch: 1.1, strafe: 1.4 };
   function stepArt(enemy, dt) {
@@ -283,6 +315,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (next && enemy.currentAction !== next) crossTo(enemy, next, 0.2);
     }
     enemy.mixer.update(dt);
+    proceduralLean(enemy, name, dt);
     if (enemy.hitPlaying && !enemy.actions.hit.enabled) {
       enemy.hitPlaying = false;
       enemy.hitReturning = false;
