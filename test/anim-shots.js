@@ -1,16 +1,16 @@
-// Foot IK / locking and hit-to-ragdoll sequences. Serves dist/ on :8791.
+// Foot IK / locking and hit-to-ragdoll sequences. Serves dist/ on :8785.
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const D = path.resolve(__dirname, '../dist'), OUT = path.resolve(__dirname, '../screenshots/anim');
 fs.mkdirSync(OUT, { recursive: true });
 const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.hdr': 'application/octet-stream', '.json': 'application/json' };
 const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
-  fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(8791);
+  fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(8785);
 const res = {};
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: +(process.env.SS_TIMEOUT_MS || 480000) });
  try {
   const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
   const p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('http://127.0.0.1:8791/?calm=1&seed=7' + (process.env.SS_QS || ''));
+  await p.goto('http://127.0.0.1:8785/?calm=1&seed=7' + (process.env.SS_QS || ''));
   await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
   await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 60000 });
   await p.tap('#play'); await p.waitForTimeout(2500);
