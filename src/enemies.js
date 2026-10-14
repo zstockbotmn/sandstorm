@@ -358,7 +358,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
       else L.lock = null;
       if (L.lock && L.lock.distanceTo(_ikF.clone().setY(ground)) > 0.32) L.lock = null; // stride too long: release
       _ikT.copy(L.lock || _ikF); if (_ikT.y < ground) _ikT.y = ground; // never through the ground
-      if (_ikT.distanceToSquared(_ikF) > 1e-6) { twoBone(L.up, L.knee, L.foot, _ikT); twoBone(L.up, L.knee, L.foot, _ikT); }
+      if (_ikT.distanceToSquared(_ikF) > 1e-6) {
+        const d0 = _ikT.distanceTo(_ikF), qu = L.up.quaternion.clone(), qk = L.knee.quaternion.clone();
+        twoBone(L.up, L.knee, L.foot, _ikT); twoBone(L.up, L.knee, L.foot, _ikT);
+        L.foot.getWorldPosition(_ikF);
+        // a solve that made things worse (or lifted the foot) is discarded: the clip pose + pelvis drop is the fallback
+        if (_ikF.distanceTo(_ikT) > Math.min(d0, 0.05) || _ikF.y > ground + 0.06) { L.up.quaternion.copy(qu); L.knee.quaternion.copy(qk); L.up.updateMatrixWorld(true); L.lock = null; enemy.ikRejects = (enemy.ikRejects | 0) + 1; }
+      }
       L.foot.getWorldPosition(_ikF); enemy.ikEnd = i ? Math.min(enemy.ikEnd, _ikF.y) : _ikF.y; out[i] = { err: +_ikF.distanceTo(_ikT).toFixed(3), tx: +_ikT.x.toFixed(2), ty: +_ikT.y.toFixed(2), locked: !!L.lock, x: +_ikF.x.toFixed(3), y: +_ikF.y.toFixed(3), z: +_ikF.z.toFixed(3) };
     }
   }
