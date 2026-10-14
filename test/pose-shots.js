@@ -11,11 +11,10 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     await p.tap('#play'); await p.waitForTimeout(1200);
     res.clips = await p.evaluate(() => { SS.walking = false; const e = SS.debug.spawnEnemy('shifter'); window.__e = e; const c = SS.camera.position; SS.enemies.debugPose(e, c.x + 0.6, c.z - 4.2, 'idle'); e.debugVel = null;
       document.querySelectorAll('#hud, .hud, #controls').forEach((x) => x.style.visibility = 'hidden'); return Object.keys(e.actions); });
+    await p.waitForTimeout(12000); res.cam = await p.evaluate(() => ({ y: +SS.camera.position.y.toFixed(2), cover: SS.input.cover, state: SS.cover && SS.cover.state })); // let auto-cover settle so the camera isn't ducked below the fighter
     for (const clip of ['idle', 'aim', 'walk', 'run', 'strafe', 'crouch', 'crouchIdle', 'lean']) { if (!res.clips.includes(clip)) continue;
       for (const yaw of [0, 0.8]) { await p.evaluate(([clip, yaw]) => { const e = window.__e; e.forceAnim = clip; e.group.rotation.y = Math.atan2(SS.camera.position.x - e.group.position.x, SS.camera.position.z - e.group.position.z) + yaw; e.turned = true; }, [clip, yaw]);
         await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/' + clip + (yaw ? '-34' : '-front') + '.png' }); } }
-    if (process.env.SS_PROBE) { for (const np of [1, 0]) for (const clip of ['idle', 'run', 'strafe', 'crouch', 'idle']) { await p.evaluate(([clip, np]) => { window.SS_NOPROC = !!np; const e = window.__e; e.forceAnim = clip; e.group.rotation.y = Math.atan2(SS.camera.position.x - e.group.position.x, SS.camera.position.z - e.group.position.z); }, [clip, np]);
-      await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/probe-' + np + '-' + clip + '-' + Date.now() % 100000 + '.png' }); } }
     // head look-at: player moves left/right of the enemy, head follows within limits
     await p.evaluate(() => { window.__e.forceAnim = 'idle'; }); for (const dx of [-2.5, 2.5]) { await p.evaluate((dx) => { SS.camera.position.x += dx; }, dx); await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/look-' + (dx < 0 ? 'left' : 'right') + '.png' }); await p.evaluate((dx) => { SS.camera.position.x -= dx; }, dx); }
     // truck close-up
