@@ -1,0 +1,68 @@
+// Hit registration: crosshair-on-enemy shots must hit at 10/20/40 m, front/behind/sides, standing/crouched/leaning, hip (ducked) and scoped. Serves dist/ on :8793.
+const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
+const D = path.resolve(__dirname, '../dist'), OUT = path.resolve(__dirname, '../screenshots/hit');
+fs.mkdirSync(OUT, { recursive: true });
+const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.hdr': 'application/octet-stream', '.json': 'application/json' };
+const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
+  fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(8793);
+const res = {};
+(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: +(process.env.SS_TIMEOUT_MS || 480000) });
+  const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  const p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://127.0.0.1:8793/?calm=1&seed=7&hitbox=1' + (process.env.SS_QS || ''));
+  await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
+  await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 60000 });
+  await p.tap('#play');
+  await p.waitForTimeout(2500);
+  res.tier = await p.evaluate(() => SS.art.tier);
+  const cases = [];
+  for (const [dir, ang] of [['front', 0], ['behind', Math.PI], ['left', -Math.PI / 2], ['right', Math.PI / 2], ['back-left', -2.4], ['front-right', 0.6]])
+    for (const d of (dir === 'left' || dir === 'right' ? [4.5] : dir.includes('-') ? [5.5] : [10, 20, 40]))
+      for (const posture of ['idle', 'crouch', 'lean'])
+        for (const mode of ['hip', 'scoped']) cases.push({ dir, ang, d, posture, mode });
+  res.cases = []; let fails = 0;
+  for (const c of cases) {
+    const r = await p.evaluate(async (c) => {
+      const wait = (ms) => new Promise((ok) => setTimeout(ok, ms)); const frames = (n) => new Promise((ok) => { let k = 0; const f = () => (++k >= n ? ok() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+      SS.player.health = 100; if (SS.health != null) SS.health = 100;
+      (SS.enemies.list || []).forEach((x) => { if (x.pinned && x.alive) { x.health = 0.01; x.takeHit('body', x.group.position.clone()); } });
+      await wait(150);
+      const cam = SS.camera.position;
+      // direction 0 = street ahead (-z), PI = behind (+z), -PI/2 = left (-x)
+      const x = cam.x + Math.sin(c.ang) * c.d, z = cam.z - Math.cos(c.ang) * c.d;
+      const e = SS.debug.spawnEnemy('popper'); if (!e) return { err: 'no spawn' };
+      SS.enemies.debugPose(e, Math.max(-5.2, Math.min(5.2, x)), z, c.posture);
+      e.health = 1e6;
+      SS.input.scope = c.mode === 'scoped'; await frames(c.mode === 'scoped' ? 30 : 6); await wait(250);
+      const out = [];
+      for (const part of ['torso', 'head', 'legs']) {
+        if (part === 'legs' && (c.d > 20 && c.mode === 'hip')) continue;
+        if (part === 'head' && c.d > 20 && c.mode === 'hip') continue;
+        const tgt = part === 'legs' ? (e.limbBoxes && e.limbBoxes[0] ? e.limbBoxes[0].m : null) : e.parts[part];
+        if (!tgt) { out.push({ part, skip: true }); continue; }
+        // aim the real camera (input.yaw/pitch) at the hitbox centre
+        for (let k = 0; k < 3; k++) {
+          SS.camera.updateMatrixWorld(); const tp = tgt.getWorldPosition(new SS.THREE.Vector3()); const cp = SS.camera.getWorldPosition(new SS.THREE.Vector3());
+          const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
+          SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len); SS.weapon.cancelRecoil(); await frames(2);
+        }
+        const shot = SS.weapon.debugShoot(SS.input);
+        const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(e.group.position.clone().setY(shot.hit.point.y)) < 1.2);
+        out.push({ part, ok, hit: shot && shot.hit ? (shot.hit.enemy ? 'enemy:' + shot.hit.part : 'world:' + shot.hit.name) : 'none', cover: SS.input.cover });
+      }
+      e.pinned = false; e.health = 1; e.takeHit('body', e.group.position.clone());
+      SS.input.scope = false;
+      return { out };
+    }, c);
+    const bad = (r.out || []).filter((o) => !o.skip && !o.ok);
+    if (r.err || bad.length) fails++;
+    res.cases.push({ ...c, ang: undefined, ...r });
+    if (c.dir === 'behind' && c.d === 20 && c.posture === 'lean') await p.screenshot({ path: OUT + '/behind-20-lean-' + c.mode + '.png' });
+    if (c.dir === 'front' && c.d === 10 && c.posture === 'crouch' && c.mode === 'hip') await p.screenshot({ path: OUT + '/front-10-crouch-hip.png' });
+  }
+  res.fails = fails; res.total = cases.length; res.errors = errs;
+  console.log(JSON.stringify(res.cases.filter((c) => c.err || (c.out || []).some((o) => !o.skip && !o.ok))));
+  console.log('cases', cases.length, 'fails', fails, 'errors', errs.length);
+  if (fails || errs.length) throw new Error(fails + ' failing cases');
+  console.log('HIT TEST PASS');
+ } finally { await b.close(); srv.close(); } })().catch(e => { console.error('HIT TEST FAIL', e.message); process.exit(1); });

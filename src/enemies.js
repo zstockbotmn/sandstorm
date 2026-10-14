@@ -122,6 +122,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const t = new THREE.CanvasTexture(c); return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, sizeAttenuation: false }); })();
   // Hitboxes stay mesh.visible so shots connect; this material is what hides them.
   const ghostMat = new THREE.MeshBasicMaterial({ visible: false });
+  // ?hitbox: debug overlay draws enemy hitboxes (wireframe, through walls).
+  if (/[?&]hitbox/.test(location.search)) Object.assign(ghostMat, { visible: true, wireframe: true, color: new THREE.Color(0x00ff66), depthTest: false, transparent: true, opacity: 0.8 });
   let fighterCursor = 0;
   const capsule = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 6);
   const geoTorso = capsule(0.17 * S, 0.42 * S);
@@ -183,6 +185,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   const list = [];
   const api = { list, update };
+  // Test hook: pin an enemy at (x, z) facing the camera in a posture, AI frozen (stagger), for hit-registration tests.
+  api.debugPose = (e, x, z, posture) => { e.pinned = true; e.group.position.set(x, 0, z); e.staggerT = 1e9; e.moving = false; e.exposed = true; e.posture = posture || 'idle'; e.phase = 'peek'; e.turned = false;
+    turnTo(e, camera.position.x, camera.position.z, 100); e.shootCd = 1e9; return e; };
 
   let phase = 'quiet';
   let phaseT = 2.5;
@@ -339,6 +344,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.hitReturning = false;
   }
 
+  const hitBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+  const _hY = new THREE.Vector3(0, 1, 0), _hD = new THREE.Vector3(), _hQ = new THREE.Quaternion(), _gQi = new THREE.Quaternion();
+  // Place a unit box between two world points (group-local), oriented along the segment.
+  function boxBetween(group, m, pa, pb, w) {
+    group.worldToLocal(_wA.copy(pa)); group.worldToLocal(_wB.copy(pb));
+    _hD.subVectors(_wB, _wA); const len = Math.max(0.05, _hD.length());
+    m.position.addVectors(_wA, _wB).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(_hY, _hD.multiplyScalar(1 / len));
+    m.scale.set(w, len + w * 0.5, w);
+  }
+  const _pA = new THREE.Vector3(), _pB = new THREE.Vector3();
   function syncArt(enemy) {
     const group = enemy.group;
     const bones = enemy.bones;
@@ -352,11 +368,18 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.parts.head.position.copy(_wA);
     }
     if (bones.Spine && bones.Hips) {
-      bones.Spine.getWorldPosition(_wA);
-      bones.Hips.getWorldPosition(_wB);
-      _wA.add(_wB).multiplyScalar(0.5);
-      group.worldToLocal(_wA);
-      enemy.parts.torso.position.copy(_wA);
+      // Torso capsule spans hips -> upper spine and tilts with crouch / lean / procedural spine roll.
+      const top = enemy.spineTop || bones.Spine;
+      bones.Hips.getWorldPosition(_pA); top.getWorldPosition(_pB);
+      const t = enemy.parts.torso;
+      group.worldToLocal(_wA.copy(_pA)); group.worldToLocal(_wB.copy(_pB));
+      t.position.addVectors(_wA, _wB).multiplyScalar(0.5);
+      _hD.subVectors(_wB, _wA); const len = _hD.length();
+      if (len > 0.05) t.quaternion.setFromUnitVectors(_hY, _hD.multiplyScalar(1 / len));
+    }
+    if (enemy.limbBoxes) for (let i = 0; i < enemy.limbBoxes.length; i++) {
+      const L = enemy.limbBoxes[i]; L.ba.getWorldPosition(_pA); L.bb.getWorldPosition(_pB);
+      boxBetween(group, L.m, _pA, _pB, L.m.userData.w / Math.max(1e-3, group.scale.x));
     }
     group.updateMatrixWorld(true);
   }
@@ -396,6 +419,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     hideKids(head);
     hideKids(torso);
     for (let i = 0; i < extras.length; i++) extras[i].visible = false;
+    // Limb hitboxes that follow the animated skeleton (thighs, shins, upper arms, forearms). Without them shots at
+    // legs/arms - and at anything the vertical torso capsule didn't cover in a crouch or lean - were false misses.
+    enemy.limbBoxes = [];
+    const LIMBS = [['LeftUpLeg', 'LeftLeg', 0.17], ['LeftLeg', 'LeftFoot', 0.14], ['RightUpLeg', 'RightLeg', 0.17], ['RightLeg', 'RightFoot', 0.14],
+      ['LeftArm', 'LeftForeArm', 0.12], ['LeftForeArm', 'LeftHand', 0.1], ['RightArm', 'RightForeArm', 0.12], ['RightForeArm', 'RightHand', 0.1]];
+    for (const [a, b, w] of LIMBS) {
+      const ba = inst.root.getObjectByName(a), bb = inst.root.getObjectByName(b); if (!ba || !bb) continue;
+      const m = new THREE.Mesh(hitBoxGeo, ghostMat); m.castShadow = m.receiveShadow = false; m.userData.w = w; group.add(m);
+      register(m, enemy, 'limb'); enemy.limbBoxes.push({ m, ba, bb });
+    }
+    enemy.spineTop = inst.root.getObjectByName('neck') || inst.root.getObjectByName('Neck') || inst.root.getObjectByName('Spine02') || inst.root.getObjectByName('Spine01') || null;
 
     enemy.art = inst;
     enemy.mixer = inst.mixer;
@@ -1260,7 +1294,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         list.splice(i, 1);
         continue;
       }
-      if (e.group.position.z > pz + 6 && e.engaged) toVisibleCover(e);
+      if (e.pinned) { /* test-pinned */ }
+      else if (e.group.position.z > pz + 40 && e.engaged) toVisibleCover(e); // engaged enemies behind stay put (360 deg aim); only far-behind ones are brought back
       else if (e.group.position.z > pz + 6) {
         e.alive = false;
         unregister(e);

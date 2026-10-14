@@ -111,6 +111,7 @@ export function createWorld(scene, seed) {
   const matGlass = new THREE.MeshStandardMaterial({ color: 0x9ec4d4, roughness: 0.25, metalness: 0.1 });
   // Shared by art colliders: not drawn, still raycastable (mesh.visible stays true).
   const matInvisible = new THREE.MeshBasicMaterial({ visible: false });
+  if (/[?&]hitbox=2/.test(location.search)) Object.assign(matInvisible, { visible: true, wireframe: true, color: new THREE.Color(0xff8800) }); // world colliders too
   const BLDGS = [['bldg1', 0.3], ['bldg2', 0.3], ['bldg3', 0.2], ['bldg4', 0.2]];
   const ROOF_OK = { bldg1: 1, bldg2: 1, bldg3: 1 };
   // Poly Haven CC0 1k PBR (WebP) for building sides/backs/roofs and the background rows. World-scaled box UVs.
@@ -391,15 +392,24 @@ export function createWorld(scene, seed) {
     model.updateMatrixWorld(true);
     box = new THREE.Box3().setFromObject(model);
     seg.group.add(model);
-    addInvisibleBox(
-      seg,
-      (box.min.x + box.max.x) * 0.5,
-      (box.min.y + box.max.y) * 0.5,
-      (box.min.z + box.max.z) * 0.5,
-      box.max.x - box.min.x,
-      box.max.y - box.min.y,
-      box.max.z - box.min.z
-    );
+    // Collider = the real building mass, not the bbox: the bbox front includes awnings/balconies and its top is above
+    // the roof, so door-front and roof enemies stood INSIDE the invisible box and every shot hit the box (false misses).
+    const roofEarly = ROOF_OK[name] ? findRoof(model, box, side, facadeX, cz) : null;
+    {
+      const fx0 = side < 0 ? box.max.x : box.min.x, depthAll = box.max.x - box.min.x, d = [];
+      const dir = new THREE.Vector3(side, 0, 0);
+      for (const y of [1.2, 2.4, 3.8]) for (let k = 0; k < 7; k++) {
+        const z = box.min.z + (0.12 + 0.76 * k / 6) * (box.max.z - box.min.z);
+        _rc.set(new THREE.Vector3(fx0 - side * 0.5, Math.min(y, box.max.y - 0.3), z), dir); _rc.far = depthAll + 1;
+        const h = _rc.intersectObject(model, true)[0]; d.push(h ? Math.abs(h.point.x - fx0) : depthAll);
+      }
+      d.sort((p, q) => p - q);
+      const wallIn = Math.min(depthAll * 0.6, Math.max(0, d[Math.floor(d.length * 0.5)] - 0.05));
+      const front = fx0 + side * wallIn, back = side < 0 ? box.min.x : box.max.x;
+      const top = roofEarly ? Math.min(box.max.y, roofEarly.y - 0.17) : box.max.y;
+      const col = addInvisibleBox(seg, (front + back) * 0.5, (box.min.y + top) * 0.5, (box.min.z + box.max.z) * 0.5, Math.abs(back - front), top - box.min.y, box.max.z - box.min.z);
+      col.userData.building = true;
+    }
     const spanZ = Math.max(0.5, box.max.z - box.min.z);
     const doorZ = box.min.z + (0.12 + rng() * 0.76) * spanZ;
     doors.push(doorZ);
@@ -409,7 +419,7 @@ export function createWorld(scene, seed) {
     });
     if (ROOF_OK[name]) {
       // Real roof only: raycast down onto the model just behind the facade; need a flat hit (normal.y > 0.8) near the top.
-      const roof = findRoof(model, box, side, facadeX, cz);
+      const roof = roofEarly;
       if (roof) seg.coverPoints.push({ pos: roof, type: 'roof' });
       addShell(seg, rng, side, box, roof, model);
     } else addShell(seg, rng, side, box, null, model);

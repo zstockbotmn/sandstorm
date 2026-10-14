@@ -1,4 +1,3 @@
-const YAW_LIMIT = 60 * Math.PI / 180; // keep the street in view
 const PITCH_LIMIT = 35 * Math.PI / 180;
 const SENS = 0.0023; // tester: twitchy (-40%, then -20%)
 const SENS_SCOPED = 0.0007; // steadier scoped aim
@@ -36,7 +35,8 @@ export function createInput(canvas) {
     if (Math.abs(aimDX - ax) < 1e-4) ax = aimDX;
     if (Math.abs(aimDY - ay) < 1e-4) ay = aimDY;
     aimDX -= ax; aimDY -= ay;
-    input.yaw = clamp(input.yaw + ax, -YAW_LIMIT, YAW_LIMIT);
+    // 360 deg aim (was clamped to +-60 deg, so enemies beside/behind the player could not be aimed at or hit).
+    input.yaw += ax; if (input.yaw > Math.PI) input.yaw -= Math.PI * 2; else if (input.yaw < -Math.PI) input.yaw += Math.PI * 2;
     input.pitch = clamp(input.pitch + ay, -PITCH_LIMIT, PITCH_LIMIT);
   };
 

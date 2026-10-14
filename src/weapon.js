@@ -6,9 +6,9 @@ let reloadEnd = 0;
 const RELOAD_TIME = 2.0;
 const SHOT_INTERVAL = 60 / 600;
 const PITCH_LIMIT = 35 * Math.PI / 180;
-const HIP_SPREAD = 0.6 * Math.PI / 180;
+const HIP_SPREAD = 0.25 * Math.PI / 180; // was 0.6: at 40 m that threw centre-aimed hip shots off a torso
 const ADS_SPREAD = 0.04 * Math.PI / 180; // steadier scope
-const COVER_SPREAD = 2.2 * Math.PI / 180; // blind fire: tighter so some hits land
+const COVER_SPREAD = 0.6 * Math.PI / 180; // ducked fire: the crosshair is visible over the cover, so shots go where it points (was 2.2 deg = false misses)
 const ASSIST_COVER = 4.0 * Math.PI / 180, ASSIST_PULL_COVER = 0.45; // weak blind-fire pull toward torso
 
 const _dir = new THREE.Vector3();
@@ -182,10 +182,22 @@ export function createWeapon(camera, world, scene) {
         if (a < bestA) { bestA = a; best = _tp.clone().normalize(); bestEnemy = t.userData.enemy; }
       }
       const pull = input.cover ? ASSIST_PULL_COVER : (input.touch && !input.scope ? ASSIST_PULL_TOUCH : ASSIST_PULL);
-      if (best) _dir.lerp(best, pull).normalize();
+      // Assist only when the crosshair ray itself would miss every enemy, and only if the bent ray reaches that enemy
+      // unobstructed. Before, a crosshair already on a head over cover was pulled toward the hidden torso -> hit the cover.
+      if (best) {
+        const raw = firstHit(_origin, _dir);
+        if (!(raw && raw.object.userData && raw.object.userData.enemy)) {
+          _tp.copy(_dir); _dir.lerp(best, pull).normalize();
+          const bent = firstHit(_origin, _dir);
+          if (!(bent && bent.object.userData && bent.object.userData.enemy === bestEnemy)) _dir.copy(_tp);
+        }
+      }
     }
     if (input.cover) {
-      _origin.y += 0.5; // blind fire over the top of cover
+      // Blind fire over the top of cover, but still converging on what the crosshair is on (the old parallel +0.5 m
+      // offset sailed over centre-aimed targets).
+      const ah = firstHit(_origin, _dir); const aimP = ah ? ah.point.clone() : _origin.clone().addScaledVector(_dir, 40);
+      _origin.y += 0.5; _dir.subVectors(aimP, _origin).normalize();
       // Suppression: blind shots pin nearby alive enemies (slows their return fire).
       if (window.SS && window.SS.enemies && window.SS.enemies.list) {
         const el = window.SS.enemies.list;
@@ -205,11 +217,9 @@ export function createWeapon(camera, world, scene) {
     _dir.normalize();
     raycaster.set(_origin, _dir);
 
-    const worldHits = raycaster.intersectObjects(world.colliders, false);
-    const targetHits = targets.length ? raycaster.intersectObjects(targets, false) : [];
-    const w0 = worldHits[0];
-    const t0 = targetHits[0];
-    const hit = !t0 ? w0 : !w0 ? t0 : (t0.distance < w0.distance ? t0 : w0);
+    const hit = firstHit(_origin, _dir);
+    weapon.lastShot = { origin: _origin.clone(), dir: _dir.clone(), hit: hit ? { point: hit.point.clone(), enemy: !!(hit.object.userData && hit.object.userData.enemy), part: hit.object.userData && hit.object.userData.part, name: hit.object.name || hit.object.type } : null };
+    if (weapon.onShotDebug) weapon.onShotDebug(weapon.lastShot);
     if (!hit) {
       if (weapon.ammo <= 0) startReload();
       return;
@@ -231,6 +241,16 @@ export function createWeapon(camera, world, scene) {
     if (weapon.ammo <= 0) startReload();
   }
 
+  // Nearest of world colliders and enemy hitboxes along a ray (camera centre; muzzle/viewmodel play no part).
+  const _fhRay = new THREE.Raycaster(); _fhRay.far = 180;
+  function firstHit(o, d) {
+    _fhRay.set(o, d);
+    const w0 = _fhRay.intersectObjects(world.colliders, false)[0];
+    const t0 = targets.length ? _fhRay.intersectObjects(targets, false)[0] : null;
+    return !t0 ? w0 : !w0 ? t0 : (t0.distance <= w0.distance + 0.05 ? t0 : w0);
+  }
+  weapon.firstHit = firstHit;
+  weapon.debugShoot = (input) => { if (weapon.ammo <= 0) weapon.ammo = MAG; shoot(input); return weapon.lastShot; };
   // A drag after a shot means the player is controlling the muzzle: drop the pending recoil recovery (no drift back).
   weapon.cancelRecoil = function cancelRecoil() { recoil = 0; };
   weapon.update = function update(dt, input) {

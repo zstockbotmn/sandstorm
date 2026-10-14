@@ -62,6 +62,7 @@ const cover = createCover(scene, camera, world, input);
 const stakes = createStakes(scene, camera, hud, player, weapon, score, audio);
 
 window.SS = {
+  THREE,
   scene,
   camera,
   world,
@@ -310,6 +311,11 @@ if (/[?&]debug\b/.test(location.search)) {
 // Swap the code-built box rifle for the CC0 rifle model once art is loaded (box rifle stays if it fails / low tier).
 // High tier: ask the service worker to cache the High-only normal/ARM maps (Low never downloads them).
 if (QUALITY !== 'low' && 'serviceWorker' in navigator) navigator.serviceWorker.ready.then((r) => r.active && r.active.postMessage('cache-hi')).catch(() => {});
+// ?hitbox: mark every shot's hit point (red = enemy, yellow = world) for 2 s.
+if (/[?&]hitbox/.test(location.search)) {
+  const mk = [], gE = new THREE.SphereGeometry(0.06, 8, 6), mE = new THREE.MeshBasicMaterial({ color: 0xff2020, depthTest: false }), mW = new THREE.MeshBasicMaterial({ color: 0xffee00, depthTest: false });
+  weapon.onShotDebug = (s) => { if (!s.hit) return; const m = new THREE.Mesh(gE, s.hit.enemy ? mE : mW); m.position.copy(s.hit.point); m.renderOrder = 99; scene.add(m); mk.push(m); setTimeout(() => { scene.remove(m); }, 2000); };
+}
 art.onReady(() => { const m4 = art.staticInstance('rifle_m4'); if (m4) m4.name = 'rifle_m4'; const r = m4 || art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search)); });
 
 // Rapier (ragdoll physics, ~4 MB) is fetched after the first rendered frames, never before Play/first paint.
