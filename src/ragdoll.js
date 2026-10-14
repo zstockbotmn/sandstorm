@@ -452,6 +452,7 @@ export function createRagdollSystem(scene) {
     if (doll.skin && doll.skin.model) {
       const model = doll.skin.model;
       if (model.parent) model.parent.remove(model);
+      model.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) o.skeleton.dispose(); }); // frees the GPU bone texture (soak: +1 texture per kill)
       doll.skin = null;
     }
     for (let i = 0; i < doll.constraints.length; i++) phys.removeImpulseJoint(doll.constraints[i], false);
