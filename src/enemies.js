@@ -717,10 +717,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const origin = enemy.group.position;
     spray(point || origin.clone().setY(origin.y + 1.3));
     dropDecal(origin);
-    // Hit-to-ragdoll blend: the Quaternius hit clip plays on the live skeleton for ~0.18 s, then the ragdoll takes
+    // Hit-to-ragdoll blend: the native Gunshot_Reaction clip plays on the live skeleton for ~0.3 s, then the ragdoll takes
     // over from that pose (bindSkin offsets absorb it, no pop) with the hips' measured velocity + the shot impulse.
     if (enemy.art && enemy.mixer && enemy.actions && !enemy.pinned) {
-      enemy.dying = true; enemy.fallT = 0.18; enemy.fallPart = part; enemy.fallPoint = point;
+      enemy.dying = true; enemy.fallT = 0.3; enemy.fallPart = part; enemy.fallPoint = point;
       const hit = (part === 'head' && enemy.actions.hitHead) || enemy.actions.hitBody || enemy.actions.hit;
       if (hit) { hit.reset().setEffectiveWeight(1).setEffectiveTimeScale(1.25).play(); if (enemy.currentAction && enemy.currentAction !== hit) enemy.currentAction.crossFadeTo(hit, 0.05, false); enemy.currentAction = hit; }
       if (enemy.bones && enemy.bones.Hips) enemy.hipPrev = enemy.bones.Hips.getWorldPosition(new THREE.Vector3());
