@@ -18,10 +18,10 @@ export function createArms(src, clips, camera) {
   const side = (s) => ({ up: B('upper_arm' + s), fore: B('forearm' + s), ctl: B('hand' + s + 'control'), hand: B('hand' + s) }); // GLTFLoader strips '.' from node names
   const R = side('R'), L = side('L');
   if (!R.up || !R.fore || !R.ctl || !L.up || !L.fore || !L.ctl) return null;
-  root.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = false; o.renderOrder = 2; if (o.material) { o.material = o.material.clone(); o.material.roughness = 0.75; o.material.metalness = 0; } } });
+  root.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = false; o.renderOrder = 2; if (o.material) { o.material = o.material.clone(); o.material.roughness = 0.75; o.material.metalness = 0; o.material.color.setRGB(0.78, 0.6, 0.48); } } });
   root.scale.setScalar(+(QP.get('armscale') || 0.13));
   root.rotation.y = +(QP.get('armrot') || 0) * Math.PI / 180; // rig already faces -Z; the old PI flip put the right arm on the left
-  { const v = (QP.get('armpos') || '-0.05,0.02,0.3').split(',').map(Number); root.position.set(v[0], v[1], v[2]); } // shoulders roughly at eye height, just behind the camera (rig space)
+  { const v = (QP.get('armpos') || '-0.05,0.0,0.2').split(',').map(Number); root.position.set(v[0], v[1], v[2]); } // shoulders roughly at eye height, just behind the camera (rig space)
   const clip = (clips || []).find((c) => c.name === 'grip');
   if (clip) for (const t of clip.tracks) { // apply grip pose directly: track names keep Blender's dots, node names don't
     const i = t.name.lastIndexOf('.'), prop = t.name.slice(i + 1), o = B(THREE.PropertyBinding.sanitizeNodeName(t.name.slice(0, i)).replace(/\./g, ''));
@@ -48,7 +48,7 @@ export function createArms(src, clips, camera) {
     const len = zmax - zmin;
     holder.traverse((o) => { if (!o.isMesh) return; const p = o.geometry.attributes.position; for (let i = 0; i < p.count; i += 3) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
       if (v.z > zmin + len * 0.55 && v.z < zmin + len * 0.8 && v.y < gy) { gy = v.y; gz = v.z; } } });
-    api.grip.position.set(0.012, gy + 0.05, gz - 0.01); api.guard.position.set(-0.01, (top + bot) * 0.5 - 0.02, zmin + len * 0.33);
+    api.grip.position.set(0.012, gy + 0.05, gz - 0.01); api.guard.position.set(-0.01, (top + bot) * 0.5 - 0.02, zmin + len * 0.28);
     api.mag.position.set(-0.01, bot + 0.02, gz - len * 0.14);
     holder.add(api.grip, api.guard, api.mag); api.holder = holder;
   };
