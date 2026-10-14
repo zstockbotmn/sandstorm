@@ -18,7 +18,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
         { const n = SS.world.overlapCount(); if (n > R.overlaps) { R.overlaps = n; R.ovl = SS.world.overlapCount.last; } }
         for (const e of SS.enemies.list || []) { if (!e.alive || e.fromTruckRide) { last.delete(e); continue; }
           const y = e.group.position.y; if (last.has(e) && dt > 0) { const vy = Math.abs(y - last.get(e)) / dt; if (vy > R.maxVy) { R.maxVy = vy; R.vyAt = { type: e.anchor && e.anchor.type, y, phase: e.phase }; } } last.set(e, y);
-          const elev = e.anchor && /roof|window|balcony/.test(e.anchor.type); if (!elev && e.art) { const f = foot(e); if (f < 1e8 && f > R.floatMax) { R.floatMax = f; R.floatAt = { type: e.anchor && e.anchor.type, y, phase: e.phase, kind: e.moveKind }; } } } }, 100); });
+          const elev = e.anchor && /roof|window|balcony/.test(e.anchor.type); if (!elev && e.art) { const f = foot(e); if (f < 1e8 && f > R.floatMax) { R.floatMax = f; R.floatAt = { type: e.anchor && e.anchor.type, y, phase: e.phase, kind: e.moveKind, po: e.pelvisOff, r0: e.rootY0, rn: e.art.root && e.art.root.name, ry: e.art.root && e.art.root.position.y, ah: e.ankleH, legs: e.legs && e.legs.length, d: +SS.camera.position.distanceTo(e.group.position).toFixed(1), anim: e.currentAction && e.currentAction.getClip().name }; } } } }, 100); });
     await p.waitForTimeout(+(process.env.SS_RULES_MS || 45000));
     res.motion = await p.evaluate(() => { clearInterval(window.__iv); return window.__r; });
     // pickups

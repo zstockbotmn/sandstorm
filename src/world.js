@@ -479,12 +479,12 @@ export function createWorld(scene, seed) {
     const dims = art.fitToBox(obj, choice[1], choice[2], choice[3], { keepAspect: true, alignLong: true });
     const half = dims.z * 0.5;
     let z = null;
+    const x = side * (5.3 + rng() * 0.6);
     for (let attempt = 0; attempt < 8; attempt++) {
       const tryZ = oz - 4 - rng() * (SEG_LEN - 8);
-      if (!nearDoor(tryZ, half, doors)) { z = tryZ; break; }
+      if (!nearDoor(tryZ, half, doors) && footFree(seg, x, tryZ, dims.x * 0.5, half)) { z = tryZ; break; }
     }
     if (z == null) return;
-    const x = side * (5.3 + rng() * 0.6);
     obj.position.x += x;
     obj.position.z += z;
     seg.group.add(obj);
