@@ -359,7 +359,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (L.lock && L.lock.distanceTo(_ikF.clone().setY(ground)) > 0.32) L.lock = null; // stride too long: release
       _ikT.copy(L.lock || _ikF); if (_ikT.y < ground) _ikT.y = ground; // never through the ground
       if (_ikT.distanceToSquared(_ikF) > 1e-6) { twoBone(L.up, L.knee, L.foot, _ikT); twoBone(L.up, L.knee, L.foot, _ikT); }
-      L.foot.getWorldPosition(_ikF); out[i] = { err: +_ikF.distanceTo(_ikT).toFixed(3), tx: +_ikT.x.toFixed(2), ty: +_ikT.y.toFixed(2), locked: !!L.lock, x: +_ikF.x.toFixed(3), y: +_ikF.y.toFixed(3), z: +_ikF.z.toFixed(3) };
+      L.foot.getWorldPosition(_ikF); enemy.ikEnd = i ? Math.min(enemy.ikEnd, _ikF.y) : _ikF.y; out[i] = { err: +_ikF.distanceTo(_ikT).toFixed(3), tx: +_ikT.x.toFixed(2), ty: +_ikT.y.toFixed(2), locked: !!L.lock, x: +_ikF.x.toFixed(3), y: +_ikF.y.toFixed(3), z: +_ikF.z.toFixed(3) };
     }
   }
 
@@ -453,6 +453,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       boxBetween(group, L.m, _pA, _pB, L.m.userData.w / Math.max(1e-3, group.scale.x));
     }
     group.updateMatrixWorld(true);
+    if (enemy.legs && enemy.legs.length) { let m = Infinity; for (const L of enemy.legs) m = Math.min(m, L.foot.getWorldPosition(_wA).y); enemy.ikSync = m; }
   }
 
   // stopAllAction restores the bind pose; write the death pose back so unmapped bones keep it.
