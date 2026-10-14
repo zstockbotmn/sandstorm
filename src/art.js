@@ -119,9 +119,26 @@ function splitUpper(meshyStance) {
   const up = meshyStance.tracks.filter((t) => UPPER_RE.test(t.name.split('.')[0].split('/').pop()));
   if (!up.length) return;
   clips.upper = new THREE.AnimationClip('upper', meshyStance.duration, up);
+  const bn = (t) => t.name.split('.')[0].split('/').pop();
+  const prop = (t) => t.name.split('.').pop();
+  // Spine02 (first bone above the hips) is re-parented per frame: the Quaternius hips carry a different rest rotation,
+  // so a plain split folded the torso over. spine02 = inv(lowerHips(t)) * stanceHips(t) * stanceSpine02(t) keeps the
+  // stance's torso orientation (relative to the body) on top of any locomotion hips.
+  const sH = meshyStance.tracks.find((t) => bn(t) === 'Hips' && prop(t) === 'quaternion');
+  const sS = meshyStance.tracks.find((t) => bn(t) === 'Spine02' && prop(t) === 'quaternion');
+  clips.upper.tracks = clips.upper.tracks.filter((t) => bn(t) !== 'Spine02');
+  const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qc = new THREE.Quaternion();
   const done = new Set();
   for (const k of LOWER_ONLY) { const c = clips[k]; if (!c || done.has(c)) continue; done.add(c);
-    c.tracks = c.tracks.filter((t) => !UPPER_RE.test(t.name.split('.')[0].split('/').pop())); }
+    const lH = c.tracks.find((t) => bn(t) === 'Hips' && prop(t) === 'quaternion');
+    c.tracks = c.tracks.filter((t) => !UPPER_RE.test(bn(t)));
+    if (lH && sH && sS) {
+      const iH = sH.createInterpolant(), iS = sS.createInterpolant(), iL = lH.createInterpolant(); const times = lH.times, vals = new Float32Array(times.length * 4);
+      for (let i = 0; i < times.length; i++) { const ts = times[i] % Math.max(1e-3, meshyStance.duration);
+        qa.fromArray(iL.evaluate(times[i])).invert(); qb.fromArray(iH.evaluate(ts)); qc.fromArray(iS.evaluate(ts));
+        qa.multiply(qb).multiply(qc).normalize().toArray(vals, i * 4); }
+      c.tracks.push(new THREE.QuaternionKeyframeTrack(sS.name, Float32Array.from(times), vals));
+    } }
 }
 
 function makeLoader() {
