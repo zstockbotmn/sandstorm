@@ -21,7 +21,7 @@ const res = {};
     SS.enemies.debugPose(e, c.x - 3, c.z - 7, 'idle'); e.health = 1e6; e.debugVel = new SS.THREE.Vector3(1.6, 0, 0); e.group.rotation.set(0, Math.PI / 2, 0); e.group.quaternion.setFromEuler(e.group.rotation);
     SS.input.yaw = 0; SS.input.pitch = 0.12; window.__footE = e;
     let slide = 0, lockedFrames = 0; const prev = [null, null];
-    for (let k = 0; k < 60; k++) { await frames(1); const d = e.ikDbg || []; for (let i = 0; i < 2; i++) { const f = d[i]; if (!f) continue;
+    for (let k = 0; k < 60; k++) { await frames(1); if (k < 6) { prev[0] = prev[1] = null; continue; } const d = e.ikDbg || []; for (let i = 0; i < 2; i++) { const f = d[i]; if (!f) continue;
       if (f.locked && prev[i] && prev[i].locked) { slide = Math.max(slide, Math.hypot(f.x - prev[i].x, f.z - prev[i].z)); lockedFrames++; } prev[i] = f; } }
     return { slide, lockedFrames, legs: (e.legs || []).length, dist: +SS.camera.position.distanceTo(e.group.position).toFixed(1), ank: e.ankleH, gy: e.group.position.y, ik: e.ikDbg, pinned: e.pinned, moving: e.moving, anim: e.animState };
   });
