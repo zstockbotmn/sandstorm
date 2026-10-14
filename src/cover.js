@@ -49,7 +49,7 @@ export function createCover(scene, camera, world, input) {
     clearSpawned();
     const bx = dir ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + dir * 3)) : exclude ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + (camera.position.x > 0 ? -3 : 3))) : camera.position.x;
     const m = new THREE.Mesh(geo, mat.clone()); m.position.set(bx, BAG_H / 2, pz - 2.2); m.castShadow = m.receiveShadow = true;
-    scene.add(m); world.colliders.push(m); c.spawned = m;
+    m.name = 'sandbag'; scene.add(m); world.colliders.push(m); c.spawned = m;
     c.surface = new THREE.Box3().setFromObject(m);
     return new THREE.Vector3(m.position.x, 0, c.surface.max.z + PLAYER_R);
   }

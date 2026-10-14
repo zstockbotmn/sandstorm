@@ -318,7 +318,7 @@ export function createWorld(scene, seed) {
       obj.position.x += x;
       obj.position.z += z;
       seg.group.add(obj);
-      return addInvisibleBox(seg, x, y, z, sx, sy, sz);
+      { const _c = addInvisibleBox(seg, x, y, z, sx, sy, sz); _c.name = 'lowwall'; return _c; }
     }
     return addBox(seg, matWall, x, y, z, sx, sy, sz);
   }
@@ -407,7 +407,7 @@ export function createWorld(scene, seed) {
       const wallIn = Math.min(depthAll * 0.6, Math.max(0, d[Math.floor(d.length * 0.5)] - 0.05));
       const front = fx0 + side * wallIn, back = side < 0 ? box.min.x : box.max.x;
       const top = roofEarly ? Math.min(box.max.y, roofEarly.y - 0.17) : box.max.y;
-      const col = addInvisibleBox(seg, (front + back) * 0.5, (box.min.y + top) * 0.5, (box.min.z + box.max.z) * 0.5, Math.abs(back - front), top - box.min.y, box.max.z - box.min.z);
+      const col = addInvisibleBox(seg, (front + back) * 0.5, (box.min.y + top) * 0.5, (box.min.z + box.max.z) * 0.5, Math.abs(back - front), top - box.min.y, box.max.z - box.min.z); col.name = 'building';
       col.userData.building = true;
     }
     const spanZ = Math.max(0.5, box.max.z - box.min.z);
@@ -469,7 +469,7 @@ export function createWorld(scene, seed) {
     obj.position.x += x;
     obj.position.z += z;
     seg.group.add(obj);
-    addInvisibleBox(seg, x, dims.y * 0.5, z, dims.x, dims.y, dims.z);
+    (addInvisibleBox(seg, x, dims.y * 0.5, z, dims.x, dims.y, dims.z)).name = 'prop';
     seg.coverPoints.push({
       pos: new THREE.Vector3(x - side * (dims.x * 0.5), 0.9, z),
       type: 'wall',
@@ -626,8 +626,8 @@ export function createWorld(scene, seed) {
       pivot.rotation.y = yaw + jitter;
       pivot.position.set(x, 0, z);
       seg.group.add(pivot);
-      addInvisibleBox(seg, x, 0.48, z, 1.75, 0.62, 4.15);
-      const cabin = addInvisibleBox(seg, x, 1.05, z + 0.15, 1.5, 0.52, 2.0);
+      (addInvisibleBox(seg, x, 0.48, z, 1.75, 0.62, 4.15)).name = 'car';
+      const cabin = addInvisibleBox(seg, x, 1.05, z + 0.15, 1.5, 0.52, 2.0); cabin.name = 'carcab';
       cabin.rotation.y = yaw;
     } else {
       addBox(seg, bodyMat, x, 0.48, z, 1.75, 0.62, 4.15);

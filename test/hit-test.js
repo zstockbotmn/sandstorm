@@ -34,7 +34,7 @@ const res = {};
       const e = SS.debug.spawnEnemy('popper'); if (!e) return { err: 'no spawn' };
       SS.enemies.debugPose(e, Math.max(-5.2, Math.min(5.2, x)), z, c.posture);
       e.health = 1e6;
-      SS.input.scope = c.mode === 'scoped'; await frames(3); for (let k = 0; k < 40 && c.mode === 'scoped' && SS.camera.fov > 40; k++) await frames(1);
+      SS.input.scope = c.mode === 'scoped'; await frames(3); for (let k = 0; k < 40 && c.mode === 'scoped' && SS.camera.fov > 40; k++) await frames(1); await wait(700);
       const out = [];
       for (const part of ['torso', 'head', 'legs']) {
         if (part === 'legs' && (c.d > 20 && c.mode === 'hip')) continue;
@@ -47,6 +47,12 @@ const res = {};
           const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
           SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len); SS.weapon.cancelRecoil(); await frames(1);
         }
+        // Is the aim point really visible? Ray against rendered geometry only (no proxies, no enemies, no viewmodel).
+        SS.camera.updateMatrixWorld(); const tp2 = tgt.getWorldPosition(new SS.THREE.Vector3()); const cp2 = SS.camera.getWorldPosition(new SS.THREE.Vector3());
+        const rc = new SS.THREE.Raycaster(cp2, tp2.clone().sub(cp2).normalize(), 0.05, cp2.distanceTo(tp2) - 0.25);
+        const vis = []; SS.scene.traverseVisible((o) => { if (!o.isMesh || o.isSkinnedMesh || !o.material || o.material.visible === false) return; let q = o; while (q) { if (q === e.group || q === SS.camera || q.isSprite) return; q = q.parent; } vis.push(o); });
+        const occ = rc.intersectObjects(vis, false)[0];
+        if (occ) { out.push({ part, skip: true, occluded: occ.object.name || occ.object.type, at: +occ.distance.toFixed(2) }); continue; }
         const shot = SS.weapon.debugShoot(SS.input);
         const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(e.group.position.clone().setY(shot.hit.point.y)) < 1.2);
         out.push({ part, ok, hit: shot && shot.hit ? (shot.hit.enemy ? 'enemy:' + shot.hit.part : 'world:' + shot.hit.name) : 'none', cover: SS.input.cover });
