@@ -14,7 +14,7 @@ function aimBone(bone, target) { // rotate bone (world) so its length axis (loca
 export function createArms(src, clips, camera) {
   const root = SkeletonUtils.clone(src); root.name = 'fps_arms';
   const B = (n) => root.getObjectByName(n);
-  const side = (s) => ({ up: B('upper_arm.' + s), fore: B('forearm.' + s), ctl: B('hand.' + s + '.control'), hand: B('hand.' + s) });
+  const side = (s) => ({ up: B('upper_arm' + s), fore: B('forearm' + s), ctl: B('hand' + s + 'control'), hand: B('hand' + s) }); // GLTFLoader strips '.' from node names
   const R = side('R'), L = side('L');
   if (!R.up || !R.fore || !R.ctl || !L.up || !L.fore || !L.ctl) return null;
   root.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = false; o.renderOrder = 2; if (o.material) { o.material = o.material.clone(); o.material.roughness = 0.75; o.material.metalness = 0; } } });
