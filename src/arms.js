@@ -5,7 +5,8 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 // the left the handguard (or the magazine during a reload), so recoil, ADS and reload motion of the rifle carry the hands.
 const _S = new THREE.Vector3(), _E = new THREE.Vector3(), _T = new THREE.Vector3(), _P = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Vector3();
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _q = new THREE.Quaternion(), _pq = new THREE.Quaternion();
-const _wq = new THREE.Quaternion();
+const _wq = new THREE.Quaternion(), _mx = new THREE.Matrix4(), _hq = new THREE.Quaternion(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
+const QP = new URLSearchParams(location.search);
 function aimBone(bone, target) { // rotate bone (world) so its length axis (local +Y) points at target
   bone.getWorldPosition(_S); bone.getWorldQuaternion(_wq); _a.set(0, 1, 0).applyQuaternion(_wq); _b.copy(target).sub(_S).normalize();
   _q.setFromUnitVectors(_a, _b); bone.parent.getWorldQuaternion(_pq); const inv = _pq.clone().invert();
@@ -22,11 +23,20 @@ export function createArms(src, clips, camera) {
   root.rotation.y = Math.PI; // Blender -Y forward -> glTF +Z; the camera looks down -Z
   root.position.set(-0.3, 0.02, 0.42); // shoulders roughly at eye height, just behind the camera (rig space)
   const clip = (clips || []).find((c) => c.name === 'grip');
-  if (clip) { const mx = new THREE.AnimationMixer(root); mx.clipAction(clip).play(); mx.update(0); } // curled-finger grip pose from Blender
+  if (clip) for (const t of clip.tracks) { // apply grip pose directly: track names keep Blender's dots, node names don't
+    const i = t.name.lastIndexOf('.'), prop = t.name.slice(i + 1), o = B(THREE.PropertyBinding.sanitizeNodeName(t.name.slice(0, i)).replace(/\./g, ''));
+    if (!o) continue; if (prop === 'quaternion') o.quaternion.fromArray(t.values, 0); else if (prop === 'position') o.position.fromArray(t.values, 0); }
   const rest = new Map(); root.traverse((o) => { if (o.isBone) rest.set(o, o.quaternion.clone()); });
   root.updateMatrixWorld(true);
   for (const S of [R, L]) { S.up.getWorldPosition(_a); S.fore.getWorldPosition(_b); S.la = _a.distanceTo(_b); S.hand.getWorldPosition(_E); S.lb = _b.distanceTo(_E);
     const fq = new THREE.Quaternion(), cq = new THREE.Quaternion(); S.fore.getWorldQuaternion(fq); S.ctl.getWorldQuaternion(cq); S.rel = fq.invert().multiply(cq); }
+  // hand frames from the rifle: fingers (+Y bone axis) wrap the part, palm (+/-Z) faces it. off = per-hand roll fix (URL-tunable)
+  const eul = (k, d) => { const v = (QP.get(k) || d).split(',').map(Number); return new THREE.Quaternion().setFromEuler(new THREE.Euler(v[0] * Math.PI / 180, v[1] * Math.PI / 180, v[2] * Math.PI / 180)); };
+  R.off = eul('hr', '0,0,0'); L.off = eul('hl', '0,0,0');
+  const hframe = (fx, fy, fz, px, py, pz) => (m) => { const hq = api.holder.getWorldQuaternion(_hq);
+    _y.set(fx, fy, fz).normalize().applyQuaternion(hq); _z.set(px, py, pz).normalize().applyQuaternion(hq); _x.crossVectors(_y, _z).normalize(); _z.crossVectors(_x, _y); m.makeBasis(_x, _y, _z); };
+  R.basis = hframe(-0.5, -0.8, -0.3, -1, 0, 0); // right: fingers down/forward round the grip, palm to the left
+  L.basis = hframe(-0.6, 0.3, -0.5, 0, 1, 0);   // left: palm up under the handguard, fingers to the left
   const api = { root, R, L, grip: new THREE.Object3D(), guard: new THREE.Object3D(), mag: new THREE.Object3D(), reach: 0 };
   // grip points on the rifle (holder space), measured from the mesh: lowest point of the rear half = pistol grip,
   // front third mid-height = handguard, magwell just ahead of the grip
@@ -51,7 +61,8 @@ export function createArms(src, clips, camera) {
     // hand: place the control bone at the wrist; orient with the forearm, rolled into the rifle
     S.fore.getWorldPosition(_a); _b.copy(_T).sub(_a).normalize();
     S.ctl.parent.updateMatrixWorld(true); const p = S.ctl.parent.worldToLocal(_T.clone()); S.ctl.position.copy(p);
-    S.fore.getWorldQuaternion(_wq); _wq.multiply(S.rel); S.ctl.parent.getWorldQuaternion(_pq); S.ctl.quaternion.copy(_pq.invert().multiply(_wq)); S.ctl.updateMatrixWorld(true);
+    if (S.basis) { S.basis(_mx); _wq.setFromRotationMatrix(_mx); _wq.multiply(S.off); } else { S.fore.getWorldQuaternion(_wq); _wq.multiply(S.rel); }
+    S.ctl.parent.getWorldQuaternion(_pq); S.ctl.quaternion.copy(_pq.invert().multiply(_wq)); S.ctl.updateMatrixWorld(true);
     api.reach = Math.max(api.reach, _n.copy(target).sub(_S).length() - (S.la + S.lb));
   }
   const _pole = new THREE.Vector3(), _tg = new THREE.Vector3();
