@@ -135,7 +135,7 @@ export function createWorld(scene, seed) {
     // 0: oil stain
     for (let i = 0; i < 26; i++) { g.fillStyle = `rgba(28,22,16,${0.35 + r() * 0.4})`; g.beginPath(); g.ellipse(128 + (r() - 0.5) * 110, 128 + (r() - 0.5) * 90, 18 + r() * 50, 12 + r() * 36, r() * 3, 0, 7); g.fill(); }
     // 1: cracks
-    g.strokeStyle = 'rgba(40,32,24,0.95)'; g.lineWidth = 3;
+    g.strokeStyle = 'rgba(70,60,48,0.95)'; g.lineWidth = 1.6;
     for (let k = 0; k < 5; k++) { g.beginPath(); let x = 300 + r() * 170, y = 20 + r() * 60; g.moveTo(x, y); for (let i = 0; i < 9; i++) { x += (r() - 0.5) * 50; y += 18 + r() * 12; g.lineTo(Math.max(260, Math.min(500, x)), Math.min(250, y)); } g.stroke(); }
     // 2: torn poster
     g.fillStyle = '#c8b27a'; g.fillRect(30, 290, 196, 200); g.fillStyle = '#7a2a1e'; g.fillRect(44, 304, 168, 60); g.fillStyle = '#2b2a28';
@@ -179,10 +179,9 @@ export function createWorld(scene, seed) {
     const walls = tint(boxAt(sx, top, sz, cx, top / 2, cz, 3), tr, tr * (0.95 + rng() * 0.05), tr * (0.88 + rng() * 0.1), 0.35);
     // grime streaks along the back and sides, an occasional poster on the street-visible side near the front
     const bx = back, nB = new THREE.Vector3(side, 0, 0);
-    for (let i = 0; i < 2; i++) decal(seg, 3, 2.5 + rng() * 2, Math.min(top * 0.6, 3.5), new THREE.Vector3(bx, top - 1.6 - rng(), box.min.z + (0.2 + rng() * 0.6) * sz), nB);
+    for (let i = 0; i < 0; i++) decal(seg, 3, 2.5 + rng() * 2, Math.min(top * 0.6, 3.5), new THREE.Vector3(bx, top - 1.6 - rng(), box.min.z + (0.2 + rng() * 0.6) * sz), nB);
     for (const zf of [box.min.z - 0.06, box.max.z + 0.06]) {
       const nz = new THREE.Vector3(0, 0, Math.sign(zf - cz));
-      decal(seg, 3, 2.2, Math.min(top * 0.5, 3), new THREE.Vector3(cx + (rng() - 0.5) * sx * 0.5, top - 1.4, zf), nz);
       if (rng() < 0.5) decal(seg, 2, 0.8, 0.8, new THREE.Vector3(front + side * (0.6 + rng()), 1.6 + rng() * 0.4, zf), nz);
     }
     const m = new THREE.Mesh(walls, shellMats[k]); m.userData.ownGeo = true; m.castShadow = m.receiveShadow = true; seg.group.add(m);
@@ -490,7 +489,7 @@ export function createWorld(scene, seed) {
     addBackdrop(seg, brng, -1, oz);
     addBackdrop(seg, brng, 1, oz);
     const up = new THREE.Vector3(0, 1, 0);
-    for (let i = 0, n = 5 + ((brng() * 4) | 0); i < n; i++) decal(seg, brng() < 0.55 ? 0 : 1, 1.4 + brng() * 2, 1.2 + brng() * 1.6, new THREE.Vector3((brng() - 0.5) * 8.5, 0.0, oz - brng() * SEG_LEN), up);
+    for (let i = 0, n = 5 + ((brng() * 4) | 0); i < n; i++) decal(seg, brng() < 0.7 ? 0 : 1, 1.0 + brng() * 1.4, 0.9 + brng() * 1.1, new THREE.Vector3((brng() - 0.5) * 8.5, 0.0, oz - brng() * SEG_LEN), up);
     if (seg._decals && seg._decals.length) {
       const g = mergeGeometries(seg._decals.map((x) => x.index ? x.toNonIndexed() : x)); seg._decals.forEach((x) => x.dispose()); seg._decals = null;
       if (g) { const dm = new THREE.Mesh(g, decalMat); dm.receiveShadow = true; dm.userData.ownGeo = true; seg.group.add(dm); }
