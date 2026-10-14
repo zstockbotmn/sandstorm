@@ -1310,6 +1310,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     g.add(new THREE.Sprite(markerMat), new THREE.Sprite(bloodMat), new THREE.Mesh(box, matRim), new THREE.Mesh(box, visMat(0x777777)), new THREE.Mesh(box, visMat(0x777777, { transparent: true, opacity: 0.5 })),
       new THREE.Mesh(new THREE.CircleGeometry(0.1, 6), new THREE.MeshBasicMaterial({ color: 0x4a0808, transparent: true, opacity: 0.82, depthWrite: false })));
     return g; };
+  api.debugTruck = () => startTruck();
+  api.debugGrenade = () => { const th = list.find((e) => e.alive); if (th) throwGrenade(th); return !!th; };
+  api.debugRoof = () => spawnOne('roof');
   api.spawnEnemy = function spawnEnemy(behavior) {
     return spawnOne(behavior || undefined);
   };
