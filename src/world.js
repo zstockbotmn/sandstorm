@@ -283,6 +283,25 @@ export function createWorld(scene, seed) {
     return m;
   }
 
+  // Spawn separation: footprint (half-extents hx,hz + margin) must not touch any solid prop already in this segment.
+  const _fb = new THREE.Box3();
+  const SOLID = new Set(['car', 'carcab', 'barrel', 'lowwall', 'prop', 'sandbag']);
+  function footFree(seg, x, z, hx, hz, margin = 0.35) {
+    for (const m of seg.owned) {
+      if (!m.isMesh || !SOLID.has(m.name)) continue;
+      _fb.setFromObject(m);
+      if (x + hx + margin > _fb.min.x && x - hx - margin < _fb.max.x && z + hz + margin > _fb.min.z && z - hz - margin < _fb.max.z) return false;
+    }
+    return true;
+  }
+  function overlapCount() { // test hook: pairs of overlapping solid props across live segments
+    let n = 0; const a = new THREE.Box3(), b = new THREE.Box3();
+    const solids = colliders.filter((m) => SOLID.has(m.name) && m.name !== 'carcab');
+    for (let i = 0; i < solids.length; i++) { a.setFromObject(solids[i]); a.expandByScalar(-0.02);
+      for (let j = i + 1; j < solids.length; j++) { b.setFromObject(solids[j]); if (a.intersectsBox(b) && !(solids[i].name === 'car' && solids[j].name === 'carcab')) n++; } }
+    return n;
+  }
+
   function useProp(name) {
     return art.tier === 'high' && art.done && !!art.get(name);
   }
@@ -508,15 +527,20 @@ export function createWorld(scene, seed) {
     const cars = 1 + (rng() * 3) | 0;
     for (let i = 0; i < cars; i++) {
       const side = rng() < 0.5 ? -1 : 1;
-      const z = oz - 6 - rng() * (SEG_LEN - 12);
-      addCar(seg, rng, side * (3.2 + rng() * 0.6), z);
+      let z = oz - 6 - rng() * (SEG_LEN - 12); const x = side * (3.2 + rng() * 0.6);
+      let ok = footFree(seg, x, z, 1.0, 2.3);
+      for (let t = 0; t < 6 && !ok; t++) { z = oz - 6 - rng() * (SEG_LEN - 12); ok = footFree(seg, x, z, 1.0, 2.3); }
+      if (ok) addCar(seg, rng, x, z);
     }
 
     const barrels = 2 + (rng() * 4) | 0;
     for (let i = 0; i < barrels; i++) {
       const side = rng() < 0.5 ? -1 : 1;
-      const z = oz - 4 - rng() * (SEG_LEN - 8);
+      let z = oz - 4 - rng() * (SEG_LEN - 8);
       const x = side * (5.4 + rng() * 1.2);
+      let ok = footFree(seg, x, z, 0.36, 0.36);
+      for (let t = 0; t < 6 && !ok; t++) { z = oz - 4 - rng() * (SEG_LEN - 8); ok = footFree(seg, x, z, 0.36, 0.36); }
+      if (!ok) continue;
       let m;
       if (useProp('prop_drum')) {
         const drum = art.staticInstance('prop_drum');
@@ -696,5 +720,5 @@ export function createWorld(scene, seed) {
     update(playerZ == null ? 0 : playerZ);
   }
 
-  return { update, reset, segments, colliders, sun };
+  return { update, reset, segments, colliders, sun, overlapCount, footFree };
 }
