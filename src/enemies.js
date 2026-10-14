@@ -248,6 +248,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // walk/run while moving, crouch in cover, lean on a peek, idle exposed, hit/death override.
   function desiredAnim(enemy) {
     if (enemy.dying) return 'death';
+    if (enemy.forceAnim && enemy.actions[enemy.forceAnim]) return enemy.forceAnim; // pose-shots test hook
     if (!enemy.moving) {
       const A = enemy.actions;
       if (enemy.posture === 'crouch') return A.crouchIdle ? 'crouchIdle' : 'crouch';
