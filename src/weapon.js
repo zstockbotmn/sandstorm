@@ -194,10 +194,8 @@ export function createWeapon(camera, world, scene) {
       }
     }
     if (input.cover) {
-      // Blind fire over the top of cover, but still converging on what the crosshair is on (the old parallel +0.5 m
-      // offset sailed over centre-aimed targets).
-      const ah = firstHit(_origin, _dir); const aimP = ah ? ah.point.clone() : _origin.clone().addScaledVector(_dir, 40);
-      _origin.y += 0.5; _dir.subVectors(aimP, _origin).normalize();
+      // Ducked fire goes exactly down the crosshair from the eye (the eye already clears the cover). The old +0.5 m
+      // raised origin sent shots along a different line than the crosshair and clipped cover/props: false misses.
       // Suppression: blind shots pin nearby alive enemies (slows their return fire).
       if (window.SS && window.SS.enemies && window.SS.enemies.list) {
         const el = window.SS.enemies.list;

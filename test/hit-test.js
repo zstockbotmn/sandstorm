@@ -53,6 +53,11 @@ const res = {};
         const vis = []; SS.scene.traverseVisible((o) => { if (!o.isMesh || o.isSkinnedMesh || !o.material || o.material.visible === false) return; let q = o; while (q) { if (q === e.group || q === SS.camera || q.isSprite) return; q = q.parent; } vis.push(o); });
         const occ = rc.intersectObjects(vis, false)[0];
         if (occ) { out.push({ part, skip: true, occluded: occ.object.name || occ.object.type, at: +occ.distance.toFixed(2) }); continue; }
+        { // final synchronous aim on this frame's hitbox (what the player sees), then fire
+          const tp = tgt.getWorldPosition(new SS.THREE.Vector3()), cp = SS.camera.getWorldPosition(new SS.THREE.Vector3());
+          const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
+          SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len);
+          SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
         const shot = SS.weapon.debugShoot(SS.input);
         const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(e.group.position.clone().setY(shot.hit.point.y)) < 1.2);
         out.push({ part, ok, hit: shot && shot.hit ? (shot.hit.enemy ? 'enemy:' + shot.hit.part : 'world:' + shot.hit.name) : 'none', cover: SS.input.cover });
