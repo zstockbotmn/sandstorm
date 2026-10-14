@@ -1,3 +1,5 @@
+import { createArms } from './arms.js';
+let arms = null;
 import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { art } from './art.js';
@@ -152,6 +154,7 @@ function simStep(dt) {
   // Fire BEFORE enemies move: shots test the hitboxes exactly where the last rendered frame showed them (firing after
   // the enemy update tested next-frame positions - a running fighter at 20 fps had moved ~0.25 m off the crosshair).
   weapon.update(dt, input.state);
+  if (arms) { try { arms.update(weapon.reloadProgress()); } catch (err) { console.warn('arms', err); arms = null; } }
   player.update(step);
   if (!frozen) enemies.update(step);
   if (!frozen && window.SS.running) stakes.update(step);
@@ -319,7 +322,9 @@ if (/[?&]hitbox/.test(location.search)) {
   const mk = [], gE = new THREE.SphereGeometry(0.06, 8, 6), mE = new THREE.MeshBasicMaterial({ color: 0xff2020, depthTest: false }), mW = new THREE.MeshBasicMaterial({ color: 0xffee00, depthTest: false });
   weapon.onShotDebug = (s) => { if (!s.hit) return; const m = new THREE.Mesh(gE, s.hit.enemy ? mE : mW); m.position.copy(s.hit.point); m.renderOrder = 99; scene.add(m); mk.push(m); setTimeout(() => { scene.remove(m); }, 2000); };
 }
-art.onReady(() => { const m4 = art.staticInstance('rifle_m4'); if (m4) m4.name = 'rifle_m4'; const r = m4 || art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search)); });
+art.onReady(() => { const m4 = art.staticInstance('rifle_m4'); if (m4) m4.name = 'rifle_m4'; const r = m4 || art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search));
+  if (m4 && weapon.model && art.get('fps_arms') && !/[?&]noarms/.test(location.search)) { try { arms = createArms(art.get('fps_arms'), art.anims('fps_arms'), camera);
+    if (arms) { weapon.model.parent.add(arms.root); arms.attach(weapon.model); window.SS.arms = arms; } } catch (err) { console.warn('arms', err); arms = null; } } });
 
 // Rapier (ragdoll physics, ~4 MB) is fetched after the first rendered frames, never before Play/first paint.
 let rapierQueued = false;
