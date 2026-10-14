@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 const MAG = 30;
+const RESERVE_START = 120, RESERVE_MAX = 210; // finite reserve (Zack): 120 at start, ammo drops top up to 210
 const RECOIL_RECOVER = 6; // 1/s, recoil pitch recovery
 let reloadEnd = 0;
 const RELOAD_TIME = 2.0;
@@ -55,6 +56,8 @@ export function createWeapon(camera, world, scene) {
   const targets = [];
   const weapon = {
     ammo: MAG,
+    reserve: RESERVE_START,
+    reserveMax: RESERVE_MAX,
     magSize: MAG,
     reloading: false,
     shotsFired: 0,
@@ -147,7 +150,7 @@ export function createWeapon(camera, world, scene) {
 
   let recoil = 0;
   function startReload() {
-    if (weapon.reloading || weapon.ammo >= MAG) return;
+    if (weapon.reloading || weapon.ammo >= MAG || weapon.reserve <= 0) return;
     weapon.reloading = true;
     reloadT = 0;
     reloadEnd = performance.now() + RELOAD_TIME * 1000; // real time: slow frames must not stretch the reload
@@ -292,7 +295,7 @@ export function createWeapon(camera, world, scene) {
       reloadT += dt;
       if (performance.now() >= reloadEnd) {
         weapon.reloading = false;
-        weapon.ammo = MAG;
+        { const take = Math.min(MAG - weapon.ammo, weapon.reserve); weapon.ammo += take; weapon.reserve -= take; }
         if (weapon.onReload) weapon.onReload('end');
       }
     } else if (input.reloadPressed) {
@@ -322,7 +325,7 @@ export function createWeapon(camera, world, scene) {
 
   weapon.reloadProgress = () => weapon.reloading ? Math.max(0, Math.min(1, 1 - (reloadEnd - performance.now()) / (RELOAD_TIME * 1000))) : 0;
   weapon.reset = function reset() {
-    weapon.ammo = MAG;
+    weapon.ammo = MAG; weapon.reserve = RESERVE_START;
     weapon.reloading = false;
     weapon.shotsFired = 0;
     weapon.shotsHit = 0;

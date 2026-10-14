@@ -16,7 +16,7 @@ export function createHud() {
 
   const ammoEl = document.createElement('div');
   ammoEl.id = 'ammo';
-  ammoEl.textContent = '30 / \u221E';
+  ammoEl.textContent = '30 / 120';
 
   const reloadEl = document.createElement('div');
   reloadEl.id = 'reloading';
@@ -162,7 +162,7 @@ export function createHud() {
     update(info) {
       if (!info) return;
       if (info.distance != null) distanceEl.textContent = Math.floor(info.distance) + ' m';
-      if (info.ammo != null) ammoEl.textContent = info.ammo + ' / \u221E';
+      if (info.ammo != null) ammoEl.textContent = info.ammo + ' / ' + (info.reserve != null ? info.reserve : '\u221E');
       if (info.reloading != null) { reloadEl.style.display = info.reloading ? 'block' : 'none'; ring.classList.toggle('on', !!info.reloading); if (info.reloadP != null) ring.style.setProperty('--p', String(info.reloadP)); }
       if (info.health != null) lowhp.classList.toggle('on', info.health > 0 && info.health <= 35);
       if (info.scoped != null) {

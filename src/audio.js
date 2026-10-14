@@ -211,6 +211,13 @@ export function createAudio() {
     }
   }
 
+  function pickup(kind) { // bright two-note chime (health higher)
+    if (!ctx) return;
+    const f = kind === 'health' ? 880 : 660;
+    tone(f, 0.05, 0.09, 'triangle'); setTimeout(() => ctx && tone(f * 1.5, 0.05, 0.12, 'triangle'), 70);
+    burst(0.02, 0.1, 3200, 2, 'highpass');
+  }
+
   function radio() {
     if (!ctx) return;
     const t0 = ctx.currentTime;
@@ -324,5 +331,5 @@ export function createAudio() {
     }
   }
 
-  return { unlock, update, gunfire, enemyShot, hit, kill, headshot, reload, radio };
+  return { unlock, update, gunfire, enemyShot, hit, kill, headshot, reload, radio, pickup };
 }

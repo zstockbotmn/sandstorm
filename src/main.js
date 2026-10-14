@@ -193,7 +193,7 @@ function frame(now) {
   hud.onTarget(weapon.onTarget); hud.setScope(!!input.scope && player.alive && window.SS.running);
   hud.update({
     distance: window.SS.distance,
-    ammo: weapon.ammo,
+    ammo: weapon.ammo, reserve: weapon.reserve,
     reloading: weapon.reloading, reloadP: weapon.reloadProgress ? weapon.reloadProgress() : null,
     scoped: input.scope,
     score: window.SS.score,

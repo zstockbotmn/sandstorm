@@ -21,18 +21,31 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
     if (window.SS) window.SS.pickupsDropped = (window.SS.pickupsDropped | 0) + 1;
   }
   function take(it) {
-    if (it.kind === 'health') { player.health = Math.min(100, player.health + 35); if (window.SS) window.SS.health = player.health; if (hud.setHealth) hud.setHealth(player.health); hud.hint && hud.hint('+35 HEALTH'); }
-    else { weapon.ammo = weapon.magSize; weapon.reloading = false; hud.hint && hud.hint('AMMO: mag full'); }
-    if (audio && audio.reload) audio.reload('end');
+    if (it.kind === 'health') { it.gained = Math.min(100, player.health + 35) - player.health; player.health = Math.min(100, player.health + 35); if (window.SS) window.SS.health = player.health; if (hud.setHealth) hud.setHealth(player.health); hud.hint && hud.hint('+35 HEALTH'); }
+    else { const before = weapon.reserve; weapon.reserve = Math.min(weapon.reserveMax || 210, (weapon.reserve | 0) + 60); it.gained = weapon.reserve - before; }
+    popup(it.kind === 'health' ? '+35 HP' : '+' + (it.gained | 0) + ' AMMO', it.kind === 'health' ? '#ff6a5a' : '#ffd23a');
+    if (audio && audio.pickup) audio.pickup(it.kind); else if (audio && audio.reload) audio.reload('end');
+    if (window.SS) { window.SS.lastPickup = { kind: it.kind, health: player.health, reserve: weapon.reserve }; }
     if (window.SS) window.SS.pickupsTaken = (window.SS.pickupsTaken | 0) + 1;
   }
+  function popup(text, color) {
+    const el = document.createElement('div'); el.textContent = text; el.className = 'ss-pickpop';
+    el.style.cssText = 'position:fixed;left:50%;top:58%;transform:translate(-50%,0);font:800 22px system-ui,sans-serif;color:' + color + ';text-shadow:0 2px 4px #000;pointer-events:none;z-index:40;transition:transform .9s ease-out,opacity .9s ease-in;opacity:1';
+    document.body.appendChild(el); requestAnimationFrame(() => { el.style.transform = 'translate(-50%,-60px)'; el.style.opacity = '0'; });
+    setTimeout(() => el.remove(), 1000);
+  }
+  const _tgt = new THREE.Vector3();
   function update(dt) {
     const pz = camera.position.z;
     for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; it.t += dt; it.g.children[0].rotation.y += dt * 1.5; it.g.children[1].position.y = 0.75 + Math.sin(it.t * 3) * 0.06;
       const dx = it.g.position.x - camera.position.x, dz = it.g.position.z - pz;
-      // collected when the walk/cover run brings you within 2.6 m (or you pass it); despawn if left far behind
-      if (Math.hypot(dx, dz) < 2.6 || (dz > 0 && dz < 3 && Math.abs(dx) < 4.5)) { take(it); scene.remove(it.g); items.splice(i, 1); }
-      else if (dz > 12) { scene.remove(it.g); items.splice(i, 1); } }
+      // auto-collect (Zack): after ~0.6 s on the ground the drop flies to the player and applies on arrival
+      if (it.t > 0.6 && Math.hypot(dx, dz) < 40) {
+        it.fly = (it.fly || 0) + dt;
+        _tgt.set(camera.position.x, camera.position.y - 0.5, camera.position.z);
+        const k = Math.min(1, dt * (3 + it.fly * 10)); it.g.position.lerp(_tgt, k); it.g.scale.setScalar(Math.max(0.4, 1 - it.fly));
+        if (it.g.position.distanceTo(_tgt) < 0.6 || it.fly > 1.2) { take(it); scene.remove(it.g); items.splice(i, 1); }
+      } else if (dz > 40) { scene.remove(it.g); items.splice(i, 1); } }
     const d = window.SS ? window.SS.distance : 0;
     if (!goalDone) { hud.setGoal && hud.setGoal('GOAL: reach the market · ' + Math.max(0, Math.ceil(GOAL_M - d)) + ' m');
       if (d >= GOAL_M) { goalDone = true; if (window.SS) window.SS.goalReached = true; hud.banner && hud.banner('MARKET REACHED! +500'); score.addBonus && score.addBonus(500);
