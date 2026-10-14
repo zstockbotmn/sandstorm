@@ -24,6 +24,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     await p.evaluate(() => { window.__e.group.visible = false; window.__e.group.position.y = -50; SS.enemies.debugTruck(); }); await p.waitForTimeout(16000);
     res.truck = await p.evaluate(() => { let t = null; SS.scene.traverse((o) => { if (!t && o.name === 'truck_mil') t = o; }); if (!t) return null; const w = new SS.THREE.Vector3(); t.getWorldPosition(w);
       SS.camera.position.set(w.x - Math.sign(w.x || 1) * 4.5, 1.8, w.z + 4.5); SS.camera.lookAt(w.x, 1.0, w.z); SS.walking = false; window.__freezeCam = true; return w.toArray().map((v) => +v.toFixed(1)); });
+    res.truckMats = await p.evaluate(() => { const r = []; SS.scene.traverse((o) => { if (o.name === 'truck_mil') o.traverse((m) => { if (m.isMesh) r.push(m.name + ':' + m.material.name + ':' + (m.parent && m.parent.name)); }); }); return r; });
     await p.waitForTimeout(150); await p.screenshot({ path: OUT + '/truck.png' });
   } catch (e) { errs.push('exception ' + e.message); }
   console.log(JSON.stringify({ res, errs })); console.log(errs.length ? 'POSES FAIL' : 'POSES PASS'); await b.close(); srv.close(); process.exit(errs.length ? 1 : 0); })();
