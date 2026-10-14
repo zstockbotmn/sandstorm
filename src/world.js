@@ -233,7 +233,7 @@ export function createWorld(scene, seed) {
 
   {
     // Diffuse on every tier (nothing untextured from any angle); normal + ARM on High only.
-    const full = art.tier === 'high';
+    const full = art.tier === 'high' && !LOWQ;
     upgradeMaterial(desertMat, 'sand_01', 48, 48, full);
     upgradeMaterial(matRoad, 'asphalt_01', 4, 18, full);
     upgradeMaterial(matSand, 'sand_01', 4, 14, full);
