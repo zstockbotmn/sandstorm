@@ -139,11 +139,11 @@ export function createWorld(scene, seed) {
     for (const y of [1.2, 2.4, 3.8, 5.5]) for (let k = 0; k < 7; k++) {
       const z = box.min.z + (0.12 + 0.76 * k / 6) * (box.max.z - box.min.z);
       _rc.set(new THREE.Vector3(fx0 - side * 0.5, Math.min(y, box.max.y - 0.3), z), dir); _rc.far = depthAll + 1;
-      const h = _rc.intersectObject(shellModel, true)[0]; if (h) hits.push(Math.abs(h.point.x - fx0));
+      const h = _rc.intersectObject(shellModel, true)[0]; hits.push(h ? Math.abs(h.point.x - fx0) : depthAll); // a miss = open/see-through front
     }
     hits.sort((p, q) => p - q);
     const wallD = hits.length ? hits[Math.min(hits.length - 1, Math.floor(hits.length * 0.9))] : 0.6;
-    const inset = Math.min(depthAll * 0.45, wallD + 0.3);
+    const inset = Math.min(depthAll * 0.6, wallD + 0.3);
     const front = fx0 + side * inset;
     const back = side < 0 ? box.min.x - 0.06 : box.max.x + 0.06;
     const top = roof ? Math.min(box.max.y, roof.y - 0.25) : box.max.y * 0.985;
