@@ -396,6 +396,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (next && enemy.currentAction !== next) crossTo(enemy, next, 0.2);
     }
     if (enemy.actions.upper) enemy.actions.upper.setEffectiveWeight(SPLIT_ANIMS.has(name) ? 1 : 0); // stance arms only under legs-only clips
+    // Rest-pose reset before the mixer: some clips (Combat_Stance has no Spine track) leave bones untouched, so the
+    // procedural hunch/lean bends and the previous clip's values piled up on them every frame - the "bent, rifle over
+    // the head" idle/aim pose. Bones the clip animates are overwritten by the mixer right after.
+    if (!enemy.restQ) enemy.restQ = enemy.art.restQ; if (!enemy.restQ) { enemy.restQ = []; enemy.art.root.traverse((o) => { if (o.isBone) enemy.restQ.push(o, o.quaternion.clone()); }); }
+    for (let i = 0; i < enemy.restQ.length; i += 2) enemy.restQ[i].quaternion.copy(enemy.restQ[i + 1]);
     enemy.mixer.update(dt);
     proceduralLean(enemy, name, dt);
     if (enemy.hitPlaying && !enemy.actions.hit.enabled) {
@@ -524,6 +529,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const idleDur = idle.getClip().duration || 1;
     idle.time = enemy.animPhase * idleDur;
     enemy.currentAction = idle;
+    inst.restQ = []; inst.root.traverse((o) => { if (o.isBone) inst.restQ.push(o, o.quaternion.clone()); }); // bind pose, before any clip
     inst.mixer.update(0);
     plantFeet(inst.root);
   }
