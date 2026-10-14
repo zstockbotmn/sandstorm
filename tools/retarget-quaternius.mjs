@@ -50,6 +50,11 @@ const CLIPS = [
   ['death', 'Death01'],
   ['idle', 'Idle_Loop'],
   ['hit', 'Hit_Chest'],
+  ['jog', 'Jog_Fwd_Loop'],
+  ['crouchIdle', 'Crouch_Idle_Loop'],
+  ['aim', 'Pistol_Aim_Neutral'],
+  ['shoot', 'Pistol_Shoot'],
+  ['hitHead', 'Hit_Head'],
 ];
 
 const FPS = 20;

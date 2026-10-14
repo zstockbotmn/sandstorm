@@ -244,18 +244,32 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function desiredAnim(enemy) {
     if (enemy.dying) return 'death';
     if (!enemy.moving) {
-      if (enemy.posture === 'crouch') return 'crouch';
+      const A = enemy.actions;
+      if (enemy.posture === 'crouch') return A.crouchIdle ? 'crouchIdle' : 'crouch';
       if (enemy.posture === 'lean') return 'lean';
+      if (enemy.exposed && A.aim && enemy.phase !== 'relocate') return 'aim';
       return 'idle';
     }
+    if (enemy.posture === 'crouch' && enemy.actions.crouch) return 'crouch';
     if (enemy.moveKind === 'walk') return 'walk';
-    if (enemy.moveKind === 'strafe') return 'strafe';
+    if (enemy.moveKind === 'strafe') return enemy.actions.strafe ? 'strafe' : 'walk';
+    if (enemy.actions.jog && (enemy.moveSpeed || 0) < 3.6) return 'jog';
     return 'run';
   }
 
+  // Clip ground speeds (m/s) for stride matching: playback rate follows real speed so feet don't slide.
+  const STRIDE = { walk: 1.4, jog: 3.0, run: 5.2, crouch: 1.1, strafe: 1.4 };
   function stepArt(enemy, dt) {
+    _turnDt = dt;
     const name = desiredAnim(enemy);
     enemy.animState = name;
+    const ref = STRIDE[name];
+    const cur = enemy.actions[name];
+    if (cur && !enemy.hitPlaying) {
+      const ts = ref && enemy.moving ? Math.min(1.6, Math.max(0.6, (enemy.moveSpeed || ref) / ref)) : 1;
+      enemy.animTS = enemy.animTS == null ? ts : enemy.animTS + (ts - enemy.animTS) * Math.min(1, dt * 8);
+      cur.setEffectiveTimeScale(enemy.animTS);
+    }
     if (enemy.hitPlaying) {
       const hit = enemy.actions.hit;
       const dur = hit.getClip().duration || 0;
@@ -275,7 +289,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
   }
 
-  function playHit(enemy) {
+  function playHit(enemy, head) {
+    if (head && enemy.actions.hitHead && enemy.actions.hit !== enemy.actions.hitHead) {
+      enemy.actions.hitBody = enemy.actions.hitBody || enemy.actions.hit;
+    }
+    if (enemy.actions.hitBody) enemy.actions.hit = head ? enemy.actions.hitHead : enemy.actions.hitBody;
     const hit = enemy.actions.hit;
     if (!hit) return;
     const prev = enemy.currentAction;
@@ -488,9 +506,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return new THREE.Vector3(side * Math.min(Math.abs(x), 6.3), 0, z);
   }
 
+  // Smooth turning: rotate toward the target yaw at a capped rate instead of snapping.
+  const _turnQ = new THREE.Quaternion();
+  const _turnM = new THREE.Matrix4();
+  const _up = new THREE.Vector3(0, 1, 0);
+  let _turnDt = 1 / 60;
+  function turnTo(enemy, x, z, rate) {
+    const g = enemy.group;
+    const dx = x - g.position.x, dz = z - g.position.z;
+    if (dx * dx + dz * dz < 1e-4) return;
+    _turnQ.setFromAxisAngle(_up, Math.atan2(dx, dz));
+    if (!enemy.turned) { g.quaternion.copy(_turnQ); enemy.turned = true; return; }
+    g.quaternion.rotateTowards(_turnQ, (rate || 7) * _turnDt);
+  }
   function facePlayer(enemy) {
-    _look.set(camera.position.x, enemy.group.position.y, camera.position.z);
-    enemy.group.lookAt(_look);
+    turnTo(enemy, camera.position.x, camera.position.z, 6);
   }
 
   function spray(point) {
@@ -581,7 +611,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (point) spray(point);
     if (enemy.health <= 0) kill(enemy, point, part);
     else {
-      if (enemy.art) playHit(enemy);
+      if (enemy.art) playHit(enemy, part === 'head');
       // Bigger hit reaction: shove back ~0.3 m from the shooter (ground enemies) + a brief exposed stagger.
       if (enemy.group.position.y < 0.5) { _aim.copy(enemy.group.position).sub(camera.position).setY(0).normalize(); enemy.group.position.addScaledVector(_aim, 0.3); }
       enemy.staggerT = 0.45; enemy.shootCd = Math.max(enemy.shootCd || 0, 0.6);
@@ -909,7 +939,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const step = Math.min(dist, speed * dt);
     p.addScaledVector(_fwd.multiplyScalar(1 / dist), step);
     if (p.y < 0) p.y = 0;
-    if (horiz > 0.12) enemy.group.lookAt(dest.x, p.y, dest.z);
+    if (horiz > 0.12) turnTo(enemy, dest.x, dest.z, 9);
+    enemy.moveSpeed = step / Math.max(dt, 1e-4);
     return false;
   }
 

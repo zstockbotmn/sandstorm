@@ -13,7 +13,7 @@ Sandstorm uses these third-party assets and libraries. Versions match `package.j
 | `dirty_concrete` diffuse / normal / ARM | CC0 | https://polyhaven.com/a/dirty_concrete |
 | Universal Animation Library, Godot Standard (`AnimationLibrary_Godot_Standard`, retargeted to `assets/models/fighter.quaternius.anim.glb`) | CC0 | https://quaternius.com/packs/universalanimationlibrary.html and https://quaternius.itch.io/universal-animation-library — Godot Standard glTF used from the pack (also published via https://github.com/Quaternius/quaternius.github.io) |
 
-Poly Haven downloads were resized to 512 webp. Quaternius clips were retargeted onto the Meshy fighter bones at build time (`tools/retarget-quaternius.mjs`). No Mixamo clips are used.
+Poly Haven downloads were resized to 512 webp. Quaternius clips were retargeted onto the Meshy fighter bones at build time (`tools/retarget-quaternius.mjs`). No Mixamo clips are used. Clips used: Walk_Loop, Jog_Fwd_Loop, Sprint_Loop, Crouch_Fwd_Loop, Crouch_Idle_Loop, Idle_Loop, Pistol_Aim_Neutral (aim + lean), Pistol_Shoot, Hit_Chest, Hit_Head, Death01 (all CC0).
 
 ## Code
 

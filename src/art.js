@@ -23,6 +23,11 @@ const CLIP_KEYS = {
   death: 'death',
   idle: 'idle',
   hit: 'hit',
+  jog: 'jog',
+  crouchIdle: 'crouchIdle',
+  aim: 'aim',
+  shoot: 'shoot',
+  hitHead: 'hitHead',
 };
 
 const assets = Object.create(null);
@@ -188,6 +193,10 @@ function makeFighter(i) {
     hit: makeAction(mixer, clips.hit, true),
   };
   if (clips.death) actions.death = makeAction(mixer, clips.death, true);
+  if (clips.jog) actions.jog = makeAction(mixer, clips.jog, false);
+  if (clips.crouchIdle) actions.crouchIdle = makeAction(mixer, clips.crouchIdle, false);
+  if (clips.aim) actions.aim = makeAction(mixer, clips.aim, false);
+  if (clips.hitHead) actions.hitHead = makeAction(mixer, clips.hitHead, true);
   const bones = {};
   for (let k = 0; k < BONE_NAMES.length; k++) {
     bones[BONE_NAMES[k]] = root.getObjectByName(BONE_NAMES[k]) || null;
