@@ -23,7 +23,7 @@ const res = {};
     let slide = 0, lockedFrames = 0; const prev = [null, null];
     for (let k = 0; k < 60; k++) { await frames(1); const d = e.ikDbg || []; for (let i = 0; i < 2; i++) { const f = d[i]; if (!f) continue;
       if (f.locked && prev[i] && prev[i].locked) { slide = Math.max(slide, Math.hypot(f.x - prev[i].x, f.z - prev[i].z)); lockedFrames++; } prev[i] = f; } }
-    return { slide, lockedFrames, legs: (e.legs || []).length };
+    return { slide, lockedFrames, legs: (e.legs || []).length, dist: +SS.camera.position.distanceTo(e.group.position).toFixed(1), ank: e.ankleH, gy: e.group.position.y, ik: e.ikDbg, pinned: e.pinned, moving: e.moving, anim: e.animState };
   });
   for (let i = 0; i < 4; i++) { await p.screenshot({ path: OUT + '/foot-' + i + '.png' }); await p.waitForTimeout(250); }
   res.foot = foot;
