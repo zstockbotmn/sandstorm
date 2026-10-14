@@ -18,5 +18,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     await p.evaluate(() => { SS.input.state.scope = true; }); await p.waitForTimeout(500); await shot('ads-in'); await p.waitForTimeout(1200); await shot('ads');
     await p.evaluate(() => { SS.input.state.scope = false; });
     res.reach = await p.evaluate(() => SS.arms && SS.arms.reach);
+    res.dbg = await p.evaluate(() => { const A = SS.arms; if (!A) return null; const o = {}; const w = (x) => { const v = x.getWorldPosition(A.grip.position.clone()); return [v.x, v.y, v.z].map((n) => +n.toFixed(3)); };
+      for (const k of ['grip', 'guard', 'mag']) o[k] = w(A[k]); for (const s of ['R', 'L']) for (const k of ['up', 'hand', 'ctl']) o[s + k] = w(A[s][k]); o.len = [A.R.la, A.R.lb, A.L.la, A.L.lb].map((n) => +n.toFixed(3)); return o; });
   } catch (e) { errs.push('exception ' + e.message); }
   console.log(JSON.stringify({ res, errs })); console.log(errs.length ? 'HANDS FAIL' : 'HANDS PASS'); await b.close(); srv.close(); process.exit(errs.length ? 1 : 0); })();
