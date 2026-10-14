@@ -110,6 +110,20 @@ function bakeClips(animations) {
   return out;
 }
 
+// Upper/lower split (Zack: twisted arms, bobbing head). Quaternius clips are retargeted from a different rest pose,
+// so their arm/spine/head tracks twist on the Meshy rigs. Locomotion keeps only Quaternius hips+legs; the upper body
+// plays the Meshy rig's own Combat_Stance (authored on this skeleton, rifle held) as a separate always-on layer.
+const UPPER_RE = /(Spine|neck|Neck|Head|Shoulder|Arm|Hand)/;
+const LOWER_ONLY = ['idle', 'walk', 'run', 'jog', 'crouch', 'crouchIdle', 'aim', 'lean', 'strafe'];
+function splitUpper(meshyStance) {
+  const up = meshyStance.tracks.filter((t) => UPPER_RE.test(t.name.split('.')[0].split('/').pop()));
+  if (!up.length) return;
+  clips.upper = new THREE.AnimationClip('upper', meshyStance.duration, up);
+  const done = new Set();
+  for (const k of LOWER_ONLY) { const c = clips[k]; if (!c || done.has(c)) continue; done.add(c);
+    c.tracks = c.tracks.filter((t) => !UPPER_RE.test(t.name.split('.')[0].split('/').pop())); }
+}
+
 function makeLoader() {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
@@ -128,7 +142,8 @@ function adopt(name, gltf) {
   fixObject(gltf.scene);
   if (name === 'fighter.quaternius.anim' || name === 'fighter1.anim') {
     const baked = bakeClips(gltf.animations || []);
-    if (clipsUsable(baked)) clips = baked;
+    if (name === 'fighter1.anim' && clips && clips !== baked && baked.idle) splitUpper(baked.idle);
+    else if (clipsUsable(baked)) clips = baked;
   }
   assets[name] = gltf.scene;
 }
@@ -194,6 +209,7 @@ function makeFighter(i) {
   };
   if (clips.death) actions.death = makeAction(mixer, clips.death, true);
   if (clips.jog) actions.jog = makeAction(mixer, clips.jog, false);
+  if (clips.upper) { actions.upper = makeAction(mixer, clips.upper, false); actions.upper.play(); }
   if (clips.crouchIdle) actions.crouchIdle = makeAction(mixer, clips.crouchIdle, false);
   if (clips.aim) actions.aim = makeAction(mixer, clips.aim, false);
   if (clips.hitHead) actions.hitHead = makeAction(mixer, clips.hitHead, true);
@@ -377,8 +393,7 @@ if (art.tier === 'low') {
 } else {
   loadStarted = performance.now();
   loadGroup(PRIMARY, false).then(() => {
-    if (clipsUsable(clips)) return null;
-    return loadGroup([ANIM_FALLBACK], false);
+    return loadGroup([ANIM_FALLBACK], false); // fallback clips if Quaternius failed, else the upper-body layer
   }).then(() => loadGroup(PROPS, true)).then(finish).catch((err) => {
     console.warn('art load', err);
     finish();

@@ -272,8 +272,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
     bone.quaternion.premultiply(_lnQ.setFromAxisAngle(_lnAxis, ang));
   }
   const _fwdW = new THREE.Vector3(), _rightW = new THREE.Vector3();
+  // Head look-at toward the player, limited to +-55 deg yaw / +-25 deg pitch, eased (no snapping or bobbing).
+  const _hlD = new THREE.Vector3(), _hlF = new THREE.Vector3(), _hlR = new THREE.Vector3();
+  function headLook(enemy, dt) {
+    const h = enemy.bones && enemy.bones.Head; if (!h || !h.parent) return;
+    enemy.group.updateMatrixWorld(true);
+    h.getWorldPosition(_hlD); _hlD.subVectors(camera.position, _hlD);
+    _hlF.set(0, 0, 1).applyQuaternion(enemy.group.quaternion); _hlR.set(1, 0, 0).applyQuaternion(enemy.group.quaternion);
+    const yaw = Math.atan2(_hlD.dot(_hlR), _hlD.dot(_hlF)), pitch = Math.atan2(_hlD.y, Math.hypot(_hlD.x, _hlD.z));
+    const ty = Math.max(-0.96, Math.min(0.96, yaw)), tp = Math.max(-0.44, Math.min(0.44, pitch));
+    const k = Math.min(1, dt * 5); enemy.lookY = (enemy.lookY || 0) + (ty - (enemy.lookY || 0)) * k; enemy.lookP = (enemy.lookP || 0) + (tp - (enemy.lookP || 0)) * k;
+    bendBone(h, _up, enemy.lookY); bendBone(h, _hlR, -enemy.lookP);
+  }
   function proceduralLean(enemy, name, dt) {
     const b = enemy.bones; if (!b || enemy.dying) { enemy.leanW = 0; return; }
+    headLook(enemy, dt);
     const tgtRoll = name === 'lean' ? 1 : 0;
     const tgtHunch = (name === 'aim' || name === 'lean') ? 1 : 0;
     const k = Math.min(1, dt * 6);
