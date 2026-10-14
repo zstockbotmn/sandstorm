@@ -328,14 +328,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     rotWorld(up, _ikQ.setFromUnitVectors(_ikA, _ikB));
   }
   function footIK(enemy, dt) {
-    const r = enemy.art && enemy.art.root; if (!r || enemy.dying || art.tier !== 'high') return;
+    const r = enemy.art && enemy.art.root; if (!r || enemy.dying) return;
     if (!enemy.legs) {
       enemy.legs = [['LeftUpLeg', 'LeftLeg', 'LeftFoot'], ['RightUpLeg', 'RightLeg', 'RightFoot']].map((n) => ({ up: r.getObjectByName(n[0]), knee: r.getObjectByName(n[1]), foot: r.getObjectByName(n[2]), lock: null }))
         .filter((l) => l.up && l.knee && l.foot);
       r.updateMatrixWorld(true); const gy = enemy.group.position.y;
       enemy.ankleH = Math.max(0.04, Math.min(0.2, Math.min(...enemy.legs.map((l) => l.foot.getWorldPosition(_ikF).y - gy))));
     }
-    if (camera.position.distanceToSquared(enemy.group.position) > 900) { enemy.legs.forEach((l) => { l.lock = null; }); return; }
     // Pelvis drop: clips whose hips float (the jog/run retarget left both feet ~0.3-0.4 m up) are lowered so the lowest
     // foot meets the ground; eased so the body doesn't pop.
     if (enemy.rootY0 == null) enemy.rootY0 = r.position.y;
@@ -344,6 +343,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const want = Math.min(0, (enemy.pelvisOff || 0) + (gy0 - lo) / Math.max(1e-3, r.parent ? r.parent.getWorldScale(_ikA).y : 1));
       enemy.pelvisOff = (enemy.pelvisOff || 0) + (want - (enemy.pelvisOff || 0)) * Math.min(1, dt * 12);
       r.position.y = enemy.rootY0 + enemy.pelvisOff + 0; r.updateMatrixWorld(true); }
+    // pelvis drop runs at every range/tier (cheap); the two-bone solve + locking only on High within 30 m
+    if (art.tier !== 'high' || camera.position.distanceToSquared(enemy.group.position) > 900) { enemy.legs.forEach((l) => { l.lock = null; }); return; }
     const ground = enemy.group.position.y + enemy.ankleH, out = enemy.ikDbg || (enemy.ikDbg = []);
     for (let i = 0; i < enemy.legs.length; i++) {
       const L = enemy.legs[i]; L.foot.getWorldPosition(_ikF);

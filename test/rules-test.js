@@ -15,7 +15,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
       window.__r = { samples: 0, maxVy: 0, vyAt: null, floatMax: 0, floatAt: null, overlaps: 0 }; const last = new Map(); let lt = performance.now();
       const foot = (e) => { let m = 1e9; e.group.traverse((o) => { if (o.isBone && /Foot$/.test(o.name)) { const v = new SS.THREE.Vector3(); o.getWorldPosition(v); m = Math.min(m, v.y); } }); return m; };
       window.__iv = setInterval(() => { const t = performance.now(), dt = (t - lt) / 1000; lt = t; const R = window.__r; R.samples++;
-        R.overlaps = Math.max(R.overlaps, SS.world.overlapCount());
+        { const n = SS.world.overlapCount(); if (n > R.overlaps) { R.overlaps = n; R.ovl = SS.world.overlapCount.last; } }
         for (const e of SS.enemies.list || []) { if (!e.alive || e.fromTruckRide) { last.delete(e); continue; }
           const y = e.group.position.y; if (last.has(e) && dt > 0) { const vy = Math.abs(y - last.get(e)) / dt; if (vy > R.maxVy) { R.maxVy = vy; R.vyAt = { type: e.anchor && e.anchor.type, y, phase: e.phase }; } } last.set(e, y);
           const elev = e.anchor && /roof|window|balcony/.test(e.anchor.type); if (!elev && e.art) { const f = foot(e); if (f < 1e8 && f > R.floatMax) { R.floatMax = f; R.floatAt = { type: e.anchor && e.anchor.type, y, phase: e.phase, kind: e.moveKind }; } } } }, 100); });

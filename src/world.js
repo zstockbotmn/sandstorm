@@ -298,7 +298,7 @@ export function createWorld(scene, seed) {
     let n = 0; const a = new THREE.Box3(), b = new THREE.Box3();
     const solids = colliders.filter((m) => SOLID.has(m.name) && m.name !== 'carcab');
     for (let i = 0; i < solids.length; i++) { a.setFromObject(solids[i]); a.expandByScalar(-0.02);
-      for (let j = i + 1; j < solids.length; j++) { b.setFromObject(solids[j]); if (a.intersectsBox(b) && !(solids[i].name === 'car' && solids[j].name === 'carcab')) n++; } }
+      for (let j = i + 1; j < solids.length; j++) { b.setFromObject(solids[j]); if (a.intersectsBox(b) && !(solids[i].name === 'car' && solids[j].name === 'carcab')) { n++; overlapCount.last = [solids[i].name, solids[j].name, a.min.x.toFixed(1), a.min.z.toFixed(1), b.min.x.toFixed(1), b.min.z.toFixed(1)]; } } }
     return n;
   }
 
@@ -339,7 +339,7 @@ export function createWorld(scene, seed) {
       seg.group.add(obj);
       { const _c = addInvisibleBox(seg, x, y, z, sx, sy, sz); _c.name = 'lowwall'; return _c; }
     }
-    return addBox(seg, matWall, x, y, z, sx, sy, sz);
+    { const w = addBox(seg, matWall, x, y, z, sx, sy, sz); w.name = 'lowwall'; return w; }
   }
 
   function maybeFrontWall(seg, rng, side, cz, lot) {
