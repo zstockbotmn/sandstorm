@@ -10,16 +10,29 @@ export function createSky(scene) {
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const dome = new THREE.Mesh(new THREE.SphereGeometry(200, 24, 16), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false }));
   dome.renderOrder = -10; dome.frustumCulled = false; scene.add(dome);
-  // distant hazy skyline band: random flat-roof/dome silhouettes, fades into the horizon colour
-  const s = document.createElement('canvas'); s.width = 2048; s.height = 128; const h = s.getContext('2d');
+  // Distant city ring (replaces the flat skyline band): low-poly 3D blocks, domes and minarets on a ring that rides with
+  // the camera, lit by the scene and hazed toward the horizon colour by distance (fog off so it never vanishes).
   let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  h.fillStyle = 'rgba(196,176,140,1)';
-  for (let x = 0; x < 2048;) { const w = 20 + rnd() * 70, ht = 18 + rnd() * 70; h.fillRect(x, 128 - ht, w, ht);
-    if (rnd() < 0.15) { h.beginPath(); h.arc(x + w / 2, 128 - ht, w * 0.35, Math.PI, 0); h.fill(); }
-    if (rnd() < 0.08) h.fillRect(x + w * 0.4, 128 - ht - 40, 6, 40); x += w + rnd() * 6; }
-  const sTex = new THREE.CanvasTexture(s); sTex.colorSpace = THREE.SRGBColorSpace; sTex.wrapS = THREE.RepeatWrapping; sTex.repeat.x = 3;
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(150, 150, 30, 48, 1, true), new THREE.MeshBasicMaterial({ map: sTex, transparent: true, side: THREE.BackSide, fog: false, depthWrite: false }));
-  band.position.y = 13; band.renderOrder = -9; band.frustumCulled = false; scene.add(band);
+  const haze = new THREE.Color(0xe2d3b0), base = new THREE.Color(0xc2a77e), tmpC = new THREE.Color();
+  const N = 220, box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, fog: false });
+  const blocks = new THREE.InstancedMesh(box, mat, N);
+  const domeG = new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), towerG = new THREE.CylinderGeometry(0.5, 0.6, 1, 8); towerG.translate(0, 0.5, 0);
+  const domes = new THREE.InstancedMesh(domeG, mat, 24), towers = new THREE.InstancedMesh(towerG, mat, 16);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  let nd = 0, nt = 0;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 + rnd() * 0.02, r = 105 + rnd() * 70, w = 6 + rnd() * 12, d = 6 + rnd() * 10, h = 5 + rnd() * 22 * (r < 140 ? 0.7 : 1);
+    v.set(Math.sin(a) * r, -0.5, Math.cos(a) * r); q.setFromAxisAngle(up, a + rnd() * 0.3); sc.set(w, h, d);
+    blocks.setMatrixAt(i, m4.compose(v, q, sc));
+    const k = Math.min(1, (r - 100) / 80) * 0.55 + 0.25; blocks.setColorAt(i, tmpC.copy(base).multiplyScalar(0.85 + rnd() * 0.25).lerp(haze, k));
+    if (nd < 24 && rnd() < 0.11) { const dr = Math.min(w, d) * 0.4; domes.setMatrixAt(nd, m4.compose(v.clone().setY(h - 0.5), q, sc.set(dr, dr * 0.9, dr))); domes.setColorAt(nd++, tmpC); }
+    if (nt < 16 && rnd() < 0.07) { towers.setMatrixAt(nt, m4.compose(v.clone().add(sc.set(w * 0.3, 0, 0)), q, sc.set(1.6, h + 10 + rnd() * 8, 1.6))); towers.setColorAt(nt++, tmpC); }
+  }
+  domes.count = nd; towers.count = nt;
+  const band = new THREE.Group(); band.add(blocks, domes, towers);
+  [blocks, domes, towers].forEach((m) => { m.frustumCulled = false; m.castShadow = m.receiveShadow = false; });
+  scene.add(band);
   scene.background = new THREE.Color(0xa9cbe3);
-  return { update(cam) { dome.position.copy(cam.position); band.position.x = cam.position.x; band.position.z = cam.position.z; } };
+  return { update(cam) { dome.position.copy(cam.position); band.position.x = cam.position.x; band.position.z = cam.position.z; band.position.y = 0; } };
 }

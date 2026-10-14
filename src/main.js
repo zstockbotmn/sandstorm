@@ -308,7 +308,7 @@ if (/[?&]debug\b/.test(location.search)) {
 }
 
 // Swap the code-built box rifle for the CC0 rifle model once art is loaded (box rifle stays if it fails / low tier).
-art.onReady(() => { const r = art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search)); });
+art.onReady(() => { const m4 = art.staticInstance('rifle_m4'); if (m4) m4.name = 'rifle_m4'; const r = m4 || art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search)); });
 
 // Rapier (ragdoll physics, ~4 MB) is fetched after the first rendered frames, never before Play/first paint.
 let rapierQueued = false;

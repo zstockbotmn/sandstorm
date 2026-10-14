@@ -127,6 +127,32 @@ export function createWorld(scene, seed) {
       col[i * 3] = r * d; col[i * 3 + 1] = gg * d; col[i * 3 + 2] = b * d; }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g;
   }
+  // Decals: one canvas atlas (oil stain, cracks, torn poster, grime streak), alpha-tested (no blending: the transparent
+  // first-draw stall on software GL), polygon-offset, merged into one mesh per segment.
+  const decalTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d'); let sd = 11;
+    const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+    // 0: oil stain
+    for (let i = 0; i < 26; i++) { g.fillStyle = `rgba(28,22,16,${0.35 + r() * 0.4})`; g.beginPath(); g.ellipse(128 + (r() - 0.5) * 110, 128 + (r() - 0.5) * 90, 18 + r() * 50, 12 + r() * 36, r() * 3, 0, 7); g.fill(); }
+    // 1: cracks
+    g.strokeStyle = 'rgba(40,32,24,0.95)'; g.lineWidth = 3;
+    for (let k = 0; k < 5; k++) { g.beginPath(); let x = 300 + r() * 170, y = 20 + r() * 60; g.moveTo(x, y); for (let i = 0; i < 9; i++) { x += (r() - 0.5) * 50; y += 18 + r() * 12; g.lineTo(Math.max(260, Math.min(500, x)), Math.min(250, y)); } g.stroke(); }
+    // 2: torn poster
+    g.fillStyle = '#c8b27a'; g.fillRect(30, 290, 196, 200); g.fillStyle = '#7a2a1e'; g.fillRect(44, 304, 168, 60); g.fillStyle = '#2b2a28';
+    for (let i = 0; i < 6; i++) g.fillRect(48, 380 + i * 16, 80 + r() * 80, 7);
+    g.globalCompositeOperation = 'destination-out'; for (let i = 0; i < 9; i++) { g.beginPath(); g.moveTo(30 + r() * 196, 490); g.lineTo(30 + r() * 196, 420 + r() * 60); g.lineTo(30 + r() * 196, 490); g.fill(); } g.globalCompositeOperation = 'source-over';
+    // 3: grime streaks (rain/soot running down)
+    for (let i = 0; i < 40; i++) { const x = 266 + r() * 236, w = 3 + r() * 12, h = 60 + r() * 180; g.fillStyle = `rgba(45,36,28,${0.35 + r() * 0.35})`; g.fillRect(x, 258, w, h); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+  })();
+  const decalMat = new THREE.MeshStandardMaterial({ map: decalTex, alphaTest: 0.35, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  function decal(seg, cell, w, h, pos, normal) {
+    const g = new THREE.PlaneGeometry(w, h); const uv = g.attributes.uv; const ox = (cell % 2) * 0.5, oy = cell < 2 ? 0.5 : 0;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, ox + uv.getX(i) * 0.5, oy + uv.getY(i) * 0.5);
+    if (normal.y > 0.5) g.rotateX(-Math.PI / 2); else g.rotateY(Math.atan2(normal.x, normal.z));
+    g.translate(pos.x + normal.x * 0.01, pos.y + normal.y * 0.004, pos.z + normal.z * 0.01);
+    (seg._decals || (seg._decals = [])).push(g);
+  }
   function boxAt(sx, sy, sz, x, y, z, tile) { const g = worldBox(sx, sy, sz, tile); g.translate(x, y, z); return g; }
   // Shell: sides, back and roof of a Meshy building get a textured box just inside the street facade, so no face shows
   // the smeared Meshy back texture from any angle. Height stops under the roof-shooter spot.
@@ -151,6 +177,14 @@ export function createWorld(scene, seed) {
     const cx = (front + back) / 2, cz = (box.min.z + box.max.z) / 2;
     const k = (rng() * WALL_TEX.length) | 0, tr = 0.85 + rng() * 0.15;
     const walls = tint(boxAt(sx, top, sz, cx, top / 2, cz, 3), tr, tr * (0.95 + rng() * 0.05), tr * (0.88 + rng() * 0.1), 0.35);
+    // grime streaks along the back and sides, an occasional poster on the street-visible side near the front
+    const bx = back, nB = new THREE.Vector3(side, 0, 0);
+    for (let i = 0; i < 2; i++) decal(seg, 3, 2.5 + rng() * 2, Math.min(top * 0.6, 3.5), new THREE.Vector3(bx, top - 1.6 - rng(), box.min.z + (0.2 + rng() * 0.6) * sz), nB);
+    for (const zf of [box.min.z - 0.06, box.max.z + 0.06]) {
+      const nz = new THREE.Vector3(0, 0, Math.sign(zf - cz));
+      decal(seg, 3, 2.2, Math.min(top * 0.5, 3), new THREE.Vector3(cx + (rng() - 0.5) * sx * 0.5, top - 1.4, zf), nz);
+      if (rng() < 0.5) decal(seg, 2, 0.8, 0.8, new THREE.Vector3(front + side * (0.6 + rng()), 1.6 + rng() * 0.4, zf), nz);
+    }
     const m = new THREE.Mesh(walls, shellMats[k]); m.userData.ownGeo = true; m.castShadow = m.receiveShadow = true; seg.group.add(m);
     const cap = new THREE.Mesh(tint(boxAt(sx + 0.1, 0.12, sz + 0.1, cx, top + 0.04, cz, 4), 0.9, 0.88, 0.84, 0), roofMat); cap.receiveShadow = true; cap.userData.ownGeo = true; seg.group.add(cap);
   }
@@ -190,7 +224,7 @@ export function createWorld(scene, seed) {
   }
 
   scene.background = new THREE.Color(0x8ec8ea);
-  scene.fog = new THREE.FogExp2(0xd2c4a2, Q.fog);
+  scene.fog = new THREE.FogExp2(0xdccdaa, Q.fog); // matched to the sky horizon band so far rows melt into haze
   // Endless desert floor that follows the player, so side views and alley gaps never show sky below the road.
   const desertMat = new THREE.MeshStandardMaterial({ color: 0xc8b48a, roughness: 1, metalness: 0 });
   const desertGeo = new THREE.PlaneGeometry(800, 800);
@@ -208,10 +242,10 @@ export function createWorld(scene, seed) {
     upgradeMaterial(matWall, 'dirty_concrete', 1, 2, full);
   }
 
-  const hemi = new THREE.HemisphereLight(0xb7ddf5, 0xc4a06a, 0.85);
+  const hemi = new THREE.HemisphereLight(0xbcd8ee, 0xb8915c, 0.75); // warmer sand bounce, slightly less flat fill
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff3d4, 2.5);
+  const sun = new THREE.DirectionalLight(0xffeccb, 2.8); // late-morning desert sun: warmer, stronger key for contrast
   sun.position.set(28, 48, 16);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -455,6 +489,12 @@ export function createWorld(scene, seed) {
     const brng = mulberry32((seed ^ Math.imul(seg.gen + 7, 0x27d4eb2d) ^ Math.imul(seg.id + 3, 0x165667b1)) >>> 0);
     addBackdrop(seg, brng, -1, oz);
     addBackdrop(seg, brng, 1, oz);
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let i = 0, n = 5 + ((brng() * 4) | 0); i < n; i++) decal(seg, brng() < 0.55 ? 0 : 1, 1.4 + brng() * 2, 1.2 + brng() * 1.6, new THREE.Vector3((brng() - 0.5) * 8.5, 0.0, oz - brng() * SEG_LEN), up);
+    if (seg._decals && seg._decals.length) {
+      const g = mergeGeometries(seg._decals.map((x) => x.index ? x.toNonIndexed() : x)); seg._decals.forEach((x) => x.dispose()); seg._decals = null;
+      if (g) { const dm = new THREE.Mesh(g, decalMat); dm.receiveShadow = true; dm.userData.ownGeo = true; seg.group.add(dm); }
+    }
 
     const cars = 1 + (rng() * 3) | 0;
     for (let i = 0; i < cars; i++) {

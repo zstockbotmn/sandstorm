@@ -18,7 +18,7 @@ const _camUp = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _hip = new THREE.Vector3(0.34, -0.32, -0.48);
-const _ads = new THREE.Vector3(0.0, -0.2, -0.4);
+const _ads = new THREE.Vector3(0.0, -0.2, -0.4); // replaced per model in setModel so the iron-sight line sits on the crosshair
 const _cover = new THREE.Vector3(0.3, -0.4, -0.44); // tester: rifle stays in view while in cover (was lowered off-screen at y -0.78)
 const _desired = new THREE.Vector3();
 const _tp = new THREE.Vector3();
@@ -85,10 +85,14 @@ export function createWeapon(camera, world, scene) {
     obj.updateMatrixWorld(true); b = new THREE.Box3().setFromObject(obj); b.getSize(sz);
     const k = 0.74 / Math.max(sz.z, 1e-4); obj.scale.multiplyScalar(k); obj.updateMatrixWorld(true);
     b = new THREE.Box3().setFromObject(obj); const ctr = b.getCenter(new THREE.Vector3());
+    const sightH = b.max.y - ctr.y; // top of the rail / rear sight above the model centre
     const holder = new THREE.Group(); holder.add(obj); obj.position.sub(ctr); holder.position.set(0.035, -0.045, -0.12); holder.rotation.set(0, 0.09, -0.05); // slight yaw/cant so the curved mag and wood furniture read
     obj.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.frustumCulled = false; if (m.material) { m.material = m.material.clone(); m.material.roughness = Math.max(0.5, m.material.roughness ?? 0.6);
         if (!/wood/i.test(m.material.name || '')) { m.material.color.multiplyScalar(0.6); m.material.metalness = 0.5; } } } }); // gunmetal, not toy grey
     rig.add(holder); boxGun.visible = false; weapon.model = holder; weapon.modelName = obj.name || 'rifle_ak47';
+    // ADS: put the sight line on the camera axis (holder offset cancelled, yaw/cant removed while scoping).
+    weapon.holderHip = { x: holder.position.x, y: holder.position.y, ry: holder.rotation.y, rz: holder.rotation.z };
+    _ads.set(-holder.position.x, -(holder.position.y + sightH) - 0.012, -0.36);
   };
   const flash = new THREE.PointLight(0xffb060, 0, 3.2, 2);
   flash.position.set(0, 0.03, -0.66);
@@ -235,6 +239,8 @@ export function createWeapon(camera, world, scene) {
     else if (input.scope) _desired.copy(_ads);
     else _desired.copy(_hip);
     rig.position.lerp(_desired, k);
+    if (weapon.model && weapon.holderHip) { const H = weapon.holderHip, s = input.scope && !input.cover ? 0 : 1, hm = weapon.model;
+      hm.rotation.y += (H.ry * s - hm.rotation.y) * k; hm.rotation.z += (H.rz * s - hm.rotation.z) * k; }
     kick += (0 - kick) * (1 - Math.exp(-8 * dt));
     rig.rotation.x = kick;
     rig.rotation.y = input.scope || input.cover ? 0 : 0.05;

@@ -107,17 +107,21 @@ const res = {};
   }
   await p.evaluate(() => { window.SS_VIEW_YAW = 0; });
   await p.waitForTimeout(300);
+  // Rifle close-up: hip view, cropped to the viewmodel and upscaled 2x.
+  await p.evaluate(() => { SS.input.yaw = 0; SS.input.pitch = -0.05; });
+  await p.waitForTimeout(600);
+  { const vp = p.viewportSize(); await p.screenshot({ path: OUT + '/10-rifle-closeup.png', clip: { x: vp.width * 0.45, y: vp.height * 0.45, width: vp.width * 0.55, height: vp.height * 0.55 }, scale: 'device' }); }
   res.renderer = await p.evaluate(() => {
     const render = SS.renderer && SS.renderer.info && SS.renderer.info.render;
     return render ? { triangles: render.triangles, calls: render.calls } : null;
   });
   res.triangles = res.renderer ? res.renderer.triangles : null;
   res.rifle = await p.evaluate(() => { const w = SS.weapon; let tri = 0; if (w && w.model) w.model.traverse((o) => { if (o.isMesh && o.visible) tri += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
-    return { attached: !!(w && w.model && w.model.parent), tri, boxHidden: !!(w && w.model && w.model.parent.children[0].visible === false) }; });
+    return { name: w && w.modelName, attached: !!(w && w.model && w.model.parent), tri, boxHidden: !!(w && w.model && w.model.parent.children[0].visible === false) }; });
   res.lods = await p.evaluate(() => { const n = {}; SS.scene.traverse((o) => { if (o.isLOD) n[o.name] = (n[o.name] || 0) + 1; }); return n; });
   res.errors = errs;
   console.log(JSON.stringify(res, null, 1));
   if (errs.length) throw new Error('page errors: ' + errs.join(' | '));
-  if (!(res.rifle.attached && res.rifle.boxHidden && res.rifle.tri > 500)) throw new Error('AK47 model not attached: ' + JSON.stringify(res.rifle));
+  if (!(res.rifle.attached && res.rifle.boxHidden && res.rifle.tri > 3000 && res.rifle.name === 'rifle_m4')) throw new Error('M4 rifle model not attached: ' + JSON.stringify(res.rifle));
   console.log('ART SHOTS PASS');
  } finally { await b.close(); srv.close(); } })().catch(e => { console.error('ART SHOTS FAIL', e.message); process.exit(1); });
