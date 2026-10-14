@@ -524,14 +524,14 @@ export function createWorld(scene, seed) {
         drum.position.x += x;
         drum.position.z += z;
         seg.group.add(drum);
-        m = new THREE.Mesh(barrelGeo, matInvisible);
+        m = new THREE.Mesh(barrelGeo, matInvisible); m.scale.set(0.88, 1, 0.88); // proxy inside the drum silhouette
         m.castShadow = false;
         m.visible = true;
       } else {
         m = new THREE.Mesh(barrelGeo, matBarrel);
         m.castShadow = true;
       }
-      m.position.set(x, 0.45, z);
+      m.position.set(x, 0.45, z); m.name = 'barrel';
       m.receiveShadow = true;
       m.userData.segId = seg.id;
       seg.group.add(m);

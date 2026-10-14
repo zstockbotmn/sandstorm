@@ -127,7 +127,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let fighterCursor = 0;
   const capsule = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 6);
   const geoTorso = capsule(0.17 * S, 0.42 * S);
-  const geoHead = new THREE.SphereGeometry(0.125 * S, 10, 8);
+  const geoHead = new THREE.SphereGeometry(0.135 * S, 10, 8);
   const geoLimb = capsule(0.055 * S, 0.28 * S);
   const geoLeg = capsule(0.07 * S, 0.38 * S);
   const geoScar = new THREE.SphereGeometry(0.14 * S, 8, 6);
@@ -682,8 +682,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     else {
       if (enemy.art) playHit(enemy, part === 'head');
       // Bigger hit reaction: shove back ~0.3 m from the shooter (ground enemies) + a brief exposed stagger.
-      if (enemy.group.position.y < 0.5) { _aim.copy(enemy.group.position).sub(camera.position).setY(0).normalize(); enemy.group.position.addScaledVector(_aim, 0.3); }
-      enemy.staggerT = 0.45; enemy.shootCd = Math.max(enemy.shootCd || 0, 0.6);
+      // Never shove into a building: a fighter pushed inside a wall collider became unhittable (false misses).
+      if (enemy.group.position.y < 0.5 && !enemy.pinned) { const gp = enemy.group.position, x0 = gp.x; _aim.copy(gp).sub(camera.position).setY(0).normalize(); gp.addScaledVector(_aim, 0.3);
+        const lim = Math.max(5.6, Math.abs(x0)); if (Math.abs(gp.x) > lim) gp.x = Math.sign(gp.x) * lim; }
+      if (!enemy.pinned) enemy.staggerT = 0.45; enemy.shootCd = Math.max(enemy.shootCd || 0, 0.6);
       if (window.SS && window.SS.hud && window.SS.hud.hitMarker) window.SS.hud.hitMarker(part === 'head' ? 'head' : 'hit');
     }
   }
