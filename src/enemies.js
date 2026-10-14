@@ -286,7 +286,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     bendBone(h, _up, enemy.lookY); bendBone(h, _hlR, -enemy.lookP);
   }
   function proceduralLean(enemy, name, dt) {
-    const b = enemy.bones; if (!b || enemy.dying) { enemy.leanW = 0; return; }
+    const b = enemy.bones; if (!b || enemy.dying || window.SS_NOPROC) { enemy.leanW = 0; return; }
     headLook(enemy, dt);
     const tgtRoll = name === 'lean' ? 1 : 0;
     const tgtHunch = (name === 'aim' || name === 'lean') ? 1 : 0;
@@ -329,7 +329,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     rotWorld(up, _ikQ.setFromUnitVectors(_ikA, _ikB));
   }
   function footIK(enemy, dt) {
-    const r = enemy.art && enemy.art.root; if (!r || enemy.dying) return;
+    const r = enemy.art && enemy.art.root; if (!r || enemy.dying || window.SS_NOPROC) return;
     if (!enemy.legs) {
       enemy.legs = [['LeftUpLeg', 'LeftLeg', 'LeftFoot'], ['RightUpLeg', 'RightLeg', 'RightFoot']].map((n) => ({ up: r.getObjectByName(n[0]), knee: r.getObjectByName(n[1]), foot: r.getObjectByName(n[2]), lock: null }))
         .filter((l) => l.up && l.knee && l.foot);

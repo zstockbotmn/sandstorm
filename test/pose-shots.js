@@ -14,6 +14,8 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     for (const clip of ['idle', 'aim', 'walk', 'run', 'strafe', 'crouch', 'crouchIdle', 'lean']) { if (!res.clips.includes(clip)) continue;
       for (const yaw of [0, 0.8]) { await p.evaluate(([clip, yaw]) => { const e = window.__e; e.forceAnim = clip; e.group.rotation.y = Math.atan2(SS.camera.position.x - e.group.position.x, SS.camera.position.z - e.group.position.z) + yaw; e.turned = true; }, [clip, yaw]);
         await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/' + clip + (yaw ? '-34' : '-front') + '.png' }); } }
+    if (process.env.SS_PROBE) { for (const np of [1, 0]) for (const clip of ['idle', 'run', 'strafe', 'crouch', 'idle']) { await p.evaluate(([clip, np]) => { window.SS_NOPROC = !!np; const e = window.__e; e.forceAnim = clip; e.group.rotation.y = Math.atan2(SS.camera.position.x - e.group.position.x, SS.camera.position.z - e.group.position.z); }, [clip, np]);
+      await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/probe-' + np + '-' + clip + '-' + Date.now() % 100000 + '.png' }); } }
     // head look-at: player moves left/right of the enemy, head follows within limits
     await p.evaluate(() => { window.__e.forceAnim = 'idle'; }); for (const dx of [-2.5, 2.5]) { await p.evaluate((dx) => { SS.camera.position.x += dx; }, dx); await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/look-' + (dx < 0 ? 'left' : 'right') + '.png' }); await p.evaluate((dx) => { SS.camera.position.x -= dx; }, dx); }
     // truck close-up
