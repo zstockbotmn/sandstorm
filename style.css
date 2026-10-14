@@ -402,7 +402,7 @@ canvas {
 #dmg-dir .arrow { left: 50%; top: 0; width: 0; height: 0; margin-left: -5vmin; border-left: 5vmin solid transparent; border-right: 5vmin solid transparent;
   border-bottom: 6vmin solid rgba(230, 30, 20, 0.9); filter: drop-shadow(0 0 6px rgba(255,0,0,0.8)); transform: none; background: none; }
 /* Low health: persistent pulsing red edges */
-#lowhp { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.4s; box-shadow: inset 0 0 18vmin 6vmin rgba(170, 0, 0, 0.75); }
+#lowhp { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.4s; box-shadow: inset 0 0 10vmin 1vmin rgba(170, 0, 0, 0.6); }
 #lowhp.on { opacity: 1; animation: lowhp 1.1s ease-in-out infinite; }
 @keyframes lowhp { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 /* Reload: progress ring + bar */
