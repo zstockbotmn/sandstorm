@@ -187,7 +187,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let phase = 'quiet';
   let phaseT = 2.5;
   let quietCap = 1;
-  let burstCap = 3, burstSpawned = 0, waveActive = false;
+  let burstCap = 3, burstSpawned = 0, waveActive = false, roofWave = false;
   let spawnCd = 1.2;
   let lastReal = 0, lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
@@ -703,13 +703,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function spawnOne(prefer) { const ts = performance.now(); const r = spawnOne_(prefer); const d = performance.now() - ts; if (d > 40) (window.SS_SPIKES = window.SS_SPIKES || []).push(['spawn', Math.round(ts), Math.round(d)]); return r; }
   function spawnOne_(prefer) {
     poolRange = Math.random() < 0.8 ? [10, 20] : [22, 40];
+    const roofOnly = prefer === 'roof'; if (roofOnly) { prefer = 'popper'; poolRange = [12, 40]; }
     const diff = difficulty();
     const roll = prefer || (Math.random() < 0.45 ? 'popper' : Math.random() < 0.55 ? 'shifter' : 'flanker');
     let types;
-    if (roll === 'popper') types = ['window', 'roof', 'wall', 'barrel', 'car'];
+    if (roofOnly) types = ['roof'];
+    else if (roll === 'popper') types = ['window', 'roof', 'wall', 'barrel', 'car'];
     else if (roll === 'flanker') types = ['alley', 'door'];
     else types = ['wall', 'barrel', 'car', 'door', 'alley'];
     let pool = coverPool(types);
+    if (!pool.length && roofOnly) return null;
     if (!pool.length) pool = coverPool(null);
     if (!pool.length) return null;
     let pick = pool[(Math.random() * pool.length) | 0];
@@ -1049,7 +1052,37 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return n;
   }
 
+  // ---- Step C: grenade flush. A ground enemy lobs a grenade at a player who camps in cover; it lands beside the
+  // cover, auto-cover immediately runs to another spot, and it blows 2.4 s after landing (35 dmg within 3.5 m).
+  const nadeMat = visMat(0x2f3324); const nadeGeo = new THREE.SphereGeometry(0.09, 10, 8);
+  const nades = []; let nadeThisWave = false, campT = 0;
+  function throwGrenade(e) {
+    const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
+    const from = e.group.position.clone().setY(e.group.position.y + 1.6);
+    const to = camera.position.clone().setY(0.1); to.x += (Math.random() - 0.5) * 1.2; to.z -= 0.6 + Math.random() * 0.6;
+    nades.push({ m, from, to, t: 0, flight: 1.1, fuse: 2.4, landed: false });
+    squadCall('Grenade!'); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('GRENADE! Moving cover');
+    if (window.SS) window.SS.grenades = (window.SS.grenades | 0) + 1;
+  }
+  function updateGrenades(dt) {
+    const cov = window.SS && window.SS.cover;
+    if (waveActive && cov && cov.state === 'in') campT += dt; else if (!waveActive) { campT = 0; nadeThisWave = false; }
+    if (waveActive && !nadeThisWave && campT > 5 && burstIndex >= 2 && Math.random() < dt * 0.35) {
+      const th = list.filter((e) => e.alive && e.engaged && e.group.position.y < 0.5 && e.group.position.distanceTo(camera.position) < 26)[0];
+      if (th) { nadeThisWave = true; campT = 0; throwGrenade(th); }
+    }
+    for (let i = nades.length - 1; i >= 0; i--) { const n = nades[i]; n.t += dt;
+      if (!n.landed) { const k = Math.min(1, n.t / n.flight); n.m.position.lerpVectors(n.from, n.to, k); n.m.position.y += Math.sin(k * Math.PI) * 3.2;
+        if (k >= 1) { n.landed = true; n.t = 0; if (cov && cov.relocate) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
+      else if (n.t >= n.fuse) {
+        for (let j = 0; j < 4; j++) muzzleFlash(n.m.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)));
+        const d = n.m.position.distanceTo(camera.position.clone().setY(n.m.position.y)); if (d < 3.5) player.damage(35 * (1 - d / 4.5), n.m.position);
+        if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);
+        scene.remove(n.m); nades.splice(i, 1); } }
+  }
+
   function update(dt) {
+    updateGrenades(dt);
     const diff = difficulty();
     phaseT -= dt;
     const alive = aliveCount();
@@ -1068,7 +1101,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const early = burstIndex <= 2 || (window.SS && window.SS.distance < 120);
         // Tester: 2-3 enemies per wave; the last one of a 3-wave (or 1 in 2 of 2-waves) is a visible flanker.
         burstCap = early ? 2 : (Math.random() < 0.35 + diff * 0.4 ? 3 : 2);
-        burstSpawned = 0;
+        burstSpawned = 0; roofWave = Math.random() < 0.5;
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;
       }
@@ -1087,7 +1120,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const canSpawn = phase === 'burst' ? (burstSpawned < burstCap && !waveActive) : alive < cap;
     if (window.SS && window.SS.running && !CALM && canSpawn && dNow >= breatherTo) for (let tries = 0; tries < 6 && (phase === 'burst' ? burstSpawned < burstCap : tries < 1) && (phase === 'burst' || spawnCd <= 0); tries++) {
       const flankSlot = phase === 'burst' && burstSpawned === burstCap - 1 && (burstCap === 3 || Math.random() < 0.5);
-      const made = spawnOne(flankSlot ? 'flanker' : (phase === 'burst' && burstSpawned === 0 ? 'shifter' : undefined)) || (flankSlot ? spawnOne() : null);
+      const roofSlot = phase === 'burst' && burstSpawned === 1 && burstIndex >= 2 && roofWave;
+      const made = spawnOne(flankSlot ? 'flanker' : roofSlot ? 'roof' : (phase === 'burst' && burstSpawned === 0 ? 'shifter' : undefined)) || ((flankSlot || roofSlot) ? spawnOne() : null);
+      if (made && roofSlot && made.anchor && made.anchor.type === 'roof') { squadCall('Rooftop!'); if (window.SS) window.SS.roofShooters = (window.SS.roofShooters | 0) + 1; }
       if (made && phase === 'burst') burstSpawned++;
       if (made && (window.SS.engaged > 0 || waveActive)) window.SS.spawnsWhileEngaged = (window.SS.spawnsWhileEngaged | 0) + 1; // must stay 0 (no reinforcements)
       spawnCd = made ? 2.2 : 0.6;
@@ -1218,6 +1253,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function reset() {
+    for (const n of nades) scene.remove(n.m); nades.length = 0; nadeThisWave = false; campT = 0;
     for (let i = list.length - 1; i >= 0; i--) despawn(list[i]);
     list.length = 0;
     if (ragdolls.clear) ragdolls.clear();

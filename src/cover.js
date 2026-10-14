@@ -9,11 +9,14 @@ export function createCover(scene, camera, world, input) {
   const geo = new THREE.BoxGeometry(2.6, BAG_H, 0.55); // low; crouched eye (~1.28) sees street; ghosted while ducked
   const c = { state: 'none', target: null, spawned: null, update, reset };
   c.prewarmMesh = () => { const m = new THREE.Mesh(geo, mat.clone()); m.castShadow = m.receiveShadow = true; m.material.opacity = 0.6; return m; };
-  function pick() {
+  // pick(exclude, dir): first cover on engage (nearest ahead), or the next cover left (-1) / right (+1) of the current one.
+  function pick(exclude, dir) {
     const pz = camera.position.z; let best = null, bd = 1e9;
     for (const seg of world.segments || []) for (const p of seg.coverPoints || []) {
       if (p.type !== 'barrel' && p.type !== 'car') continue;
-      const ahead = pz - p.pos.z; if (ahead < 1.5 || ahead > SEARCH_AHEAD || Math.abs(p.pos.x) > STREET_X) continue;
+      const ahead = pz - p.pos.z; if (ahead < (exclude ? -1 : 1.5) || ahead > (exclude ? SEARCH_AHEAD + 3 : SEARCH_AHEAD) || Math.abs(p.pos.x) > STREET_X) continue;
+      if (exclude && Math.hypot(p.pos.x - exclude.x, p.pos.z - exclude.z) < 1.6) continue;
+      if (dir && Math.sign(p.pos.x - camera.position.x) !== dir) continue;
       const d = ahead + Math.abs(p.pos.x - camera.position.x); if (d < bd) { bd = d; best = p.pos; }
     }
     if (best) {
@@ -25,7 +28,9 @@ export function createCover(scene, camera, world, input) {
       return new THREE.Vector3(best.x, 0, best.z + BEHIND);
     }
     // none close: drop a sandbag-style wall just ahead of the halt point
-    const m = new THREE.Mesh(geo, mat.clone()); m.position.set(camera.position.x, BAG_H / 2, pz - 2.2); m.castShadow = m.receiveShadow = true;
+    clearSpawned();
+    const bx = dir ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + dir * 3)) : exclude ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + (camera.position.x > 0 ? -3 : 3))) : camera.position.x;
+    const m = new THREE.Mesh(geo, mat.clone()); m.position.set(bx, BAG_H / 2, pz - 2.2); m.castShadow = m.receiveShadow = true;
     scene.add(m); world.colliders.push(m); c.spawned = m;
     c.surface = new THREE.Box3().setFromObject(m);
     return new THREE.Vector3(m.position.x, 0, c.surface.max.z + PLAYER_R);
@@ -52,6 +57,13 @@ export function createCover(scene, camera, world, input) {
       c.spawned.material.opacity = input.cover ? 0.38 : 0.95;
     }
   }
+  // Move to another cover (grenade flush / SWITCH COVER): a short exposed run, then duck again.
+  c.relocate = function relocate(dir, why) {
+    if (c.state === 'none' || !window.SS || !window.SS.running) return false;
+    const cur = c.target ? c.target.clone() : camera.position.clone(); const old = c.spawned; if (old) c.spawned = null;
+    c.surface = null; const t = pick(cur, dir || 0); if (old && old !== c.spawned) { scene.remove(old); const i = world.colliders.indexOf(old); if (i >= 0) world.colliders.splice(i, 1); }
+    c.target = t; c.state = 'moving'; input.cover = false; c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;
+  };
   function reset() { c.surface = null; c.state = 'none'; c.target = null; clearSpawned(); input.cover = false; }
   return c;
 }
