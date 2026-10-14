@@ -61,7 +61,10 @@ const res = {};
           SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len);
           SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
         let shot;
-        if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; SS.input.pendingShots = 1; for (let k = 0; k < 10 && SS.weapon.shotsFired === n0; k++) await frames(1); shot = SS.weapon.lastShot; }
+        if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; SS.input.pendingShots = 1; for (let k = 0; k < 10 && SS.weapon.shotsFired === n0; k++) { // keep tracking the moving hitbox until the shot leaves (Low tier frames are long)
+            if (k) { const tp = tgt.getWorldPosition(new SS.THREE.Vector3()), cp = SS.camera.getWorldPosition(new SS.THREE.Vector3()); const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
+              SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len); SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
+            await frames(1); } shot = SS.weapon.lastShot; }
         else shot = SS.weapon.debugShoot(SS.input);
         const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(e.group.position.clone().setY(shot.hit.point.y)) < 1.2);
         // a moving target that walked behind a prop between aim and the fire frame is occluded, not a false miss
