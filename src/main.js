@@ -13,7 +13,7 @@ import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { preloadRapier } from './ragdoll.js';
-import { Q, QUALITY, setQuality, goLow, onLow, EXPLICIT, isSoftwareRenderer, rendererString } from './quality.js';
+import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, isSoftwareRenderer, rendererString } from './quality.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
@@ -257,7 +257,7 @@ function restartRun() {
   score.reset(); stakes.reset();
   input.yaw = 0;
   input.pitch = 0;
-  input.fire = false; input.scope = false; input.pendingShots = 0; input.cover = false; hud.setScope(false);
+  input.resetState(); hud.setScope(false);
   camera.position.set(0, 1.7, 4);
   fov = BASE_FOV;
   eye = 1.7;
@@ -338,7 +338,8 @@ art.onReady(() => {
     renderer.compile(scene, camera);
     // Also draw once (tiny offscreen target, temp objects spread in view): drivers/SwiftShader JIT per draw state, not at link.
     { const rt = new THREE.WebGLRenderTarget(64, 32); let i = 0; tmp.children.forEach((c) => { c.position.set(((i++ % 9) - 4) * 0.6, 1.4, 0); if (c.scale.x < 0.01) c.scale.setScalar(0.004); });
-      renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null); rt.dispose(); }
+      renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null); rt.dispose();
+      renderer.render(scene, camera); } // and once to the real framebuffer (behind the menu): blend/target states JIT here, not mid-fight
     for (const o of hidden) o.visible = false;
   } catch (err) { console.warn('prewarm', err && err.message); }
   scene.remove(tmp);
@@ -352,16 +353,16 @@ onLow(() => {
   scene.traverse((o) => { if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m.needsUpdate = true; });
   if (scene.fog && scene.fog.density != null) scene.fog.density = Q.fog;
   camera.far = Q.far; camera.updateProjectionMatrix();
-  const b = document.getElementById('quality'); if (b) b.textContent = 'Quality: Low';
+  const b = document.getElementById('quality'); if (b) b.textContent = 'Quality: ' + (window.SS.quality === 'ultra' ? 'Ultra-low' : 'Low');
   if (hud.hint && window.SS.running) hud.hint('Low quality on for smoother play');
 });
 window.SS.gpu = rendererString(renderer.getContext());
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
 // Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.
-{ let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => { if (window.SS.quality === 'low' || EXPLICIT || !(raw > 0)) { n = t = 0; return; }
+{ let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => { if (window.SS.quality === 'ultra' || (EXPLICIT && !/[?&]ultra=1/.test(location.search)) || !(raw > 0)) { n = t = 0; return; }
     if (skip > 0) { skip--; return; } // first frames include load/compile
     n++; t += raw; const win = window.SS.running ? 3 : 2; if (t < win) return;
-    const fps = n / t; window.SS.benchFps = Math.round(fps * 10) / 10; n = t = 0; if (fps < 20) goLow('fps<20'); }; }
+    const fps = n / t; window.SS.benchFps = Math.round(fps * 10) / 10; n = t = 0; if (window.SS.quality === 'low') { if (fps < 10) goUltra('fps<10'); } else if (fps < 20) goLow('fps<20'); }; }
 
 // ?debug readout: fps, quality (+ why auto-Low fired), renderer string.
 if (/[?&]debug\b/.test(location.search)) {

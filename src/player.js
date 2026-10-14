@@ -27,7 +27,7 @@ export function createPlayer(camera, input, hud) {
     if (player.health <= 0) {
       player.alive = false;
       if (window.SS) {
-        window.SS.running = false;
+        window.SS.running = false; if (window.SS.input && window.SS.input.resetState) window.SS.input.resetState();
         window.SS.walking = false;
         if (typeof window.SS.onDeath === 'function') window.SS.onDeath();
       }

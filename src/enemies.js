@@ -1068,7 +1068,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function updateGrenades(dt) {
     const cov = window.SS && window.SS.cover;
     if (waveActive && cov && cov.state === 'in') campT += dt; else if (!waveActive) { campT = 0; nadeThisWave = false; }
-    if (waveActive && !nadeThisWave && campT > 5 && burstIndex >= 2 && Math.random() < dt * 0.35) {
+    if (waveActive && !nadeThisWave && campT > 5 && burstIndex >= 3 && Math.random() < dt * 0.35) {
       const th = list.filter((e) => e.alive && e.engaged && e.group.position.y < 0.5 && e.group.position.distanceTo(camera.position) < 26)[0];
       if (th) { nadeThisWave = true; campT = 0; throwGrenade(th); }
     }
@@ -1098,7 +1098,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!truck) return; truck.t += dt;
     if (!truck.unloaded) { truck.g.position.z = Math.min(truck.stopZ, truck.g.position.z + 9 * dt);
       if (truck.g.position.z >= truck.stopZ - 0.01) { truck.unloaded = true;
-        for (let k = 0; k < 2; k++) { const e = spawnOne('shifter'); truckPending -= 1; if (e) { e.group.position.set(truck.g.position.x - Math.sign(truck.g.position.x) * 1.4, 0, truck.g.position.z + 2 + k); e.engaged = waveActive; } } truckPending = 0; } }
+        for (let k = 0; k < 2; k++) { const e = spawnOne('shifter'); truckPending -= 1; if (e) { e.group.position.set(truck.g.position.x - Math.sign(truck.g.position.x) * 1.3, 0, truck.g.position.z + 2.6 + k * 0.8); e.engaged = waveActive;
+            // dismount: run from the tailgate to the assigned cover (exposed while moving)
+            try { e.path = pathOnto(e, e.anchor); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.moveKind = 'run'; e.exposed = true; e.goal = e.path && e.path[0]; e.fromTruck = true; } catch (err) { reportErr('truck dismount', err); } } } truckPending = 0; } }
     else if (truck.t > 40 || (!waveActive && truck.g.position.z > camera.position.z - 5)) { scene.remove(truck.g); truck = null; }
   }
 

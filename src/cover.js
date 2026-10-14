@@ -4,11 +4,11 @@ import * as THREE from 'three';
 const PLAYER_R = 0.55; // camera keeps this far from the cover face
 const SEARCH_AHEAD = 7, STREET_X = 4.4, BEHIND = 1.0, MOVE_SPEED = 4.5;
 export function createCover(scene, camera, world, input) {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x9c8a62, roughness: 0.95, transparent: true });
+  const mat = new THREE.MeshStandardMaterial({ color: 0x9c8a62, roughness: 0.95, transparent: false });
   const BAG_H = 0.7;
   const geo = new THREE.BoxGeometry(2.6, BAG_H, 0.55); // low; crouched eye (~1.28) sees street; ghosted while ducked
   const c = { state: 'none', target: null, spawned: null, update, reset };
-  c.prewarmMesh = () => { const m = new THREE.Mesh(geo, mat.clone()); m.castShadow = m.receiveShadow = true; m.material.opacity = 0.6; return m; };
+  c.prewarmMesh = () => { const m = new THREE.Mesh(geo, mat.clone()); m.castShadow = m.receiveShadow = true; return m; };
   // pick(exclude, dir): first cover on engage (nearest ahead), or the next cover left (-1) / right (+1) of the current one.
   function pick(exclude, dir) {
     const pz = camera.position.z; let best = null, bd = 1e9;
@@ -54,7 +54,7 @@ export function createCover(scene, camera, world, input) {
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
     if (c.spawned && c.spawned.material) {
       // ghost sandbag while ducked so a turn doesn't fill the screen; solid when popped out
-      c.spawned.material.opacity = input.cover ? 0.38 : 0.95;
+      // (kept opaque: a transparent bag hit a 1-2 s first-blend-state stall on software GL)
     }
   }
   // Move to another cover (grenade flush / SWITCH COVER): a short exposed run, then duck again.

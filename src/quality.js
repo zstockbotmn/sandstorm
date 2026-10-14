@@ -34,6 +34,14 @@ export const Q = Object.assign({}, LOWQ ? LOW : HIGH);
 // Live switch to Low (software GL at start, or sustained low fps mid-run). Saved so the next start is Low too.
 const lowHooks = [];
 export function onLow(fn) { lowHooks.push(fn); }
+// Ultra-low: Low still under 10 fps -> half resolution, 60 m draw distance (fewer buildings), thicker fog.
+export let ULTRA = false;
+export function goUltra(reason) {
+  if (ULTRA) return false; ULTRA = true; Object.assign(Q, LOW, { res: 0.5, drawAhead: 60, fog: 0.03, far: 200, lodNear: 10, lodNearProp: 6 });
+  if (typeof window !== 'undefined' && window.SS) { window.SS.quality = 'ultra'; window.SS.autoLow = reason; }
+  for (const f of lowHooks) { try { f(reason); } catch (e) { console.warn('goUltra', e); } }
+  return true;
+}
 export function goLow(reason) {
   if (LOWQ) return false; QUALITY = 'low'; LOWQ = true; Object.assign(Q, LOW);
   try { localStorage.setItem(KEY, 'low'); } catch (e) {}

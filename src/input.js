@@ -57,6 +57,7 @@ export function createInput(canvas) {
   document.body.appendChild(controls);
 
   let pressTimer = 0;
+  input.resetState = function resetState() { input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; fireBtn = fireKey = fireMouse = false; sync(); };
   function sync() {
     input.fire = fireBtn || fireKey || fireMouse;
     buttons.scope.classList.toggle('on', input.scope);
