@@ -64,6 +64,9 @@ const res = {};
         if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; SS.input.pendingShots = 1; for (let k = 0; k < 10 && SS.weapon.shotsFired === n0; k++) await frames(1); shot = SS.weapon.lastShot; }
         else shot = SS.weapon.debugShoot(SS.input);
         const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(e.group.position.clone().setY(shot.hit.point.y)) < 1.2);
+        // a moving target that walked behind a prop between aim and the fire frame is occluded, not a false miss
+        const occl = c.moving && !ok && shot && shot.hit && !shot.hit.enemy && shot.hit.point.distanceTo(SS.camera.position) < e.group.position.distanceTo(SS.camera.position) - 0.6;
+        if (occl) { out.push({ part, skip: true, why: 'moved behind ' + shot.hit.name }); continue; }
         out.push({ part, ok, hit: shot && shot.hit ? (shot.hit.enemy ? 'enemy:' + shot.hit.part : 'world:' + shot.hit.name) : 'none', cover: SS.input.cover });
       }
       e.pinned = false; e.health = 1; e.takeHit('body', e.group.position.clone());
