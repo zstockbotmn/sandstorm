@@ -16,5 +16,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
         await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/' + clip + (yaw ? '-34' : '-front') + '.png' }); } }
     // head look-at: player moves left/right of the enemy, head follows within limits
     await p.evaluate(() => { window.__e.forceAnim = 'idle'; }); for (const dx of [-2.5, 2.5]) { await p.evaluate((dx) => { SS.camera.position.x += dx; }, dx); await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/look-' + (dx < 0 ? 'left' : 'right') + '.png' }); await p.evaluate((dx) => { SS.camera.position.x -= dx; }, dx); }
+    // truck close-up
+    await p.evaluate(() => { SS.enemies.debugTruck(); }); await p.waitForTimeout(6500); await p.screenshot({ path: OUT + '/truck.png' });
   } catch (e) { errs.push('exception ' + e.message); }
   console.log(JSON.stringify({ res, errs })); console.log(errs.length ? 'POSES FAIL' : 'POSES PASS'); await b.close(); srv.close(); process.exit(errs.length ? 1 : 0); })();
