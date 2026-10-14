@@ -565,6 +565,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.group.visible = false;
     root.remove(enemy.group);
     if (window.SS && window.SS.scoreSys) window.SS.scoreSys.addKill(part === 'head');
+    // Kill confirmation: kill marker + sound; headshot burst; brief slow-mo on the wave's last kill.
+    const SSx = window.SS || {};
+    if (SSx.hud && SSx.hud.hitMarker) SSx.hud.hitMarker(part === 'head' ? 'headkill' : 'kill');
+    if (SSx.audio && SSx.audio.kill) SSx.audio.kill();
+    if (part === 'head') { const hp = (point || origin.clone().setY(origin.y + 1.6)); spray(hp); spray(hp); spray(hp); }
+    if (aliveCount() === 0) { SSx.slowmoUntil = performance.now() + 750; if (SSx.hud && SSx.hud.banner) setTimeout(() => {}, 0); }
   }
 
   function hitEnemy(enemy, part, point) {
@@ -573,14 +579,19 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.health -= dmg;
     if (point) spray(point);
     if (enemy.health <= 0) kill(enemy, point, part);
-    else if (enemy.art) playHit(enemy);
+    else {
+      if (enemy.art) playHit(enemy);
+      // Bigger hit reaction: shove back ~0.3 m from the shooter (ground enemies) + a brief exposed stagger.
+      if (enemy.group.position.y < 0.5) { _aim.copy(enemy.group.position).sub(camera.position).setY(0).normalize(); enemy.group.position.addScaledVector(_aim, 0.3); }
+      enemy.staggerT = 0.45; enemy.shootCd = Math.max(enemy.shootCd || 0, 0.6);
+      if (window.SS && window.SS.hud && window.SS.hud.hitMarker) window.SS.hud.hitMarker(part === 'head' ? 'head' : 'hit');
+    }
   }
 
   weapon.onHit = function onHit(info) {
     if (!info || !info.enemy || !info.enemy.takeHit) return;
     const dirPoint = info.point;
     info.enemy.takeHit(info.part, dirPoint);
-    if (window.SS && window.SS.hud && window.SS.hud.hitMarker) window.SS.hud.hitMarker();
   };
 
   function muzzleFlash(pos) {
@@ -660,6 +671,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (hud && typeof hud.callout === 'function') hud.callout(text);
   }
 
+  // Step B: most enemies 10-20 m away (closer, readable fights); ~20% further (22-40 m), e.g. rooftop shooters.
+  let poolRange = [10, 20];
   function coverPool(types) {
     const out = [];
     const segs = world.segments || [];
@@ -669,7 +682,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
         const ahead = pz - p.pos.z;
-        if (ahead < 20 || ahead > 55) continue;
+        if (ahead < poolRange[0] || ahead > poolRange[1]) continue;
         if (types && types.indexOf(p.type) < 0) continue;
         out.push(p);
       }
@@ -689,6 +702,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function spawnOne(prefer) { const ts = performance.now(); const r = spawnOne_(prefer); const d = performance.now() - ts; if (d > 40) (window.SS_SPIKES = window.SS_SPIKES || []).push(['spawn', Math.round(ts), Math.round(d)]); return r; }
   function spawnOne_(prefer) {
+    poolRange = Math.random() < 0.8 ? [10, 20] : [22, 40];
     const diff = difficulty();
     const roll = prefer || (Math.random() < 0.45 ? 'popper' : Math.random() < 0.55 ? 'shifter' : 'flanker');
     let types;
@@ -1024,6 +1038,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function updateEnemy(enemy, dt, diff) {
     if (!enemy.alive) return;
+    if (enemy.staggerT > 0) { enemy.staggerT -= dt; return; } // hit stagger: frozen, exposed
     if (enemy.behavior === 'flanker') updateFlanker(enemy, dt, diff);
     else updateCover(enemy, dt, diff);
   }

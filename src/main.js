@@ -178,7 +178,8 @@ function frame(now) {
   // Catch up when frames are late (software GL): up to 4 x 50 ms so fire/walk still advance.
   const steps = raw > 0 ? Math.min(4, Math.max(1, Math.ceil(raw / 0.05))) : 1;
   const dt = raw > 0 ? Math.min(0.05, raw / steps) : 0;
-  try { for (let i = 0; i < steps; i++) simStep(dt); }
+  const slow = (window.SS.slowmoUntil || 0) > performance.now() ? 0.3 : 1; window.SS.timeScale = slow;
+  try { for (let i = 0; i < steps; i++) simStep(dt * slow); }
   catch (err) { // never freeze HUD/render on a sim error; report once per message
     const k = String(err && err.message); if (!frameErrs.has(k)) { frameErrs.add(k); console.error('[sandstorm] sim step failed:', err && (err.stack || err)); (window.SS.errors = window.SS.errors || []).push('sim:' + k); } }
   hud.onTarget(weapon.onTarget); hud.setScope(!!input.scope && player.alive && window.SS.running);

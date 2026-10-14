@@ -410,3 +410,9 @@ canvas {
   background: conic-gradient(rgba(255, 210, 120, 0.95) calc(var(--p, 0) * 1turn), rgba(255,255,255,0.15) 0); -webkit-mask: radial-gradient(circle, transparent 17px, #000 18px); mask: radial-gradient(circle, transparent 17px, #000 18px); }
 #reload-ring.on { display: block; }
 #reloading { color: #ffd27a; font-weight: 800; letter-spacing: 1px; }
+/* Hit/kill confirmation */
+#hit-marker.head span { background: #ffd23a; }
+#hit-marker.kill span, #hit-marker.headkill span { background: #ff2a1f; width: 16px; height: 3px; box-shadow: 0 0 4px rgba(0,0,0,0.7); }
+#hit-marker.headkill span { background: #ffd23a; }
+#hit-marker.kill, #hit-marker.headkill { transform: scale(1.5); }
+#hs-icon { width: auto !important; height: auto !important; padding: 2px 8px; margin-left: -34px !important; font-size: 16px; font-weight: 900; color: #ffd23a; text-shadow: 0 0 6px #ff3b00; }

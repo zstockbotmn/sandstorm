@@ -178,6 +178,11 @@ export function createAudio() {
     tone(1800, 0.04, 0.12, 'square');
   }
 
+  function kill() { // kill confirm: low thump + bright ding
+    if (!ctx) return;
+    tone(140, 0.12, 0.25, 'sine'); setTimeout(() => tone(1250, 0.12, 0.14, 'triangle'), 40);
+  }
+
   function headshot() {
     if (!ctx) return;
     tone(880, 0.09, 0.16, 'sine');
@@ -319,5 +324,5 @@ export function createAudio() {
     }
   }
 
-  return { unlock, update, gunfire, enemyShot, hit, headshot, reload, radio };
+  return { unlock, update, gunfire, enemyShot, hit, kill, headshot, reload, radio };
 }

@@ -52,7 +52,7 @@ export function createHud() {
 
   const hs = document.createElement('div');
   hs.id = 'hs-icon';
-  hs.textContent = 'HS';
+  hs.textContent = 'HEADSHOT';
 
   const radioStack = document.createElement('div');
   radioStack.id = 'radio-callouts';
@@ -74,10 +74,11 @@ export function createHud() {
     healthFill.style.width = h + '%';
   }
 
-  function hitMarker() {
+  function hitMarker(kind) {
+    marker.classList.remove('kill', 'head', 'headkill'); if (kind && kind !== 'hit') { void marker.offsetWidth; marker.classList.add(kind); }
     marker.classList.add('show');
     clearTimeout(hitTimer);
-    hitTimer = setTimeout(() => marker.classList.remove('show'), 220);
+    hitTimer = setTimeout(() => marker.classList.remove('show', 'kill', 'head', 'headkill'), kind === 'kill' || kind === 'headkill' ? 520 : 220);
   }
 
   function damageVignette(amount) {
