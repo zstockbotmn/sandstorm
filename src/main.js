@@ -148,10 +148,12 @@ function simStep(dt) {
   if (!frozen) cover.update(dt || 0.016, window.SS.walking && window.SS.running);
   applyCamera(dt || 0.016);
   const step = dt || 0.016;
+  // Fire BEFORE enemies move: shots test the hitboxes exactly where the last rendered frame showed them (firing after
+  // the enemy update tested next-frame positions - a running fighter at 20 fps had moved ~0.25 m off the crosshair).
+  weapon.update(dt, input.state);
   player.update(step);
   if (!frozen) enemies.update(step);
   if (!frozen && window.SS.running) stakes.update(step);
-  weapon.update(dt, input.state);
   score.setDistance(window.SS.distance);
   audio.update(step);
   applyCamera(0);
