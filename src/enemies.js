@@ -1313,7 +1313,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const g = new THREE.Group(); const side = Math.random() < 0.5 ? -1 : 1;
     const bed = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.3, 3.6), truckBody); bed.position.set(0, 1.15, 1.0); bed.castShadow = true;
     const cab = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.6, 1.6), truckCab); cab.position.set(0, 1.3, -1.7); cab.castShadow = true;
-    for (const [x, z] of [[-1, 1.8], [1, 1.8], [-1, -1.6], [1, -1.6]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10), truckCab); w.rotation.z = Math.PI / 2; w.position.set(x, 0.42, z); g.add(w); }
+    for (const [x, z] of [[-1, 1.8], [1, 1.8], [-1, -1.6], [1, -1.6]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10), truckCab); w.rotation.z = Math.PI / 2; w.position.set(x, 0.42, z); bed.add(w); w.position.y -= 1.15; w.position.z -= 1.0; }
     const model = art.done && art.get && art.get('truck_mil') ? art.staticInstance('truck_mil') : null;
     if (model) { // Kenney Car Kit flatbed (CC0), repainted olive drab; replaces the box truck
       art.fitToBox(model, 2.3, 2.5, 5.6, { keepAspect: true, alignLong: true }); model.name = 'truck_mil';
