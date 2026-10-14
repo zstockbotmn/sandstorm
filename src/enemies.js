@@ -376,6 +376,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       t.position.addVectors(_wA, _wB).multiplyScalar(0.5);
       _hD.subVectors(_wB, _wA); const len = _hD.length();
       if (len > 0.05) t.quaternion.setFromUnitVectors(_hY, _hD.multiplyScalar(1 / len));
+      // capsule spans hips..neck only (the fixed 0.91 m capsule poked into the head zone and stole headshots)
+      t.scale.set(0.9, Math.max(0.4, (len + 0.18) / (0.76 * S)), 0.9);
     }
     if (enemy.limbBoxes) for (let i = 0; i < enemy.limbBoxes.length; i++) {
       const L = enemy.limbBoxes[i]; L.ba.getWorldPosition(_pA); L.bb.getWorldPosition(_pB);

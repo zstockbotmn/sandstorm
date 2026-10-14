@@ -8,7 +8,7 @@ const SHOT_INTERVAL = 60 / 600;
 const PITCH_LIMIT = 35 * Math.PI / 180;
 const HIP_SPREAD = 0.25 * Math.PI / 180; // was 0.6: at 40 m that threw centre-aimed hip shots off a torso
 const ADS_SPREAD = 0.04 * Math.PI / 180; // steadier scope
-const COVER_SPREAD = 0.6 * Math.PI / 180; // ducked fire: the crosshair is visible over the cover, so shots go where it points (was 2.2 deg = false misses)
+const COVER_SPREAD = 0.25 * Math.PI / 180; // ducked fire: the crosshair is visible over the cover, so shots go where it points (was 2.2 deg = false misses)
 const ASSIST_COVER = 4.0 * Math.PI / 180, ASSIST_PULL_COVER = 0.45; // weak blind-fire pull toward torso
 
 const _dir = new THREE.Vector3();
@@ -246,7 +246,12 @@ export function createWeapon(camera, world, scene) {
   function firstHit(o, d) {
     _fhRay.set(o, d);
     const w0 = _fhRay.intersectObjects(world.colliders, false)[0];
-    const t0 = targets.length ? _fhRay.intersectObjects(targets, false)[0] : null;
+    const th = targets.length ? _fhRay.intersectObjects(targets, false) : [];
+    let t0 = th[0] || null;
+    // Same enemy, overlapping boxes: prefer head > body > limb within 0.35 m (an aiming arm in front of the face, or the
+    // torso capsule top, must not turn a crosshair-on-head shot into a body/limb hit).
+    if (t0) { const rank = (o) => (o.object.userData.part === 'head' ? 2 : o.object.userData.part === 'body' ? 1 : 0);
+      for (let i = 1; i < th.length; i++) { const o = th[i]; if (o.object.userData.enemy !== t0.object.userData.enemy || o.distance - th[0].distance > 0.35) break; if (rank(o) > rank(t0)) t0 = o; } }
     return !t0 ? w0 : !w0 ? t0 : (t0.distance <= w0.distance + 0.05 ? t0 : w0);
   }
   weapon.firstHit = firstHit;
