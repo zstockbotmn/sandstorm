@@ -8,7 +8,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 const PRIMARY = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter.quaternius.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'];
 const ANIM_FALLBACK = 'fighter1.anim';
 const PROP_ART = ['prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart'];
-const PROPS = ['bldg1.lod', 'bldg2.lod', 'bldg3.lod', 'bldg4.lod', 'rifle_ak47', 'rifle_m4', ...PROP_ART, ...PROP_ART.map((n) => n + '.lod')];
+const PROPS = ['bldg1.lod', 'bldg2.lod', 'bldg3.lod', 'bldg4.lod', 'rifle_ak47', 'rifle_m4', 'truck_mil', ...PROP_ART, ...PROP_ART.map((n) => n + '.lod')];
 const RIGS = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig'];
 const BONE_NAMES = ['Hips', 'Spine01', 'Spine', 'Head', 'RightHand', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'];
 const CLIP_KEYS = {

@@ -342,7 +342,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     { const gy0 = enemy.group.position.y + enemy.ankleH; let lo = Infinity; for (const L of enemy.legs) lo = Math.min(lo, L.foot.getWorldPosition(_ikF).y);
       const want = Math.min(0, (enemy.pelvisOff || 0) + (gy0 - lo) / Math.max(1e-3, r.parent ? r.parent.getWorldScale(_ikA).y : 1));
       enemy.pelvisOff = (enemy.pelvisOff || 0) + (want - (enemy.pelvisOff || 0)) * Math.min(1, dt * 12);
-      r.position.y = enemy.rootY0 + enemy.pelvisOff + 0; r.updateMatrixWorld(true); }
+      r.position.y = enemy.rootY0 + enemy.pelvisOff + 0; r.updateMatrixWorld(true);
+      // hard floor: never leave the lowest foot more than 4 cm above its rest height (the ease above lags on big swings)
+      let lo2 = Infinity; for (const L of enemy.legs) lo2 = Math.min(lo2, L.foot.getWorldPosition(_ikF).y);
+      const sc = Math.max(1e-3, r.parent ? r.parent.getWorldScale(_ikA).y : 1);
+      if (lo2 > gy0 + 0.04) { enemy.pelvisOff -= (lo2 - gy0 - 0.04) / sc; r.position.y = enemy.rootY0 + enemy.pelvisOff; r.updateMatrixWorld(true); }
+      enemy.ikLo = lo2; enemy.ikGy = gy0; }
     // pelvis drop runs at every range/tier (cheap); the two-bone solve + locking only on High within 30 m
     if (art.tier !== 'high' || camera.position.distanceToSquared(enemy.group.position) > 900) { enemy.legs.forEach((l) => { l.lock = null; }); return; }
     const ground = enemy.group.position.y + enemy.ankleH, out = enemy.ikDbg || (enemy.ikDbg = []);
@@ -1293,7 +1298,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const bed = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.3, 3.6), truckBody); bed.position.set(0, 1.15, 1.0); bed.castShadow = true;
     const cab = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.6, 1.6), truckCab); cab.position.set(0, 1.3, -1.7); cab.castShadow = true;
     for (const [x, z] of [[-1, 1.8], [1, 1.8], [-1, -1.6], [1, -1.6]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10), truckCab); w.rotation.z = Math.PI / 2; w.position.set(x, 0.42, z); g.add(w); }
-    g.add(bed, cab); g.position.set(side * 2.6, 0, camera.position.z - 70); scene.add(g);
+    const model = art.done && art.get && art.get('truck_mil') ? art.staticInstance('truck_mil') : null;
+    if (model) { // Kenney Car Kit flatbed (CC0), repainted olive drab; replaces the box truck
+      art.fitToBox(model, 2.3, 2.5, 5.6, { keepAspect: true, alignLong: true });
+      model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); g.add(model);
+    } else g.add(bed, cab);
+    g.position.set(side * 2.6, 0, camera.position.z - 70); scene.add(g);
     truck = { g, stopZ: camera.position.z - 20, unloaded: false, t: 0 }; truckPending = 2; squadCall('Truck inbound!');
     if (window.SS) { window.SS.trucks = (window.SS.trucks | 0) + 1; if (window.SS.hud && window.SS.hud.banner) window.SS.hud.banner('REINFORCEMENTS'); }
   }
