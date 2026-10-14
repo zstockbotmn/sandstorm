@@ -339,7 +339,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       else L.lock = null;
       if (L.lock && L.lock.distanceTo(_ikF.clone().setY(ground)) > 0.32) L.lock = null; // stride too long: release
       _ikT.copy(L.lock || _ikF); if (_ikT.y < ground) _ikT.y = ground; // never through the ground
-      if (_ikT.distanceToSquared(_ikF) > 1e-6) twoBone(L.up, L.knee, L.foot, _ikT);
+      if (_ikT.distanceToSquared(_ikF) > 1e-6) { twoBone(L.up, L.knee, L.foot, _ikT); twoBone(L.up, L.knee, L.foot, _ikT); }
       L.foot.getWorldPosition(_ikF); out[i] = { err: +_ikF.distanceTo(_ikT).toFixed(3), tx: +_ikT.x.toFixed(2), ty: +_ikT.y.toFixed(2), locked: !!L.lock, x: +_ikF.x.toFixed(3), y: +_ikF.y.toFixed(3), z: +_ikF.z.toFixed(3) };
     }
   }
@@ -1362,7 +1362,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         e.seen = e.exposed && losRay.intersectObjects(world.colliders, false).length === 0;
         e.unseenT = e.seen ? 0 : (e.unseenT || 0) + step;
         if (e.seen && d < HOLD_RANGE) { anySeen = true; e.engaged = true; }
-        if (e.unseenT > UNSEEN_LIMIT && e.engaged) toVisibleCover(e); // hidden/stuck engaged enemy -> visible cover near the player
+        if (e.unseenT > UNSEEN_LIMIT && e.engaged && !e.pinned) toVisibleCover(e); // hidden/stuck engaged enemy -> visible cover near the player
       }
     }
 
