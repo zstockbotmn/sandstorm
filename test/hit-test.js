@@ -34,7 +34,7 @@ const res = {};
       const e = SS.debug.spawnEnemy('popper'); if (!e) return { err: 'no spawn' };
       SS.enemies.debugPose(e, Math.max(-5.2, Math.min(5.2, x)), z, c.posture);
       e.health = 1e6;
-      SS.input.scope = c.mode === 'scoped'; await frames(c.mode === 'scoped' ? 30 : 6); await wait(250);
+      SS.input.scope = c.mode === 'scoped'; await frames(3); for (let k = 0; k < 40 && c.mode === 'scoped' && SS.camera.fov > 40; k++) await frames(1);
       const out = [];
       for (const part of ['torso', 'head', 'legs']) {
         if (part === 'legs' && (c.d > 20 && c.mode === 'hip')) continue;
@@ -42,10 +42,10 @@ const res = {};
         const tgt = part === 'legs' ? (e.limbBoxes && e.limbBoxes[0] ? e.limbBoxes[0].m : null) : e.parts[part];
         if (!tgt) { out.push({ part, skip: true }); continue; }
         // aim the real camera (input.yaw/pitch) at the hitbox centre
-        for (let k = 0; k < 3; k++) {
+        for (let k = 0; k < 2; k++) {
           SS.camera.updateMatrixWorld(); const tp = tgt.getWorldPosition(new SS.THREE.Vector3()); const cp = SS.camera.getWorldPosition(new SS.THREE.Vector3());
           const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
-          SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len); SS.weapon.cancelRecoil(); await frames(2);
+          SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len); SS.weapon.cancelRecoil(); await frames(1);
         }
         const shot = SS.weapon.debugShoot(SS.input);
         const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(e.group.position.clone().setY(shot.hit.point.y)) < 1.2);
@@ -55,6 +55,7 @@ const res = {};
       SS.input.scope = false;
       return { out };
     }, c);
+    console.log(c.dir, c.d, c.posture, c.mode, JSON.stringify(r.out || r.err));
     const bad = (r.out || []).filter((o) => !o.skip && !o.ok);
     if (r.err || bad.length) fails++;
     res.cases.push({ ...c, ang: undefined, ...r });
