@@ -952,6 +952,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Ground path into the opening, then a short climb. No underground hide point.
   // Bring a hidden/stuck/behind-the-player enemy to a visible ground cover spot 12-30 m ahead, already leaning out to fire.
   function toVisibleCover(e) {
+    if (e.anchor && isElevated(e.anchor.type)) { e.unseenT = 0; e.seen = true; e.engaged = true; beginFire(e); return; } // never teleport a roof/window shooter to the street
     const pz = camera.position.z; let best = null, bd = 1e9;
     for (const seg of world.segments || []) for (const c of seg.coverPoints || []) {
       if (!['car', 'barrel', 'wall', 'door'].includes(c.type)) continue;
@@ -1417,7 +1418,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         continue;
       }
       if (e.pinned) { if (e.debugVel) { e.group.position.addScaledVector(e.debugVel, dt); e.moving = true; e.moveKind = 'run'; e.moveSpeed = e.debugVel.length(); } }
-      else if (e.group.position.z > pz + 40 && e.engaged) toVisibleCover(e); // engaged enemies behind stay put (360 deg aim); only far-behind ones are brought back
+      else if (e.group.position.z > pz + 40 && e.engaged && !(e.anchor && isElevated(e.anchor.type))) toVisibleCover(e); // engaged enemies behind stay put (360 deg aim); only far-behind ones are brought back
       else if (e.group.position.z > pz + 6) {
         e.alive = false;
         unregister(e);
