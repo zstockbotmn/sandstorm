@@ -165,8 +165,8 @@ export function createRagdollSystem(scene) {
     const rb = phys.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(x, y, z)
-        .setLinearDamping(0.14)
-        .setAngularDamping(0.42)
+        .setLinearDamping(0.12)
+        .setAngularDamping(0.9)
         .setCanSleep(true)
     );
     phys.createCollider(
@@ -203,7 +203,7 @@ export function createRagdollSystem(scene) {
     );
     const joint = phys.createImpulseJoint(data, a.rb, b.rb, true);
     joint.setContactsEnabled(false);
-    if (joint.setLimits) joint.setLimits(-0.15, 2.4);
+    if (joint.setLimits) joint.setLimits(-0.05, 2.3);
     return joint;
   }
 
@@ -284,6 +284,14 @@ export function createRagdollSystem(scene) {
       }
     }
 
+    // Swing-cone limits (rad) + powered pose hold, enforced per fixed step in limitAndPower().
+    doll.jdefs = [
+      [pelvis, torso, 0.55], [torso, head, 0.7],
+      [torso, byName.uarmL, 1.9], [torso, byName.uarmR, 1.9],
+      [pelvis, byName.ulegL, 1.5], [pelvis, byName.ulegR, 1.5],
+      [byName.uarmL, byName.larmL, 0], [byName.uarmR, byName.larmR, 0],
+      [byName.ulegL, byName.llegL, 0], [byName.ulegR, byName.llegR, 0],
+    ];
     doll.constraints.push(ball(pelvis, torso, [0, 0.1 * S, 0], [0, -0.22 * S, 0]));
     doll.constraints.push(ball(torso, head, [0, 0.22 * S, 0], [0, -0.14 * S, 0]));
     doll.constraints.push(ball(torso, byName.uarmL, [-0.2 * S, 0.16 * S, 0], [0, 0.14 * S, 0]));
@@ -489,34 +497,78 @@ export function createRagdollSystem(scene) {
     }
   }
 
-  function syncPart(part) {
-    const t = part.rb.translation();
-    const r = part.rb.rotation();
-    part.body.position.x = t.x;
-    part.body.position.y = t.y;
-    part.body.position.z = t.z;
-    part.body.quaternion.x = r.x;
-    part.body.quaternion.y = r.y;
-    part.body.quaternion.z = r.z;
-    part.body.quaternion.w = r.w;
-    part.mesh.position.set(t.x, t.y, t.z);
-    _q.set(r.x, r.y, r.z, r.w);
+  // Fixed 60 Hz physics with render interpolation: prev/cur rigid transforms are captured around each step and
+  // the rendered pose (body.* and mesh) is lerped/slerped by the accumulator remainder.
+  const H = 1 / 60;
+  let acc = 0;
+  const _ia = new THREE.Quaternion(), _ib = new THREE.Quaternion(), _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+  const _ya = new THREE.Vector3(), _yb = new THREE.Vector3(), _ax = new THREE.Vector3();
+  function snap(part) {
+    const t = part.rb.translation(), r = part.rb.rotation();
+    if (!part.prevP) { part.prevP = new THREE.Vector3(); part.prevQ = new THREE.Quaternion(); part.curP = new THREE.Vector3(); part.curQ = new THREE.Quaternion(); part.curP.set(t.x, t.y, t.z); part.curQ.set(r.x, r.y, r.z, r.w); }
+    part.prevP.copy(part.curP); part.prevQ.copy(part.curQ);
+    part.curP.set(t.x, t.y, t.z); part.curQ.set(r.x, r.y, r.z, r.w);
+  }
+  // Swing-cone limits for ball joints, and a brief powered phase (PD toward the standing pose, fading over ~0.45 s)
+  // so the body buckles under control before going limp instead of collapsing stiff or rubbery.
+  function limitAndPower(doll) {
+    const defs = doll.jdefs; if (!defs) return;
+    const power = Math.max(0, 1 - doll.age / 0.45);
+    for (let i = 0; i < defs.length; i++) {
+      const a = defs[i][0], b = defs[i][1], cone = defs[i][2];
+      const ra = a.rb.rotation(), rb = b.rb.rotation();
+      _qa.set(ra.x, ra.y, ra.z, ra.w); _qb.set(rb.x, rb.y, rb.z, rb.w);
+      const mb = b.rb.mass ? b.rb.mass() : 2;
+      if (cone > 0) {
+        _ya.set(0, 1, 0).applyQuaternion(_qa); _yb.set(0, 1, 0).applyQuaternion(_qb);
+        const ang = _ya.angleTo(_yb);
+        if (ang > cone) {
+          _ax.crossVectors(_yb, _ya); const l = _ax.length();
+          if (l > 1e-5) { _ax.multiplyScalar((ang - cone) * mb * 1.2 / l); b.rb.applyTorqueImpulse({ x: _ax.x * 0.05, y: _ax.y * 0.05, z: _ax.z * 0.05 }, true); }
+          const wa = a.rb.angvel(), wb = b.rb.angvel();
+          b.rb.setAngvel({ x: wa.x + (wb.x - wa.x) * 0.6, y: wa.y + (wb.y - wa.y) * 0.6, z: wa.z + (wb.z - wa.z) * 0.6 }, true);
+        }
+      }
+      if (power > 0) {
+        // relative error q = qa * inv(qb) (rest relative rotation is identity at spawn)
+        _ib.copy(_qb).invert(); _ia.copy(_qa).multiply(_ib);
+        if (_ia.w < 0) { _ia.x = -_ia.x; _ia.y = -_ia.y; _ia.z = -_ia.z; _ia.w = -_ia.w; }
+        const k = power * mb * 0.35 * H * 60;
+        b.rb.applyTorqueImpulse({ x: _ia.x * k, y: _ia.y * k, z: _ia.z * k }, true);
+        a.rb.applyTorqueImpulse({ x: -_ia.x * k * 0.5, y: -_ia.y * k * 0.5, z: -_ia.z * k * 0.5 }, true);
+      }
+    }
+  }
+  function syncPart(part, alpha) {
+    if (!part.curP) snap(part);
+    const p = part.body.position, q = part.body.quaternion;
+    _pA.copy(part.prevP).lerp(part.curP, alpha);
+    _q.copy(part.prevQ).slerp(part.curQ, alpha);
+    p.x = _pA.x; p.y = _pA.y; p.z = _pA.z;
+    q.x = _q.x; q.y = _q.y; q.z = _q.z; q.w = _q.w;
+    part.mesh.position.copy(_pA);
     part.mesh.quaternion.copy(_q);
   }
 
   function update(dt, cameraZ) {
     if (!phys) return;
-    const step = Math.min(0.05, dt || 0.016);
-    const n = Math.max(1, Math.round(step / (1 / 60)));
-    phys.timestep = step / n;
-    for (let s = 0; s < n; s++) phys.step();
+    const step = Math.min(0.1, dt || 0.016);
+    acc += step;
+    phys.timestep = H;
+    let n = 0;
+    while (acc >= H && n < 4) {
+      for (let d = 0; d < dolls.length; d++) { limitAndPower(dolls[d]); }
+      phys.step(); acc -= H; n++;
+      for (let d = 0; d < dolls.length; d++) { const ps = dolls[d].parts; for (let i = 0; i < ps.length; i++) snap(ps[i]); dolls[d].age += H; }
+    }
+    if (n === 4) acc = Math.min(acc, H); // spiral-of-death guard on slow devices
+    const alpha = acc / H;
     for (let d = dolls.length - 1; d >= 0; d--) {
       const doll = dolls[d];
-      doll.age += step;
       let behind = true;
       for (let i = 0; i < doll.parts.length; i++) {
         const part = doll.parts[i];
-        syncPart(part);
+        syncPart(part, alpha);
         if (part.body.position.z < cameraZ + 2) behind = false;
       }
       if (doll.skin) driveSkin(doll.skin);
