@@ -633,18 +633,42 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const origin = enemy.group.position;
     spray(point || origin.clone().setY(origin.y + 1.3));
     dropDecal(origin);
+    // Hit-to-ragdoll blend: the Quaternius hit clip plays on the live skeleton for ~0.18 s, then the ragdoll takes
+    // over from that pose (bindSkin offsets absorb it, no pop) with the hips' measured velocity + the shot impulse.
+    if (enemy.art && enemy.mixer && enemy.actions && !enemy.pinned) {
+      enemy.dying = true; enemy.fallT = 0.18; enemy.fallPart = part; enemy.fallPoint = point;
+      const hit = (part === 'head' && enemy.actions.hitHead) || enemy.actions.hitBody || enemy.actions.hit;
+      if (hit) { hit.reset().setEffectiveWeight(1).setEffectiveTimeScale(1.25).play(); if (enemy.currentAction && enemy.currentAction !== hit) enemy.currentAction.crossFadeTo(hit, 0.05, false); enemy.currentAction = hit; }
+      if (enemy.bones && enemy.bones.Hips) enemy.hipPrev = enemy.bones.Hips.getWorldPosition(new THREE.Vector3());
+      fallers.push(enemy);
+    } else fall(enemy, point, part);
+    killFx(enemy, point, part);
+  }
+  const fallers = [];
+  function stepFallers(dt) {
+    for (let i = fallers.length - 1; i >= 0; i--) {
+      const e = fallers[i]; e.fallT -= dt;
+      try { e.mixer.update(dt); proceduralLean(e, 'hit', dt); } catch (err) { e.fallT = 0; }
+      if (e.bones && e.bones.Hips) { const h = e.bones.Hips.getWorldPosition(_wA); if (e.hipPrev && dt > 0) { e.hipVel = (e.hipVel || new THREE.Vector3()).subVectors(h, e.hipPrev).multiplyScalar(1 / dt); } (e.hipPrev || (e.hipPrev = new THREE.Vector3())).copy(h); }
+      if (e.fallT <= 0) { fallers.splice(i, 1); fall(e, e.fallPoint, e.fallPart); }
+    }
+  }
+  function fall(enemy, point, part) {
+    const origin = enemy.group.position;
     const yaw = enemy.group.rotation.y;
     enemy.group.updateMatrixWorld(true);
     // A ragdoll/physics failure must never block a kill (tester soft-lock: hit markers but nobody died, loop frozen).
     let doll = null;
-    try { doll = ragdolls.spawn(origin, yaw, _aim.copy(origin).sub(camera.position).normalize()); ragdolls.addNearbyStatics(doll, world.colliders, origin); }
+    _aim.copy(origin).sub(camera.position).normalize();
+    if (enemy.hipVel) { const hv = enemy.hipVel; if (hv.lengthSq() < 36) _aim.addScaledVector(hv, 0.12); }
+    try { doll = ragdolls.spawn(origin, yaw, _aim); ragdolls.addNearbyStatics(doll, world.colliders, origin); }
     catch (err) { reportErr('ragdoll spawn', err); doll = null; }
     if (enemy.art && doll) try {
       const model = enemy.art.root;
       scene.attach(model); // keeps the world transform
-      // Sample the death clip, then freeze that pose for the ragdoll skin.
+      // Freeze the current (hit-clip) pose for the ragdoll skin; the death clip is only sampled when no hit blend ran.
       const death = enemy.actions && enemy.actions.death;
-      if (death && enemy.mixer) {
+      if (death && enemy.mixer && !enemy.dying) {
         enemy.dying = true;
         enemy.mixer.stopAllAction();
         death.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
@@ -663,6 +687,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     else if (enemy.art && enemy.art.root.parent === scene) scene.remove(enemy.art.root);
     enemy.group.visible = false;
     root.remove(enemy.group);
+  }
+  function killFx(enemy, point, part) {
+    const origin = enemy.group.position;
     if (window.SS && window.SS.scoreSys) window.SS.scoreSys.addKill(part === 'head');
     // Kill confirmation: kill marker + sound; headshot burst; brief slow-mo on the wave's last kill.
     const SSx = window.SS || {};
@@ -1370,6 +1397,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       old.geometry.dispose();
     }
 
+    stepFallers(dt);
     try { ragdolls.update(dt, pz); } catch (err) { reportErr('ragdoll update', err); try { ragdolls.clear && ragdolls.clear(); } catch (_) {} }
   }
 
@@ -1385,6 +1413,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (const n of nades) scene.remove(n.m); nades.length = 0; nadeThisWave = false; campT = 0;
     for (let i = list.length - 1; i >= 0; i--) despawn(list[i]);
     list.length = 0;
+    while (fallers.length) { const f = fallers.pop(); if (f.group.parent) f.group.parent.remove(f.group); }
     if (ragdolls.clear) ragdolls.clear();
     for (let i = 0; i < decals.length; i++) decals[i].visible = false;
     for (let i = 0; i < blood.length; i++) {
