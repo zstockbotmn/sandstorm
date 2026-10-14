@@ -1317,7 +1317,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const model = art.done && art.get && art.get('truck_mil') ? art.staticInstance('truck_mil') : null;
     if (model) { // Kenney Car Kit flatbed (CC0), repainted olive drab; replaces the box truck
       art.fitToBox(model, 2.3, 2.5, 5.6, { keepAspect: true, alignLong: true }); model.name = 'truck_mil';
-      model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); g.add(model);
+      let rubber = null; const isWheel = (o) => { for (let q = o; q && q !== model; q = q.parent) if (/wheel/i.test(q.name)) return true; return false; };
+      model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true;
+        if (isWheel(o)) { rubber = rubber || (() => { const m = o.material.clone(); m.color.setRGB(0.16, 0.16, 0.15); m.roughness = 0.95; return m; })(); o.material = rubber; } } }); // dark rubber tyres
+      g.add(model);
     } else g.add(bed, cab);
     g.position.set(side * 2.6, 0, camera.position.z - 70); scene.add(g);
     truck = { g, stopZ: camera.position.z - 20, unloaded: false, t: 0 }; truckPending = 2; squadCall('Truck inbound!');
