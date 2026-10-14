@@ -1,12 +1,30 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { pbrMaterial } from './texlib.js';
+import { LOWQ } from './quality.js';
+function makeBags(W, H, D) {
+  const parts = []; const rows = 3, rh = H / rows;
+  for (let r = 0; r < rows; r++) {
+    const n = r === 2 ? 4 : 5, bw = W / 5, x0 = -((n - 1) * bw) / 2;
+    for (let i = 0; i < n; i++) {
+      const g = new THREE.SphereGeometry(0.5, 10, 6);
+      g.scale(bw * 1.08, rh * 1.25, D * (0.95 - r * 0.06));
+      g.rotateY((i * 7 + r * 3) % 5 * 0.03 - 0.06);
+      g.translate(x0 + i * bw + (r === 1 ? bw * 0.18 : 0), -H / 2 + rh * (r + 0.5), 0);
+      parts.push(g);
+    }
+  }
+  const m = mergeGeometries(parts); m.computeBoundingBox(); m.computeBoundingSphere(); return m;
+}
 // Automatic cover: when the walk halts for a fight, move behind the nearest cover ahead (or drop a sandbag wall) and duck.
 // Tap SCOPE (or Q) to pop up and aim; tap again to duck back. While ducked (input.cover) the player can blind-fire.
 const PLAYER_R = 0.55; // camera keeps this far from the cover face
 const SEARCH_AHEAD = 7, STREET_X = 4.4, BEHIND = 1.0, MOVE_SPEED = 4.5;
 export function createCover(scene, camera, world, input) {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x9c8a62, roughness: 0.95, transparent: false });
+  // Hessian (Poly Haven CC0) sandbags: three staggered rows of squashed-sphere bags merged into one mesh.
+  const mat = pbrMaterial('hessian_230', { color: 0xd8c49a, full: !LOWQ });
   const BAG_H = 0.7;
-  const geo = new THREE.BoxGeometry(2.6, BAG_H, 0.55); // low; crouched eye (~1.28) sees street; ghosted while ducked
+  const geo = makeBags(2.6, BAG_H, 0.55); // low; crouched eye (~1.28) sees street
   const c = { state: 'none', target: null, spawned: null, update, reset };
   c.prewarmMesh = () => { const m = new THREE.Mesh(geo, mat.clone()); m.castShadow = m.receiveShadow = true; return m; };
   // pick(exclude, dir): first cover on engage (nearest ahead), or the next cover left (-1) / right (+1) of the current one.

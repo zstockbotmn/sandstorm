@@ -4,7 +4,9 @@ import { art } from './art.js';
 const SEG_LEN = 60;
 const SEG_COUNT = 5;
 const START_Z = 24;      // first segment starts behind the spawn so the run opens in a street, not open desert
-import { Q } from './quality.js';
+import { Q, LOWQ, ULTRA } from './quality.js';
+import { pbrMaterial, worldBox } from './texlib.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 const DRAW_AHEAD = Q.drawAhead;  // segments wholly beyond this (fogged out anyway) are not drawn
 const DRAW_BEHIND = 20;
 
@@ -64,7 +66,7 @@ function prepTex(tex, repeatX, repeatY, srgb) {
 }
 
 // High tier swaps in Poly Haven CC0 maps. A failed fetch leaves the colored material.
-function upgradeMaterial(mat, base, repeatX, repeatY) {
+function upgradeMaterial(mat, base, repeatX, repeatY, full = true) {
   const loader = new THREE.TextureLoader();
   const root = 'assets/textures/' + base;
   loader.load(root + '_diff.webp', (tex) => {
@@ -73,6 +75,7 @@ function upgradeMaterial(mat, base, repeatX, repeatY) {
     mat.color.set(0xffffff);
     mat.needsUpdate = true;
   });
+  if (!full) return;
   loader.load(root + '_nor.webp', (tex) => {
     prepTex(tex, repeatX, repeatY, false);
     mat.normalMap = tex;
@@ -110,6 +113,69 @@ export function createWorld(scene, seed) {
   const matInvisible = new THREE.MeshBasicMaterial({ visible: false });
   const BLDGS = [['bldg1', 0.3], ['bldg2', 0.3], ['bldg3', 0.2], ['bldg4', 0.2]];
   const ROOF_OK = { bldg1: 1, bldg2: 1, bldg3: 1 };
+  // Poly Haven CC0 1k PBR (WebP) for building sides/backs/roofs and the background rows. World-scaled box UVs.
+  const FULL = !LOWQ;
+  const WALL_TEX = ['beige_wall_001', 'plastered_wall_02', 'brick_wall_02'];
+  const shellMats = WALL_TEX.map((b) => pbrMaterial(b, { full: FULL, vertexColors: true }));
+  const roofMat = pbrMaterial('concrete_wall_008', { full: FULL, vertexColors: true });
+  const bgWindowMat = new THREE.MeshStandardMaterial({ color: 0x2a2520, roughness: 0.6 });
+  // Grime: vertex colour darkens toward the ground and tints per building (dust/soot band at street level).
+  function tint(g, r, gg, b, grime) {
+    g.computeBoundingBox(); const y0 = g.boundingBox.min.y, y1 = g.boundingBox.max.y, pos = g.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) { const t = (pos.getY(i) - y0) / Math.max(0.01, y1 - y0); const d = 1 - grime * Math.max(0, 1 - t * 2.5) - grime * 0.35 * (1 - t);
+      col[i * 3] = r * d; col[i * 3 + 1] = gg * d; col[i * 3 + 2] = b * d; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g;
+  }
+  function boxAt(sx, sy, sz, x, y, z, tile) { const g = worldBox(sx, sy, sz, tile); g.translate(x, y, z); return g; }
+  // Shell: sides, back and roof of a Meshy building get a textured box just inside the street facade, so no face shows
+  // the smeared Meshy back texture from any angle. Height stops under the roof-shooter spot.
+  function addShell(seg, _rng, side, box, roof) {
+    const rng = mulberry32(((box.min.z * 977) | 0) ^ (side * 0x5bd1e995) ^ seed);
+    const front = side < 0 ? box.max.x - 0.35 : box.min.x + 0.35;
+    const back = side < 0 ? box.min.x - 0.06 : box.max.x + 0.06;
+    const top = roof ? Math.min(box.max.y, roof.y - 0.25) : box.max.y * 0.985;
+    const sx = Math.abs(front - back), sz = box.max.z - box.min.z + 0.12;
+    const cx = (front + back) / 2, cz = (box.min.z + box.max.z) / 2;
+    const k = (rng() * WALL_TEX.length) | 0, tr = 0.85 + rng() * 0.15;
+    const walls = tint(boxAt(sx, top, sz, cx, top / 2, cz, 3), tr, tr * (0.95 + rng() * 0.05), tr * (0.88 + rng() * 0.1), 0.35);
+    const m = new THREE.Mesh(walls, shellMats[k]); m.userData.ownGeo = true; m.castShadow = m.receiveShadow = true; seg.group.add(m);
+    const cap = new THREE.Mesh(tint(boxAt(sx + 0.1, 0.12, sz + 0.1, cx, top + 0.04, cz, 4), 0.9, 0.88, 0.84, 0), roofMat); cap.receiveShadow = true; cap.userData.ownGeo = true; seg.group.add(cap);
+  }
+  // Background: 2-3 layered rows of textured low-poly buildings behind each side (not a flat skyline), merged per
+  // material per segment. Rows step back and up; window bands on the street-facing side. Ultra 1 row, Low 2, High 3.
+  const ROWS = [[20, 5, 10], [31, 7, 14], [44, 9, 20]];
+  function addBackdrop(seg, rng, side, oz) {
+    const nRows = ULTRA ? 1 : LOWQ ? 2 : 3;
+    const byMat = shellMats.map(() => []); const roofs = [], wins = [];
+    for (let r = 0; r < nRows; r++) {
+      const [x0, hMin, hMax] = ROWS[r];
+      let z = oz + rng() * 4;
+      while (z > oz - SEG_LEN) {
+        const lot = Math.min(z - (oz - SEG_LEN), 6 + rng() * 9); if (lot < 2) break;
+        if (rng() < 0.12) { z -= lot * 0.5; continue; }
+        const depth = 7 + rng() * 6, h = hMin + rng() * (hMax - hMin);
+        const cx = side * (x0 + depth / 2 + rng() * 2), cz = z - lot / 2;
+        const k = (rng() * WALL_TEX.length) | 0, tr = 0.78 + rng() * 0.22;
+        byMat[k].push(tint(boxAt(depth, h, lot - 0.3, cx, h / 2, cz, 3), tr, tr * 0.96, tr * 0.9, 0.3));
+        roofs.push(tint(boxAt(depth + 0.3, 0.4, lot, cx, h + 0.2, cz, 4), 0.85, 0.82, 0.78, 0));
+        if (rng() < 0.3) roofs.push(tint(boxAt(1.4, 1.2, 1.4, cx + (rng() - 0.5) * depth * 0.5, h + 1, cz + (rng() - 0.5) * lot * 0.5, 2), 0.8, 0.8, 0.78, 0));
+        if (r < 2) {
+          const fx = cx - side * (depth / 2 + 0.02), floors = Math.max(1, Math.floor((h - 1) / 3.1)), nw = Math.max(1, Math.floor(lot / 2.6));
+          for (let f = 0; f < floors; f++) for (let w = 0; w < nw; w++) {
+            if (rng() < 0.2) continue;
+            const g = new THREE.PlaneGeometry(0.9, 1.3); g.rotateY(side < 0 ? Math.PI / 2 : -Math.PI / 2);
+            g.translate(fx, 1.9 + f * 3.1, cz - lot / 2 + (w + 0.5) * (lot / nw)); g.deleteAttribute('uv'); g.deleteAttribute('normal'); g.computeVertexNormals(); wins.push(g);
+          }
+        }
+        z -= lot;
+      }
+    }
+    const add = (list, mat, shadow) => { if (!list.length) return; const g = mergeGeometries(list.map((x) => x.index ? x.toNonIndexed() : x)); if (!g) return;
+      const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.castShadow = false; m.userData.backdrop = true; m.userData.ownGeo = true; seg.group.add(m); };
+    byMat.forEach((l, i) => add(l, shellMats[i]));
+    add(roofs, roofMat); add(wins, bgWindowMat);
+  }
 
   scene.background = new THREE.Color(0x8ec8ea);
   scene.fog = new THREE.FogExp2(0xd2c4a2, Q.fog);
@@ -120,12 +186,14 @@ export function createWorld(scene, seed) {
   const desert = new THREE.Mesh(desertGeo, desertMat);
   desert.rotation.x = -Math.PI / 2; desert.position.y = -0.1; desert.receiveShadow = false; scene.add(desert);
 
-  if (art.tier === 'high') {
-    upgradeMaterial(desertMat, 'sand_01', 48, 48);
-    upgradeMaterial(matRoad, 'asphalt_01', 4, 18);
-    upgradeMaterial(matSand, 'sand_01', 4, 14);
-    upgradeMaterial(matPlaster, 'dirty_concrete', 2, 3);
-    upgradeMaterial(matWall, 'dirty_concrete', 1, 2);
+  {
+    // Diffuse on every tier (nothing untextured from any angle); normal + ARM on High only.
+    const full = art.tier === 'high';
+    upgradeMaterial(desertMat, 'sand_01', 48, 48, full);
+    upgradeMaterial(matRoad, 'asphalt_01', 4, 18, full);
+    upgradeMaterial(matSand, 'sand_01', 4, 14, full);
+    upgradeMaterial(matPlaster, 'dirty_concrete', 2, 3, full);
+    upgradeMaterial(matWall, 'dirty_concrete', 1, 2, full);
   }
 
   const hemi = new THREE.HemisphereLight(0xb7ddf5, 0xc4a06a, 0.85);
@@ -298,7 +366,8 @@ export function createWorld(scene, seed) {
       // Real roof only: raycast down onto the model just behind the facade; need a flat hit (normal.y > 0.8) near the top.
       const roof = findRoof(model, box, side, facadeX, cz);
       if (roof) seg.coverPoints.push({ pos: roof, type: 'roof' });
-    }
+      addShell(seg, rng, side, box, roof);
+    } else addShell(seg, rng, side, box, null);
     maybeFrontWall(seg, rng, side, cz, lot);
   }
 
@@ -359,7 +428,7 @@ export function createWorld(scene, seed) {
     }
     seg.owned.length = 0;
     seg.coverPoints.length = 0;
-    while (seg.group.children.length) seg.group.remove(seg.group.children[0]);
+    while (seg.group.children.length) { const ch = seg.group.children[0]; if (ch.userData.ownGeo && ch.geometry) ch.geometry.dispose(); seg.group.remove(ch); }
 
     const rng = mulberry32((seed ^ Math.imul(seg.gen + 1, 0x9e3779b1) ^ Math.imul(seg.id + 1, 0x85ebca6b)) >>> 0);
     const oz = seg.originZ;
@@ -370,6 +439,10 @@ export function createWorld(scene, seed) {
 
     buildSide(seg, rng, -1, oz);
     buildSide(seg, rng, 1, oz);
+    // Separate RNG so the backdrop never shifts gameplay layout (covers, cars, barrels).
+    const brng = mulberry32((seed ^ Math.imul(seg.gen + 7, 0x27d4eb2d) ^ Math.imul(seg.id + 3, 0x165667b1)) >>> 0);
+    addBackdrop(seg, brng, -1, oz);
+    addBackdrop(seg, brng, 1, oz);
 
     const cars = 1 + (rng() * 3) | 0;
     for (let i = 0; i < cars; i++) {

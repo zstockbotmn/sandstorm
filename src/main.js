@@ -131,7 +131,7 @@ function applyCamera(dt) {
     camera.updateProjectionMatrix();
   }
   camera.position.y = eye;
-  camera.rotation.y = -st.yaw;
+  camera.rotation.y = -st.yaw + (window.SS_VIEW_YAW || 0); // test hook: look sideways/backward for coverage shots
   camera.rotation.x = -st.pitch;
   camera.rotation.z = 0;
   camera.updateMatrixWorld();

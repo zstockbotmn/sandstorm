@@ -99,6 +99,14 @@ const res = {};
   await p.waitForFunction(() => Math.abs(Math.abs(SS.input.yaw) - 0.6) < 0.001 && Math.abs(SS.camera.rotation.y + SS.input.yaw) < 0.02);
   await p.waitForTimeout(500);
   await p.screenshot({ path: OUT + '/6-props.png' });
+  // Coverage shots: look straight sideways (left/right) and backward so building sides/backs and the background rows show.
+  for (const [nm, yv] of [['7-side-left', Math.PI / 2], ['8-side-right', -Math.PI / 2], ['9-backward', Math.PI]]) {
+    await p.evaluate((y) => { SS.input.yaw = 0; SS.input.pitch = -0.12; window.SS_VIEW_YAW = y; }, yv);
+    await p.waitForTimeout(900);
+    await p.screenshot({ path: OUT + '/' + nm + '.png' });
+  }
+  await p.evaluate(() => { window.SS_VIEW_YAW = 0; });
+  await p.waitForTimeout(300);
   res.renderer = await p.evaluate(() => {
     const render = SS.renderer && SS.renderer.info && SS.renderer.info.render;
     return render ? { triangles: render.triangles, calls: render.calls } : null;

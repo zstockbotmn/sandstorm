@@ -31,3 +31,5 @@ Poly Haven downloads were resized to 512 webp. Quaternius clips were retargeted 
 | playwright | Apache-2.0 | https://github.com/microsoft/playwright — tests only |
 
 Game code in `src/` and `tools/` is part of this repository.
+
+Step 3 textures (Poly Haven, CC0, 1k JPG -> WebP): beige_wall_001, plastered_wall_02, brick_wall_02, concrete_wall_008 (building sides/backs/roofs and background rows), hessian_230 (sandbags). https://polyhaven.com/license
