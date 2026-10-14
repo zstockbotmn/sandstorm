@@ -7,6 +7,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(8793);
 const res = {};
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: +(process.env.SS_TIMEOUT_MS || 480000) });
+ try {
   const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
   const p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('http://127.0.0.1:8793/?calm=1&seed=7&hitbox=1' + (process.env.SS_QS || ''));
