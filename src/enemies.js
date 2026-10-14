@@ -1310,7 +1310,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (const [x, z] of [[-1, 1.8], [1, 1.8], [-1, -1.6], [1, -1.6]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10), truckCab); w.rotation.z = Math.PI / 2; w.position.set(x, 0.42, z); g.add(w); }
     const model = art.done && art.get && art.get('truck_mil') ? art.staticInstance('truck_mil') : null;
     if (model) { // Kenney Car Kit flatbed (CC0), repainted olive drab; replaces the box truck
-      art.fitToBox(model, 2.3, 2.5, 5.6, { keepAspect: true, alignLong: true });
+      art.fitToBox(model, 2.3, 2.5, 5.6, { keepAspect: true, alignLong: true }); model.name = 'truck_mil';
       model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); g.add(model);
     } else g.add(bed, cab);
     g.position.set(side * 2.6, 0, camera.position.z - 70); scene.add(g);

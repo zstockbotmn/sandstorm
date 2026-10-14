@@ -122,6 +122,7 @@ let last = 0;
 let started = false;
 
 function applyCamera(dt) {
+  if (window.__freezeCam) return; // test hook: hold a staged camera (truck close-up)
   const st = input.state;
   const aim = 1 - Math.exp(-36 * dt); // snappier ADS so soft-GL / low fps still reaches ~2.5x
   const duck = 1 - Math.exp(-14 * dt);
