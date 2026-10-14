@@ -14,7 +14,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     await p.waitForTimeout(12000); res.cam = await p.evaluate(() => ({ y: +SS.camera.position.y.toFixed(2), cover: SS.input.cover, state: SS.cover && SS.cover.state })); // let auto-cover settle so the camera isn't ducked below the fighter
     for (const clip of ['idle', 'aim', 'walk', 'run', 'strafe', 'crouch', 'crouchIdle', 'lean']) { if (!res.clips.includes(clip)) continue;
       for (const yaw of [0, 0.8]) { await p.evaluate(([clip, yaw]) => { const e = window.__e; e.forceAnim = clip; e.group.rotation.y = Math.atan2(SS.camera.position.x - e.group.position.x, SS.camera.position.z - e.group.position.z) + yaw; e.turned = true; }, [clip, yaw]);
-        await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/' + clip + (yaw ? '-34' : '-front') + '.png' }); } }
+        await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/' + clip + (yaw ? '-34' : '-front') + '.png' }); (res.st = res.st || []).push(await p.evaluate((n) => { const e = window.__e; return [n, e.animState, e.hitPlaying, e.health, e.mixer._actions.filter((a) => a.getEffectiveWeight() > 0.01 && a.isRunning()).map((a) => a.getClip().name + ':' + a.getEffectiveWeight().toFixed(2))]; }, clip + yaw)); } }
     // head look-at: player moves left/right of the enemy, head follows within limits
     await p.evaluate(() => { window.__e.forceAnim = 'idle'; }); for (const dx of [-2.5, 2.5]) { await p.evaluate((dx) => { SS.camera.position.x += dx; }, dx); await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/look-' + (dx < 0 ? 'left' : 'right') + '.png' }); await p.evaluate((dx) => { SS.camera.position.x -= dx; }, dx); }
     // truck close-up
