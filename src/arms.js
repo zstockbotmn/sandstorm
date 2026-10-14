@@ -19,9 +19,9 @@ export function createArms(src, clips, camera) {
   const R = side('R'), L = side('L');
   if (!R.up || !R.fore || !R.ctl || !L.up || !L.fore || !L.ctl) return null;
   root.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = false; o.renderOrder = 2; if (o.material) { o.material = o.material.clone(); o.material.roughness = 0.75; o.material.metalness = 0; } } });
-  root.scale.setScalar(+(new URLSearchParams(location.search).get('armscale') || 0.2));
-  root.rotation.y = Math.PI; // Blender -Y forward -> glTF +Z; the camera looks down -Z
-  root.position.set(-0.3, 0.02, 0.42); // shoulders roughly at eye height, just behind the camera (rig space)
+  root.scale.setScalar(+(QP.get('armscale') || 0.13));
+  root.rotation.y = +(QP.get('armrot') || 0) * Math.PI / 180; // rig already faces -Z; the old PI flip put the right arm on the left
+  { const v = (QP.get('armpos') || '-0.05,0.02,0.3').split(',').map(Number); root.position.set(v[0], v[1], v[2]); } // shoulders roughly at eye height, just behind the camera (rig space)
   const clip = (clips || []).find((c) => c.name === 'grip');
   if (clip) for (const t of clip.tracks) { // apply grip pose directly: track names keep Blender's dots, node names don't
     const i = t.name.lastIndexOf('.'), prop = t.name.slice(i + 1), o = B(THREE.PropertyBinding.sanitizeNodeName(t.name.slice(0, i)).replace(/\./g, ''));
@@ -63,7 +63,7 @@ export function createArms(src, clips, camera) {
     S.ctl.parent.updateMatrixWorld(true); const p = S.ctl.parent.worldToLocal(_T.clone()); S.ctl.position.copy(p);
     if (S.basis) { S.basis(_mx); _wq.setFromRotationMatrix(_mx); _wq.multiply(S.off); } else { S.fore.getWorldQuaternion(_wq); _wq.multiply(S.rel); }
     S.ctl.parent.getWorldQuaternion(_pq); S.ctl.quaternion.copy(_pq.invert().multiply(_wq)); S.ctl.updateMatrixWorld(true);
-    api.reach = Math.max(api.reach, _n.copy(target).sub(_S).length() - (S.la + S.lb));
+    S.hand.getWorldPosition(_a); api.reach = Math.max(api.reach, _a.distanceTo(target));
   }
   const _pole = new THREE.Vector3(), _tg = new THREE.Vector3();
   api.update = function update(reloadT) {
