@@ -21,9 +21,9 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     // head look-at: player moves left/right of the enemy, head follows within limits
     await p.evaluate(() => { window.__e.forceAnim = 'idle'; }); for (const dx of [-2.5, 2.5]) { await p.evaluate((dx) => { SS.camera.position.x += dx; }, dx); await p.waitForTimeout(900); await p.screenshot({ path: OUT + '/look-' + (dx < 0 ? 'left' : 'right') + '.png' }); await p.evaluate((dx) => { SS.camera.position.x -= dx; }, dx); }
     // truck close-up
-    await p.evaluate(() => { window.__e.group.visible = false; window.__e.group.position.y = -50; SS.enemies.debugTruck(); }); await p.waitForTimeout(9000);
+    await p.evaluate(() => { window.__e.group.visible = false; window.__e.group.position.y = -50; SS.enemies.debugTruck(); }); await p.waitForTimeout(16000);
     res.truck = await p.evaluate(() => { let t = null; SS.scene.traverse((o) => { if (!t && o.name === 'truck_mil') t = o; }); if (!t) return null; const w = new SS.THREE.Vector3(); t.getWorldPosition(w);
-      SS.camera.position.set(w.x - Math.sign(w.x || 1) * 5.5, 1.7, w.z + 3.5); SS.camera.lookAt(w.x, 1.0, w.z); SS.walking = false; window.__freezeCam = true; return w.toArray().map((v) => +v.toFixed(1)); });
+      SS.camera.position.set(w.x - Math.sign(w.x || 1) * 4.5, 1.8, w.z + 4.5); SS.camera.lookAt(w.x, 1.0, w.z); SS.walking = false; window.__freezeCam = true; return w.toArray().map((v) => +v.toFixed(1)); });
     await p.waitForTimeout(150); await p.screenshot({ path: OUT + '/truck.png' });
   } catch (e) { errs.push('exception ' + e.message); }
   console.log(JSON.stringify({ res, errs })); console.log(errs.length ? 'POSES FAIL' : 'POSES PASS'); await b.close(); srv.close(); process.exit(errs.length ? 1 : 0); })();
