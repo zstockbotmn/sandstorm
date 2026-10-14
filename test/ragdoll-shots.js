@@ -14,7 +14,9 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
       const c = SS.camera.position, e = (SS.enemies.list || []).filter((x) => x.alive && x.exposed && x.art && x.group.position.distanceTo(c) < 30).sort((a, b) => a.group.position.distanceTo(c) - b.group.position.distanceTo(c))[0];
       if (e) { window.__rdT = e; const v = e.group.position.clone(); v.y += 1.0; v.sub(c); SS.input.yaw = Math.atan2(v.x, -v.z); SS.input.pitch = -Math.atan2(v.y, Math.hypot(v.x, v.z)); return +e.group.position.distanceTo(c).toFixed(1); }
       await new Promise((r) => setTimeout(r, 250)); } return null; });
-    await p.waitForTimeout(300); await p.evaluate(() => { window.__freezeCam = true; SS.input.fire = false; });
+    await p.waitForTimeout(300); await p.evaluate(() => { window.__freezeCam = true; SS.input.fire = false; const d = SS.camera.position.distanceTo(window.__rdT.group.position);
+      const z = () => { SS.camera.fov = Math.max(6, 2 * Math.atan(1.6 / d) * 180 / Math.PI); SS.camera.updateProjectionMatrix(); requestAnimationFrame(z); }; z(); // zoom so the body fills the frame
+      for (const el of document.querySelectorAll('body > div')) if (!el.querySelector('canvas')) el.style.visibility = 'hidden'; });
     await p.screenshot({ path: OUT + '/0-before.png' });
     res.kill = await p.evaluate(() => { const e = window.__rdT; if (!e) return null; const pt = e.group.position.clone(); pt.y += 1.25; let n = 0; while (e.alive && n < 10) { e.takeHit('torso', pt); n++; } return { n, alive: e.alive, dying: !!e.dying }; });
     for (const [ms, n] of [[60, '1-hit'], [120, '2-react'], [200, '3-handoff'], [350, '4-fall'], [900, '5-down']]) { await p.waitForTimeout(ms); await p.screenshot({ path: OUT + '/' + n + '.png' }); }
