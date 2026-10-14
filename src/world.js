@@ -295,14 +295,27 @@ export function createWorld(scene, seed) {
       type: 'door',
     });
     if (ROOF_OK[name]) {
-      seg.coverPoints.push({
-        pos: new THREE.Vector3(facadeX + side * 0.45, box.max.y + 0.15, cz),
-        type: 'roof',
-      });
+      // Real roof only: raycast down onto the model just behind the facade; need a flat hit (normal.y > 0.8) near the top.
+      const roof = findRoof(model, box, side, facadeX, cz);
+      if (roof) seg.coverPoints.push({ pos: roof, type: 'roof' });
     }
     maybeFrontWall(seg, rng, side, cz, lot);
   }
 
+  const _rc = new THREE.Raycaster(); const _down = new THREE.Vector3(0, -1, 0);
+  function findRoof(model, box, side, facadeX, cz) {
+    const h = box.max.y - box.min.y; let best = null;
+    for (const inset of [0.8, 1.3, 2.0, 2.8]) for (const dz of [0, -1.2, 1.2]) {
+      const x = facadeX + side * inset, z = cz + dz;
+      _rc.set(new THREE.Vector3(x, box.max.y + 2, z), _down); _rc.far = h + 3;
+      const hit = _rc.intersectObject(model, true)[0];
+      if (!hit || !hit.face) continue;
+      const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      if (n.y < 0.8 || hit.point.y < box.min.y + h * 0.55) continue;
+      if (!best || hit.point.y > best.y) best = new THREE.Vector3(x, hit.point.y + 0.02, z);
+    }
+    return best ? (best.y += 0.15, best) : null; // enemies place roof feet at pos.y - 0.15
+  }
   function nearDoor(z, half, doors) {
     const need = half + 0.8;
     for (let i = 0; i < doors.length; i++) {

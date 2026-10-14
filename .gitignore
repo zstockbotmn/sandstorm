@@ -5,3 +5,4 @@ dist/
 assets-src/meshy/*.raw.glb
 assets-src/meshy/rejected/*.raw.glb
 assets-src/meshy/static/*.raw.glb
+screenshots/

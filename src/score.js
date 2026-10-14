@@ -86,8 +86,7 @@ export function createScore(hud, audio) {
     state.ended = true;
     const acc = accuracyPct();
     state.accuracy = acc;
-    const bonus = acc * state.kills * 2;
-    state.score = Math.floor(live() + bonus);
+    state.score = live(); // one score source: the end screen shows exactly what the HUD showed
     if (window.SS) window.SS.score = state.score;
     if (hud && hud.setScore) hud.setScore(state.score);
     const prevBest = best();

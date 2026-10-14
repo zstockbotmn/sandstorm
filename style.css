@@ -397,3 +397,16 @@ canvas {
 #scope-overlay .rh { left: calc(50% - 34vmin); width: 68vmin; top: 50%; height: 1.5px; transform: translateY(-50%); }
 #scope-overlay .rv { top: calc(50% - 34vmin); height: 68vmin; left: 50%; width: 1.5px; transform: translateX(-50%); }
 #scope-overlay .rd { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: #e3261b; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); }
+/* Clearer damage direction: big red wedge on a ring around the crosshair */
+#dmg-dir { width: 56vmin; height: 56vmin; margin: -28vmin 0 0 -28vmin; transition: opacity 0.6s linear; z-index: 4; }
+#dmg-dir .arrow { left: 50%; top: 0; width: 0; height: 0; margin-left: -5vmin; border-left: 5vmin solid transparent; border-right: 5vmin solid transparent;
+  border-bottom: 6vmin solid rgba(230, 30, 20, 0.9); filter: drop-shadow(0 0 6px rgba(255,0,0,0.8)); transform: none; background: none; }
+/* Low health: persistent pulsing red edges */
+#lowhp { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.4s; box-shadow: inset 0 0 18vmin 6vmin rgba(170, 0, 0, 0.75); }
+#lowhp.on { opacity: 1; animation: lowhp 1.1s ease-in-out infinite; }
+@keyframes lowhp { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+/* Reload: progress ring + bar */
+#reload-ring { position: fixed; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; pointer-events: none; display: none;
+  background: conic-gradient(rgba(255, 210, 120, 0.95) calc(var(--p, 0) * 1turn), rgba(255,255,255,0.15) 0); -webkit-mask: radial-gradient(circle, transparent 17px, #000 18px); mask: radial-gradient(circle, transparent 17px, #000 18px); }
+#reload-ring.on { display: block; }
+#reloading { color: #ffd27a; font-weight: 800; letter-spacing: 1px; }

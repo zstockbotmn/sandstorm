@@ -122,7 +122,7 @@ export function createWeapon(camera, world, scene) {
 
   const raycaster = new THREE.Raycaster();
   raycaster.far = 180;
-  let cooldown = 0;
+  let cooldown = 0, lastUpd = 0;
   let reloadT = 0;
   let flashT = 0;
   let kick = 0;
@@ -153,7 +153,7 @@ export function createWeapon(camera, world, scene) {
   function shoot(input) {
     weapon.ammo -= 1;
     weapon.shotsFired += 1;
-    cooldown = SHOT_INTERVAL;
+    cooldown = Math.max(cooldown, -SHOT_INTERVAL * 3) + SHOT_INTERVAL; // real-time cadence (keeps the remainder)
     flashT = 0.05;
     flash.intensity = 5;
     flashSprite.visible = true;
@@ -278,7 +278,8 @@ export function createWeapon(camera, world, scene) {
     { camera.getWorldDirection(_dir); camera.getWorldPosition(_origin); const lim = input.scope ? ASSIST_ADS : ASSIST_HIP; let on = false;
       for (let i = 0; i < targets.length && !on; i++) { const t = targets[i]; if (!t.visible) continue; t.getWorldPosition(_tp); _tp.sub(_origin); if (_tp.length() < 180 && _tp.angleTo(_dir) < lim) on = true; }
       weapon.onTarget = on; }
-    cooldown -= dt;
+    // Fire cadence runs on the real-time clock (sim dt is capped at low fps, which starved held FIRE).
+    { const now = performance.now(); const rdt = lastUpd ? Math.min(0.5, (now - lastUpd) / 1000) : dt; lastUpd = now; cooldown -= rdt; }
     // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
     if ((input.pendingShots | 0) > 0 && !weapon.reloading && weapon.ammo > 0 && cooldown <= 0) {
       input.pendingShots -= 1;
@@ -286,10 +287,11 @@ export function createWeapon(camera, world, scene) {
     } else if ((input.pendingShots | 0) > 0 && weapon.ammo <= 0 && !weapon.reloading) {
       input.pendingShots = 0; // empty mag: drop queue (reload will start)
     }
-    const wants = input.fire && !weapon.reloading && weapon.ammo > 0;
-    if (wants && cooldown <= 0) shoot(input);
+    for (let n = 0; n < 4; n++) { const wants = input.fire && !weapon.reloading && weapon.ammo > 0; if (!(wants && cooldown <= 0)) break; shoot(input); }
+    if (!input.fire && (input.pendingShots | 0) <= 0 && cooldown < 0) cooldown = 0; // no stored burst while idle
   };
 
+  weapon.reloadProgress = () => weapon.reloading ? Math.max(0, Math.min(1, 1 - (reloadEnd - performance.now()) / (RELOAD_TIME * 1000))) : 0;
   weapon.reset = function reset() {
     weapon.ammo = MAG;
     weapon.reloading = false;

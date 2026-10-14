@@ -97,7 +97,10 @@ export function createInput(canvas) {
     const cam = window.SS && window.SS.camera; const fovRad = (cam ? cam.fov : 70) * Math.PI / 180;
     const sens = fovRad / Math.max(200, window.innerHeight || 390);
     if (kia()) return;
-    aimDX += dx * sens; aimDY += dy * sens; // every px counts, no per-event/per-frame cap (long 100-420 px drags turn fully)
+    // Per-event clamp sized to the screen: a real fast swipe moves < ~60% width / 35% height between two events;
+    // larger single jumps are lag bursts or pointer teleports (spun the view into the ground). Clamp, don't drop.
+    const mx = Math.max(160, (window.innerWidth || 844) * 0.6), my = Math.max(70, (window.innerHeight || 390) * 0.35);
+    aimDX += Math.max(-mx, Math.min(mx, dx)) * sens; aimDY += Math.max(-my, Math.min(my, dy)) * sens;
     input.aimMovedT = performance.now(); if (window.SS && window.SS.weapon && window.SS.weapon.cancelRecoil) window.SS.weapon.cancelRecoil();
   }, { passive: false });
 

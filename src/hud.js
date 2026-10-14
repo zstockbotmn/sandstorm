@@ -59,7 +59,9 @@ export function createHud() {
   const radioLines = [];
   let radioNext = 0;
 
-  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, hs, radioStack);
+  const lowhp = document.createElement('div'); lowhp.id = 'lowhp';
+  const ring = document.createElement('div'); ring.id = 'reload-ring';
+  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, hs, radioStack, lowhp, ring);
 
   let health = 100;
   let score = 0;
@@ -92,7 +94,7 @@ export function createHud() {
     dir.style.transform = 'rotate(' + angle + 'rad)';
     dir.style.opacity = '1';
     clearTimeout(dirTimer);
-    dirTimer = setTimeout(() => { dir.style.opacity = '0'; }, 900);
+    dirTimer = setTimeout(() => { dir.style.opacity = '0'; }, 1500);
   }
 
   function setHealth(v) {
@@ -156,7 +158,8 @@ export function createHud() {
       if (!info) return;
       if (info.distance != null) distanceEl.textContent = Math.floor(info.distance) + ' m';
       if (info.ammo != null) ammoEl.textContent = info.ammo + ' / \u221E';
-      if (info.reloading != null) reloadEl.style.display = info.reloading ? 'block' : 'none';
+      if (info.reloading != null) { reloadEl.style.display = info.reloading ? 'block' : 'none'; ring.classList.toggle('on', !!info.reloading); if (info.reloadP != null) ring.style.setProperty('--p', String(info.reloadP)); }
+      if (info.health != null) lowhp.classList.toggle('on', info.health > 0 && info.health <= 35);
       if (info.scoped != null) {
         cross.style.display = info.scoped ? 'none' : 'block';
         dot.style.display = info.scoped ? 'block' : 'none';

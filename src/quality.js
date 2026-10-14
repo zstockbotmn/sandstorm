@@ -13,9 +13,16 @@ function detect() {
 }
 function softwareGL() {
   try { const c = document.createElement('canvas'); const gl = c.getContext('webgl'); if (!gl) return true;
-    const ext = gl.getExtension('WEBGL_debug_renderer_info'); const r = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
-    const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
-    return /swiftshader|llvmpipe|software/i.test(String(r)); } catch (e) { return false; }
+    const r = isSoftwareRenderer(gl); const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); if (r) return true;
+    return isSoftwareRenderer(gl); } catch (e) { return false; }
+}
+// UNMASKED_RENDERER via WEBGL_debug_renderer_info, plus the plain RENDERER/VENDOR strings (newer Chrome unmasks those).
+export function rendererString(gl) {
+  let s = ''; try { const ext = gl.getExtension('WEBGL_debug_renderer_info'); if (ext) s += gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) + ' ' + gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) + ' '; } catch (e) {}
+  try { s += gl.getParameter(gl.RENDERER) + ' ' + gl.getParameter(gl.VENDOR); } catch (e) {}
+  return s;
+}
+export function isSoftwareRenderer(gl) { return /swiftshader|llvmpipe|softpipe|software|microsoft basic render/i.test(rendererString(gl));
 }
 export let QUALITY = detect();
 export let LOWQ = QUALITY === 'low';

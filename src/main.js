@@ -12,7 +12,7 @@ import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { preloadRapier } from './ragdoll.js';
-import { Q, QUALITY, setQuality, goLow, onLow, EXPLICIT } from './quality.js';
+import { Q, QUALITY, setQuality, goLow, onLow, EXPLICIT, isSoftwareRenderer, rendererString } from './quality.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
@@ -121,7 +121,7 @@ function applyCamera(dt) {
   const st = input.state;
   const aim = 1 - Math.exp(-36 * dt); // snappier ADS so soft-GL / low fps still reaches ~2.5x
   const duck = 1 - Math.exp(-14 * dt);
-  fov += ((st.scope ? SCOPE_FOV : BASE_FOV) - fov) * aim;
+  fov = st.scope ? SCOPE_FOV : BASE_FOV; // instant zoom (lerp took 2-3 s at low fps)
   eye += ((st.cover ? 1.28 : 1.7) - eye) * duck; // crouched eye clears lowered sandbags (~0.9 m)
   if (Math.abs(camera.fov - fov) > 0.01) {
     camera.fov = fov;
@@ -181,11 +181,11 @@ function frame(now) {
   try { for (let i = 0; i < steps; i++) simStep(dt); }
   catch (err) { // never freeze HUD/render on a sim error; report once per message
     const k = String(err && err.message); if (!frameErrs.has(k)) { frameErrs.add(k); console.error('[sandstorm] sim step failed:', err && (err.stack || err)); (window.SS.errors = window.SS.errors || []).push('sim:' + k); } }
-  hud.onTarget(weapon.onTarget); hud.setScope(input.scope && camera.fov < 45 && player.alive);
+  hud.onTarget(weapon.onTarget); hud.setScope(!!input.scope && player.alive && window.SS.running);
   hud.update({
     distance: window.SS.distance,
     ammo: weapon.ammo,
-    reloading: weapon.reloading,
+    reloading: weapon.reloading, reloadP: weapon.reloadProgress ? weapon.reloadProgress() : null,
     scoped: input.scope,
     score: window.SS.score,
     health: window.SS.health,
@@ -251,7 +251,7 @@ function restartRun() {
   score.reset();
   input.yaw = 0;
   input.pitch = 0;
-  input.fire = false;
+  input.fire = false; input.scope = false; input.pendingShots = 0; input.cover = false; hud.setScope(false);
   camera.position.set(0, 1.7, 4);
   fov = BASE_FOV;
   eye = 1.7;
@@ -349,6 +349,20 @@ onLow(() => {
   const b = document.getElementById('quality'); if (b) b.textContent = 'Quality: Low';
   if (hud.hint && window.SS.running) hud.hint('Low quality on for smoother play');
 });
-if (softGL && !EXPLICIT) goLow('software-gl');
-{ let lowT = 0; window.SS.autoLowTick = (raw) => { if (Q === null || window.SS.quality === 'low' || EXPLICIT || !window.SS.running || !(raw > 0)) { lowT = 0; return; }
-    const fps = 1 / raw; if (fps < 25) { lowT += raw; if (lowT >= 3) goLow('fps<25'); } else lowT = Math.max(0, lowT - raw * 2); }; }
+window.SS.gpu = rendererString(renderer.getContext());
+if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
+// Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.
+{ let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => { if (window.SS.quality === 'low' || EXPLICIT || !(raw > 0)) { n = t = 0; return; }
+    if (skip > 0) { skip--; return; } // first frames include load/compile
+    n++; t += raw; const win = window.SS.running ? 3 : 2; if (t < win) return;
+    const fps = n / t; window.SS.benchFps = Math.round(fps * 10) / 10; n = t = 0; if (fps < 20) goLow('fps<20'); }; }
+
+// ?debug readout: fps, quality (+ why auto-Low fired), renderer string.
+if (/[?&]debug\b/.test(location.search)) {
+  const el = document.createElement('div'); el.id = 'dbg-fps';
+  el.style.cssText = 'position:fixed;left:6px;bottom:22px;z-index:20;font:11px monospace;color:#fff;background:rgba(0,0,0,.55);padding:2px 5px;pointer-events:none;max-width:60vw;white-space:nowrap;overflow:hidden';
+  document.body.appendChild(el); let fN = 0, fT = performance.now();
+  const tick = () => { fN++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
+  setInterval(() => { const now = performance.now(); const fps = fN * 1000 / (now - fT); fN = 0; fT = now;
+    el.textContent = 'fps ' + fps.toFixed(1) + ' · ' + (window.SS.quality || '?') + (window.SS.autoLow ? ' (auto: ' + window.SS.autoLow + ')' : '') + ' · ' + String(window.SS.gpu || '').slice(0, 60); }, 500);
+}
