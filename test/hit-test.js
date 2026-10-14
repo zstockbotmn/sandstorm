@@ -21,6 +21,7 @@ const res = {};
     for (const d of (dir === 'left' || dir === 'right' ? [4.5] : dir.includes('-') ? [5.5] : [10, 20, 40]))
       for (const posture of ['idle', 'crouch', 'lean'])
         for (const mode of ['hip', 'scoped']) cases.push({ dir, ang, d, posture, mode });
+  for (const d of [10, 20]) for (const mode of ['hip', 'scoped']) cases.push({ dir: 'front', ang: 0, d, posture: 'idle', mode, moving: true });
   res.cases = []; let fails = 0;
   for (const c of cases) {
     const r = await p.evaluate(async (c) => {
@@ -34,10 +35,11 @@ const res = {};
       const e = SS.debug.spawnEnemy('popper'); if (!e) return { err: 'no spawn' };
       SS.enemies.debugPose(e, Math.max(-5.2, Math.min(5.2, x)), z, c.posture);
       e.health = 1e6;
+      if (c.moving) { e.debugVel = new SS.THREE.Vector3(e.group.position.x > 0 ? -4.5 : 4.5, 0, 0); }
       SS.input.scope = c.mode === 'scoped'; await frames(3); for (let k = 0; k < 40 && c.mode === 'scoped' && SS.camera.fov > 40; k++) await frames(1); await wait(700);
       const out = [];
       for (const part of ['torso', 'head', 'legs']) {
-        if (part === 'legs' && (c.d > 20 && c.mode === 'hip')) continue;
+        if (part === 'legs' && (c.moving || (c.d > 20 && c.mode === 'hip'))) continue;
         if (part === 'head' && c.d > 20 && c.mode === 'hip') continue;
         const tgt = part === 'legs' ? (e.limbBoxes && e.limbBoxes[0] ? e.limbBoxes[0].m : null) : e.parts[part];
         if (!tgt) { out.push({ part, skip: true }); continue; }
@@ -58,7 +60,9 @@ const res = {};
           const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
           SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len);
           SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
-        const shot = SS.weapon.debugShoot(SS.input);
+        let shot;
+        if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; SS.input.pendingShots = 1; for (let k = 0; k < 10 && SS.weapon.shotsFired === n0; k++) await frames(1); shot = SS.weapon.lastShot; }
+        else shot = SS.weapon.debugShoot(SS.input);
         const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(e.group.position.clone().setY(shot.hit.point.y)) < 1.2);
         out.push({ part, ok, hit: shot && shot.hit ? (shot.hit.enemy ? 'enemy:' + shot.hit.part : 'world:' + shot.hit.name) : 'none', cover: SS.input.cover });
       }

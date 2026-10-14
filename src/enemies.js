@@ -1298,7 +1298,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         list.splice(i, 1);
         continue;
       }
-      if (e.pinned) { /* test-pinned */ }
+      if (e.pinned) { if (e.debugVel) { e.group.position.addScaledVector(e.debugVel, dt); e.moving = true; e.moveKind = 'run'; e.moveSpeed = e.debugVel.length(); } }
       else if (e.group.position.z > pz + 40 && e.engaged) toVisibleCover(e); // engaged enemies behind stay put (360 deg aim); only far-behind ones are brought back
       else if (e.group.position.z > pz + 6) {
         e.alive = false;
