@@ -294,6 +294,49 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (b.Head) bendBone(b.Head, _fwdW, -roll * 0.4);
   }
 
+  // Foot IK + foot locking: after the mixer, each leg (UpLeg-Leg-Foot) is solved with an analytic two-bone IK so the
+  // ankle reaches its target. A foot that is down (near ankle height) locks its world XZ until it lifts or would
+  // over-stretch (0.32 m), so planted feet don't slide while the body moves. Ground = the fighter's support height.
+  const _ikH = new THREE.Vector3(), _ikK = new THREE.Vector3(), _ikF = new THREE.Vector3(), _ikT = new THREE.Vector3();
+  const _ikA = new THREE.Vector3(), _ikB = new THREE.Vector3(), _ikN = new THREE.Vector3(), _ikQ = new THREE.Quaternion(), _ikP = new THREE.Quaternion();
+  function rotWorld(bone, q) { bone.parent.getWorldQuaternion(_ikP); const inv = _ikP.clone().invert(); bone.quaternion.premultiply(inv.multiply(q).multiply(_ikP)); bone.updateMatrixWorld(true); }
+  function twoBone(up, knee, foot, T) {
+    up.getWorldPosition(_ikH); knee.getWorldPosition(_ikK); foot.getWorldPosition(_ikF);
+    const a = _ikH.distanceTo(_ikK), b = _ikK.distanceTo(_ikF); let d = _ikH.distanceTo(T);
+    d = Math.min(Math.max(d, Math.abs(a - b) + 1e-3), a + b - 1e-3);
+    // knee: current vs desired interior angle, rotated about the leg-plane normal
+    _ikA.subVectors(_ikH, _ikK).normalize(); _ikB.subVectors(_ikF, _ikK).normalize();
+    const cur = Math.acos(Math.max(-1, Math.min(1, _ikA.dot(_ikB))));
+    const want = Math.acos(Math.max(-1, Math.min(1, (a * a + b * b - d * d) / (2 * a * b))));
+    _ikN.crossVectors(_ikA, _ikB); if (_ikN.lengthSq() < 1e-8) return; _ikN.normalize();
+    rotWorld(knee, _ikQ.setFromAxisAngle(_ikN, cur - want));
+    // hip: swing the solved chain so the ankle points at the target
+    foot.getWorldPosition(_ikF); _ikA.subVectors(_ikF, _ikH).normalize(); _ikB.subVectors(T, _ikH).normalize();
+    rotWorld(up, _ikQ.setFromUnitVectors(_ikA, _ikB));
+  }
+  function footIK(enemy, dt) {
+    const r = enemy.art && enemy.art.root; if (!r || enemy.dying || art.tier !== 'high') return;
+    if (!enemy.legs) {
+      enemy.legs = [['LeftUpLeg', 'LeftLeg', 'LeftFoot'], ['RightUpLeg', 'RightLeg', 'RightFoot']].map((n) => ({ up: r.getObjectByName(n[0]), knee: r.getObjectByName(n[1]), foot: r.getObjectByName(n[2]), lock: null }))
+        .filter((l) => l.up && l.knee && l.foot);
+      r.updateMatrixWorld(true); const gy = enemy.group.position.y;
+      enemy.ankleH = Math.max(0.04, Math.min(0.2, Math.min(...enemy.legs.map((l) => l.foot.getWorldPosition(_ikF).y - gy))));
+    }
+    if (camera.position.distanceToSquared(enemy.group.position) > 900) { enemy.legs.forEach((l) => { l.lock = null; }); return; }
+    r.updateMatrixWorld(true);
+    const ground = enemy.group.position.y + enemy.ankleH, out = enemy.ikDbg || (enemy.ikDbg = []);
+    for (let i = 0; i < enemy.legs.length; i++) {
+      const L = enemy.legs[i]; L.foot.getWorldPosition(_ikF);
+      const down = _ikF.y < ground + 0.05;
+      if (down && enemy.moving) { if (!L.lock) L.lock = _ikF.clone().setY(ground); }
+      else L.lock = null;
+      if (L.lock && L.lock.distanceTo(_ikF.clone().setY(ground)) > 0.32) L.lock = null; // stride too long: release
+      _ikT.copy(L.lock || _ikF); if (_ikT.y < ground) _ikT.y = ground; // never through the ground
+      if (_ikT.distanceToSquared(_ikF) > 1e-6) twoBone(L.up, L.knee, L.foot, _ikT);
+      L.foot.getWorldPosition(_ikF); out[i] = { locked: !!L.lock, x: +_ikF.x.toFixed(3), y: +_ikF.y.toFixed(3), z: +_ikF.z.toFixed(3) };
+    }
+  }
+
   // Clip ground speeds (m/s) for stride matching: playback rate follows real speed so feet don't slide.
   const STRIDE = { walk: 1.4, jog: 3.0, run: 5.2, crouch: 1.1, strafe: 1.4 };
   function stepArt(enemy, dt) {
@@ -1337,7 +1380,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (e.art) stepArt(e, dt);
       try { updateEnemy(e, dt * tempo, diff); }
       catch (err) { reportErr('enemy update', err); despawn(e); list.splice(i, 1); continue; } // a broken enemy is removed, never freezes the fight
-      if (e.art) syncArt(e);
+      if (e.art) { try { footIK(e, dt); } catch (err) { e.legs = []; reportErr('foot ik', err); } syncArt(e); } // IK after the body moved this frame
       if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 7;
       const dx = e.group.position.x - camera.position.x;
       const dy = e.group.position.y - camera.position.y;
