@@ -1459,6 +1459,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (e.engaged) { hold = true; engagedN += 1; } // halt until ALL engaged enemies are dead (hidden ones still despawn after 5 s)
     }
 
+    // Fix 1: enemy-to-enemy separation (crouched fighters sharing a cover clipped into each other). Ground enemies closer
+    // than 0.85 m are eased apart (<= 1.5 m/s, no pops), sideways along the cover line, never into a facade.
+    for (let i = 0; i < list.length; i++) { const a = list[i]; if (!a.alive || a.dying || a.pinned || (a.anchor && isElevated(a.anchor.type))) continue;
+      for (let j = i + 1; j < list.length; j++) { const b = list[j]; if (!b.alive || b.dying || b.pinned || (b.anchor && isElevated(b.anchor.type))) continue;
+        const pa = a.group.position, pb = b.group.position; let dx = pb.x - pa.x, dz = pb.z - pa.z; const d = Math.hypot(dx, dz);
+        if (d >= 0.85) continue; if (d < 1e-3) { dx = (i & 1) ? 1 : -1; dz = 0; } else { dx /= d; dz /= d; }
+        const push = Math.min((0.85 - d) * 0.5, 1.5 * dt); const la = Math.max(STREET_X, Math.abs(pa.x)), lb = Math.max(STREET_X, Math.abs(pb.x));
+        pa.x -= dx * push; pa.z -= dz * push; pb.x += dx * push; pb.z += dz * push;
+        if (Math.abs(pa.x) > la) pa.x = Math.sign(pa.x) * la; if (Math.abs(pb.x) > lb) pb.x = Math.sign(pb.x) * lb; } }
+    if (window.SS) { let mn = 99; for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) { const a = list[i], b = list[j]; if (!a.alive || !b.alive) continue; const pa = a.group.position, pb = b.group.position; if (Math.abs(pa.y - pb.y) > 1) continue; mn = Math.min(mn, Math.hypot(pa.x - pb.x, pa.z - pb.z)); } window.SS.minEnemyGap = mn; }
+
     if (hold) waveActive = true;
     if (waveActive && aliveCount() === 0 && truckPending === 0) waveActive = false; // clear only when every wave member (incl. truck) is dead
     if (waveActive) hold = true;
