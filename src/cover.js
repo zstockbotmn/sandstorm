@@ -81,7 +81,7 @@ export function createCover(scene, camera, world, input) {
     if (c.state === 'none' || !window.SS || !window.SS.running) return false;
     const cur = c.target ? c.target.clone() : camera.position.clone(); const old = c.spawned; if (old) c.spawned = null;
     c.surface = null; const t = pick(cur, dir || 0); if (old && old !== c.spawned) { scene.remove(old); const i = world.colliders.indexOf(old); if (i >= 0) world.colliders.splice(i, 1); }
-    c.target = t; c.state = 'moving'; input.cover = false; if (why === 'grenade' || why === 'switch') { c.reaim = 1.2; input.pitch = 0; if (input.clearAim) input.clearAim(); const w = window.SS && window.SS.weapon; if (w && w.cancelRecoil) w.cancelRecoil(); } // hard level reset (tester: stuck looking at the bags) c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;
+    c.target = t; c.state = 'moving'; input.cover = false; if (why === 'grenade' || why === 'switch') { c.reaim = 1.2; input.pitch = 0; if (input.clearAim) input.clearAim(); const w = window.SS && window.SS.weapon; if (w && w.cancelRecoil) w.cancelRecoil(); } /* hard level reset (tester: stuck looking at the bags) */ c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;
   };
   // Fix 5: after a grenade-forced move the view was left facing a wall. Ease the view (yaw toward the nearest live enemy,
   // else straight down the street; pitch level) over the run + ~1 s, unless the player drags meanwhile.
