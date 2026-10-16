@@ -143,7 +143,13 @@ export function createInput(canvas) {
     try { buttons.fire.setPointerCapture(e.pointerId); } catch (_) {}
   });
   // a quick FIRE tap that ended before any frame fired still gets exactly one shot
-  const releaseFireBtn = () => { fireBtn = false; sync(); }; // the tap's shot was queued on pointerdown
+  // Fix 4 (hold FIRE = auto-fire): on iOS a held touch can raise pointercancel/lostpointercapture (long-press gesture),
+  // which stopped auto-fire after a moment. While a real touch is on the button, only touchend/touchcancel releases it.
+  let fireTouches = 0;
+  const releaseFireBtn = () => { if (fireTouches > 0) return; fireBtn = false; sync(); }; // the tap's shot was queued on pointerdown
+  buttons.fire.addEventListener('touchstart', (e) => { e.preventDefault(); fireTouches = e.targetTouches.length; if (!kia()) { fireBtn = true; sync(); } }, { passive: false });
+  const touchUp = (e) => { fireTouches = e.targetTouches.length; if (fireTouches === 0) { fireBtn = false; sync(); } };
+  buttons.fire.addEventListener('touchend', touchUp); buttons.fire.addEventListener('touchcancel', touchUp);
   buttons.fire.addEventListener('pointerup', releaseFireBtn);
   buttons.fire.addEventListener('pointercancel', releaseFireBtn);
   buttons.fire.addEventListener('lostpointercapture', releaseFireBtn);

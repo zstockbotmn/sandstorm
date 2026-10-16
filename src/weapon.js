@@ -311,7 +311,7 @@ export function createWeapon(camera, world, scene) {
       for (let i = 0; i < targets.length && !on; i++) { const t = targets[i]; if (!t.visible) continue; t.getWorldPosition(_tp); _tp.sub(_origin); if (_tp.length() < 180 && _tp.angleTo(_dir) < lim) on = true; }
       weapon.onTarget = on; }
     // Fire cadence runs on the real-time clock (sim dt is capped at low fps, which starved held FIRE).
-    { const now = performance.now(); const rdt = lastUpd ? Math.min(0.5, (now - lastUpd) / 1000) : dt; lastUpd = now; cooldown -= rdt; }
+    { const now = performance.now(); const rdt = lastUpd ? Math.min(1.0, (now - lastUpd) / 1000) : dt; lastUpd = now; cooldown -= rdt; }
     // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
     if ((input.pendingShots | 0) > 0 && !weapon.reloading && weapon.ammo > 0 && cooldown <= 0) {
       input.pendingShots -= 1;
@@ -319,7 +319,7 @@ export function createWeapon(camera, world, scene) {
     } else if ((input.pendingShots | 0) > 0 && weapon.ammo <= 0 && !weapon.reloading) {
       input.pendingShots = 0; // empty mag: drop queue (reload will start)
     }
-    for (let n = 0; n < 4; n++) { const wants = input.fire && !weapon.reloading && weapon.ammo > 0; if (!(wants && cooldown <= 0)) break; shoot(input); }
+    for (let n = 0; n < 10; n++) { const wants = input.fire && !weapon.reloading && weapon.ammo > 0; if (!(wants && cooldown <= 0)) break; shoot(input); }
     if (!input.fire && (input.pendingShots | 0) <= 0 && cooldown < 0) cooldown = 0; // no stored burst while idle
   };
 
