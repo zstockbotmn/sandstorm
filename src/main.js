@@ -370,7 +370,7 @@ onLow(() => {
   if (scene.fog && scene.fog.density != null) scene.fog.density = Q.fog;
   camera.far = Q.far; camera.updateProjectionMatrix();
   const b = document.getElementById('quality'); if (b) b.textContent = 'Quality: ' + (window.SS.quality === 'ultra' ? 'Ultra-low' : 'Low');
-  if (hud.hint && window.SS.running) hud.hint('Low quality on for smoother play');
+  if (hud.hint && window.SS.running) hud.hint((window.SS.quality === 'ultra' ? 'Ultra-low' : 'Low') + ' quality on for smoother play'); // names the tier actually applied (fix 8)
 });
 window.SS.gpu = rendererString(renderer.getContext());
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
