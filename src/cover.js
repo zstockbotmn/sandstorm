@@ -69,6 +69,7 @@ export function createCover(scene, camera, world, input) {
     if (d > 0.05) { const s = Math.min(d, MOVE_SPEED * dt) / d; camera.position.x += dx * s; camera.position.z += dz * s;
       if (c.surface && camera.position.z < c.surface.max.z + PLAYER_R) camera.position.z = c.surface.max.z + PLAYER_R; } // never enter the cover
     else c.state = 'in';
+    if (c.reaim) reaim(dt);
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
     if (c.spawned && c.spawned.material) {
       // ghost sandbag while ducked so a turn doesn't fill the screen; solid when popped out
@@ -80,8 +81,18 @@ export function createCover(scene, camera, world, input) {
     if (c.state === 'none' || !window.SS || !window.SS.running) return false;
     const cur = c.target ? c.target.clone() : camera.position.clone(); const old = c.spawned; if (old) c.spawned = null;
     c.surface = null; const t = pick(cur, dir || 0); if (old && old !== c.spawned) { scene.remove(old); const i = world.colliders.indexOf(old); if (i >= 0) world.colliders.splice(i, 1); }
-    c.target = t; c.state = 'moving'; input.cover = false; c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;
+    c.target = t; c.state = 'moving'; input.cover = false; if (why === 'grenade') c.reaim = 1.2; c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;
   };
-  function reset() { c.surface = null; c.state = 'none'; c.target = null; clearSpawned(); input.cover = false; }
+  // Fix 5: after a grenade-forced move the view was left facing a wall. Ease the view (yaw toward the nearest live enemy,
+  // else straight down the street; pitch level) over the run + ~1 s, unless the player drags meanwhile.
+  function reaim(dt) {
+    if ((input.aimMovedT || 0) > performance.now() - 150) { c.reaim = 0; return; }
+    c.reaim -= dt; let tx = 0, tz = -1, bd = 1e9; const el = window.SS.enemies && window.SS.enemies.list;
+    if (el) for (const e of el) { if (!e || !e.alive || e.dying) continue; const dx = e.group.position.x - camera.position.x, dz = e.group.position.z - camera.position.z, d = Math.hypot(dx, dz); if (d > 1 && d < bd) { bd = d; tx = dx; tz = dz; } }
+    const want = Math.atan2(tx, -tz); let dy = want - input.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    const k = 1 - Math.exp(-8 * dt); input.yaw += dy * k; input.pitch += (0 - input.pitch) * k;
+    if (c.reaim <= 0) c.reaim = 0;
+  }
+  function reset() { c.reaim = 0; c.surface = null; c.state = 'none'; c.target = null; clearSpawned(); input.cover = false; }
   return c;
 }
