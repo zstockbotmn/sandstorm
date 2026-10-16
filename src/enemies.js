@@ -707,7 +707,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     mesh.visible = true;
     mesh.position.set(pos.x, 0.04, pos.z);
-    mesh.scale.setScalar(0.7 + Math.random() * 0.5);
+    mesh.scale.setScalar(0.7 + Math.random() * 0.5); mesh.userData.t0 = performance.now(); mesh.material.opacity = 0.82;
   }
 
   function kill(enemy, point, part) {
@@ -1503,6 +1503,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       b.sprite.material.opacity = Math.max(0, b.life * 2);
       if (b.life <= 0) b.sprite.visible = false;
     }
+    // Kill pools fade out after ~8 s, so a later enemy standing on an old spot doesn't look bloodied without a hit (fix 3).
+    { const now = performance.now(); for (let i = 0; i < decals.length; i++) { const m = decals[i]; if (!m.visible) continue; const age = (now - (m.userData.t0 || now)) / 1000;
+      if (age > 8) m.visible = false; else if (age > 6) m.material.opacity = 0.82 * (8 - age) / 2; } }
     if (decals.length > 12) {
       const old = decals.shift();
       scene.remove(old);
