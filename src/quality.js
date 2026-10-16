@@ -38,7 +38,7 @@ export function onLow(fn) { lowHooks.push(fn); }
 export let ULTRA = false;
 export function goUltra(reason) {
   if (ULTRA) return false; ULTRA = true; Object.assign(Q, LOW, { res: 0.5, drawAhead: 60, fog: 0.03, far: 200, lodNear: 10, lodNearProp: 6 });
-  if (typeof window !== 'undefined' && window.SS) { window.SS.quality = 'ultra'; window.SS.autoLow = reason; }
+  if (typeof window !== 'undefined' && window.SS) { window.SS.quality = 'ultra-low'; window.SS.autoLow = reason; }
   for (const f of lowHooks) { try { f(reason); } catch (e) { console.warn('goUltra', e); } }
   return true;
 }

@@ -272,7 +272,7 @@ function restartRun() {
   window.SS.health = 100;
   window.SS.bursting = false;
   window.SS.walking = true;
-  window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.input) window.SS.input.fire = false;
+  window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   cover.reset();
   world.reset(camera.position.z);
   score.setDistance(0);
@@ -290,7 +290,7 @@ document.getElementById('play').addEventListener('click', () => {
   audio.unlock();
   document.getElementById('start').style.display = 'none';
   window.SS.walking = true;
-  window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.input) window.SS.input.fire = false;
+  window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   if (!started) {
     started = true;
     requestAnimationFrame(frame);
@@ -369,13 +369,13 @@ onLow(() => {
   scene.traverse((o) => { if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m.needsUpdate = true; });
   if (scene.fog && scene.fog.density != null) scene.fog.density = Q.fog;
   camera.far = Q.far; camera.updateProjectionMatrix();
-  const b = document.getElementById('quality'); if (b) b.textContent = 'Quality: ' + (window.SS.quality === 'ultra' ? 'Ultra-low' : 'Low');
-  if (hud.hint && window.SS.running) hud.hint((window.SS.quality === 'ultra' ? 'Ultra-low' : 'Low') + ' quality on for smoother play'); // names the tier actually applied (fix 8)
+  const b = document.getElementById('quality'); if (b) b.textContent = 'Quality: ' + (window.SS.quality === 'ultra-low' ? 'Ultra-low' : 'Low');
+  { const msg = (window.SS.quality === 'ultra-low' ? 'Ultra-low' : 'Low') + ' quality on for smoother play'; window.SS.tierToast = msg; if (hud.hint && window.SS.running) hud.hint(msg); else window.SS.pendingTierToast = msg; } // shown now, or at run start if it switched on the menu // names the tier actually applied (fix 8)
 });
 window.SS.gpu = rendererString(renderer.getContext());
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
 // Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.
-{ let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => { if (window.SS.quality === 'ultra' || (EXPLICIT && !/[?&]ultra=1/.test(location.search)) || !(raw > 0)) { n = t = 0; return; }
+{ let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => { if (window.SS.quality === 'ultra-low' || (EXPLICIT && !/[?&]ultra=1/.test(location.search)) || !(raw > 0)) { n = t = 0; return; }
     if (skip > 0) { skip--; return; } // first frames include load/compile
     n++; t += raw; const win = window.SS.running ? 3 : 2; if (t < win) return;
     const fps = n / t; window.SS.benchFps = Math.round(fps * 10) / 10; n = t = 0; if (window.SS.quality === 'low') { if (fps < 10) goUltra('fps<10'); } else if (fps < 20) goLow('fps<20'); }; }
