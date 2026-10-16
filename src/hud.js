@@ -78,7 +78,7 @@ export function createHud() {
     marker.classList.remove('kill', 'head', 'headkill'); if (kind && kind !== 'hit') { void marker.offsetWidth; marker.classList.add(kind); }
     marker.classList.add('show');
     clearTimeout(hitTimer);
-    hitTimer = setTimeout(() => marker.classList.remove('show', 'kill', 'head', 'headkill'), kind === 'kill' || kind === 'headkill' ? 520 : 220);
+    hitTimer = setTimeout(() => marker.classList.remove('show', 'kill', 'head', 'headkill'), kind === 'kill' || kind === 'headkill' ? 520 : 380); // >= blood spray life
   }
 
   function damageVignette(amount) {

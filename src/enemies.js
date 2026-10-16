@@ -681,7 +681,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (let i = 0; i < blood.length && spawned < 8; i++) {
       const b = blood[i];
       if (b.life > 0) continue;
-      b.life = 0.35 + Math.random() * 0.25;
+      b.life = 0.22 + Math.random() * 0.13; // never outlives the hit marker (fix 3)
       b.sprite.visible = true;
       b.sprite.position.copy(point);
       b.sprite.material.opacity = 0.9;
@@ -788,7 +788,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!enemy.alive) return;
     const dmg = part === 'head' ? HEAD_DMG : BODY_DMG;
     enemy.health -= dmg;
-    if (point) spray(point);
+    // Fix 3: blood, damage and the hit marker all come from this one registered hit (spray is emitted with the marker below
+    // or with the kill marker in kill()); nothing else spawns blood on a live enemy.
     if (enemy.health <= 0) kill(enemy, point, part);
     else {
       if (enemy.art) playHit(enemy, part === 'head');
@@ -797,7 +798,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (enemy.group.position.y < 0.5 && !enemy.pinned) { const gp = enemy.group.position, x0 = gp.x; _aim.copy(gp).sub(camera.position).setY(0).normalize(); gp.addScaledVector(_aim, 0.3);
         const lim = Math.max(5.6, Math.abs(x0)); if (Math.abs(gp.x) > lim) gp.x = Math.sign(gp.x) * lim; }
       if (!enemy.pinned) enemy.staggerT = 0.45; enemy.shootCd = Math.max(enemy.shootCd || 0, 0.6);
+      if (point) spray(point);
       if (window.SS && window.SS.hud && window.SS.hud.hitMarker) window.SS.hud.hitMarker(part === 'head' ? 'head' : 'hit');
+      if (window.SS) window.SS.lastEnemyHit = { part, dmg, health: enemy.health, t: performance.now() };
     }
   }
 
