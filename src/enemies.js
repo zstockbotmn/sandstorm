@@ -308,6 +308,27 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (b.Head) bendBone(b.Head, _fwdW, -roll * 0.4);
   }
 
+  // Fix 9: the native idle (and aim, which reuses it) holds the left arm stiffly straight out, off the rifle. Two-bone IK
+  // brings the left hand onto the handguard (a point ahead of the right hand along the body's facing), eased in/out.
+  const _saT = new THREE.Vector3(), _saF = new THREE.Vector3(), _saR = new THREE.Vector3(), _saS = new THREE.Vector3();
+  function supportArm(enemy, name, dt) {
+    const want = (name === 'idle' || name === 'aim') && !enemy.hitPlaying && !enemy.dying && !window.SS_NOPROC ? 1 : 0;
+    enemy.saW = (enemy.saW || 0) + (want - (enemy.saW || 0)) * Math.min(1, dt * 8);
+    if (enemy.saW < 0.01) return;
+    const b = enemy.bones, r = enemy.art.root; if (!b || !b.LeftArm || !b.LeftForeArm || !b.RightArm || !b.RightForeArm || !b.RightHand) return;
+    const lh = enemy.leftHand || (enemy.leftHand = r.getObjectByName('LeftHand')); if (!lh) return;
+    enemy.group.updateMatrixWorld(true);
+    _saF.set(0, 0, 1).applyQuaternion(enemy.group.quaternion); _saF.y = 0; _saF.normalize(); _saR.set(0, 1, 0).cross(_saF).negate(); // fighter's right
+    const qa = b.LeftArm.quaternion.clone(), qf = b.LeftForeArm.quaternion.clone(), ra = b.RightArm.quaternion.clone(), rf = b.RightForeArm.quaternion.clone();
+    // right (trigger) hand low at the chest, just right of centre; the clip held it straight out to the side
+    b.RightArm.getWorldPosition(_saS); _saT.copy(_saS).addScaledVector(_saF, 0.3).addScaledVector(_saR, -0.08); _saT.y -= 0.24;
+    twoBone(b.RightArm, b.RightForeArm, b.RightHand, _saT); twoBone(b.RightArm, b.RightForeArm, b.RightHand, _saT);
+    // left (support) hand on the handguard ahead of it
+    b.RightHand.getWorldPosition(_saT); _saT.addScaledVector(_saF, 0.32).addScaledVector(_saR, -0.06); _saT.y += 0.04;
+    twoBone(b.LeftArm, b.LeftForeArm, lh, _saT); twoBone(b.LeftArm, b.LeftForeArm, lh, _saT);
+    if (enemy.saW < 0.99) { for (const [bone, q0] of [[b.LeftArm, qa], [b.LeftForeArm, qf], [b.RightArm, ra], [b.RightForeArm, rf]]) bone.quaternion.copy(q0.slerp(bone.quaternion.clone(), enemy.saW)); r.updateMatrixWorld(true); }
+  }
+
   // Foot IK + foot locking: after the mixer, each leg (UpLeg-Leg-Foot) is solved with an analytic two-bone IK so the
   // ankle reaches its target. A foot that is down (near ankle height) locks its world XZ until it lifts or would
   // over-stretch (0.32 m), so planted feet don't slide while the body moves. Ground = the fighter's support height.
@@ -409,6 +430,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (let i = 0; i < enemy.restQ.length; i += 2) enemy.restQ[i].quaternion.copy(enemy.restQ[i + 1]);
     enemy.mixer.update(dt);
     proceduralLean(enemy, name, dt);
+    try { supportArm(enemy, name, dt); } catch (err) { reportErr('support arm', err); }
     if (enemy.hitPlaying && !enemy.actions.hit.enabled) {
       enemy.hitPlaying = false;
       enemy.hitReturning = false;
