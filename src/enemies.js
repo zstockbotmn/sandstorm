@@ -846,7 +846,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
       _muzzle.copy(enemy.muzzleLocal).applyMatrix4(enemy.group.matrixWorld);
     }
     const dist = _muzzle.distanceTo(camera.position);
-    let chance = (0.42 - dist * 0.006) * (0.55 + 0.7 * diff);
+    // Fix 7 (tester: slightly easier): ~20% lower base accuracy; each enemy's first 3 shots at first contact are mostly
+    // misses (sighting-in), so the player gets a beat to react. Damage per hit is unchanged (~5 hits to kill).
+    let chance = (0.42 - dist * 0.006) * (0.55 + 0.7 * diff) * 0.8;
+    enemy.shotsTaken = (enemy.shotsTaken | 0) + 1;
+    if (enemy.shotsTaken <= 3) chance *= 0.35 + 0.2 * (enemy.shotsTaken - 1);
     enemy.engaged = true; // shooting engages: the walk halts until this enemy is dead
     if (window.SS && window.SS.input && window.SS.input.cover) chance *= 0.3; // ducked in cover
     chance *= 1 + PRESSURE_HIT * pressure;
@@ -1167,7 +1171,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.posture = 'lean';
     enemy.moving = false;
     enemy.exposed = true;
-    enemy.shootCd = Math.min(enemy.shootCd, 0.12 + Math.random() * 0.1);
+    enemy.shootCd = Math.min(enemy.shootCd, (enemy.shotsTaken | 0) < 1 ? 0.45 + Math.random() * 0.3 : 0.12 + Math.random() * 0.1); // first contact: a beat before the first shot
   }
 
   function tickFire(enemy, dt, diff) {
@@ -1182,7 +1186,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.shootCd -= dt * slow;
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
-        let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff);
+        let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff) * 1.2; // fix 7: ~20% slower fire
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
         enemy.shootCd = cd;
@@ -1230,7 +1234,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.shootCd -= dt * slow;
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
-        let cd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff);
+        let cd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff) * 1.2;
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
         enemy.shootCd = cd;
