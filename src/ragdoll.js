@@ -571,10 +571,12 @@ export function createRagdollSystem(scene) {
       for (let i = 0; i < doll.parts.length; i++) {
         const part = doll.parts[i];
         syncPart(part, alpha);
-        if (part.body.position.z < cameraZ + 2) behind = false;
+        if (part.body.position.z < cameraZ + 30) behind = false; // only far behind (360 deg aim: nearby bodies stay visible)
       }
       if (doll.skin) driveSkin(doll.skin);
-      if (doll.age > 8 || behind) removeDoll(doll);
+      // Corpses stay >= 25 s of real time (tester: bodies vanished within seconds); max 8 kept, oldest removed first.
+      if (!doll.born) doll.born = performance.now();
+      if (performance.now() - doll.born > 25000 || behind || (dolls.length > 8 && d === 0)) removeDoll(doll);
     }
   }
 
