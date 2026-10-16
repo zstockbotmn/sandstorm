@@ -481,16 +481,17 @@ export function createRagdollSystem(scene) {
     for (let i = 0; i < colliders.length && n < 5; i++) {
       const m = colliders[i];
       if (!m.geometry || m.geometry.type !== 'BoxGeometry') continue;
-      const p = m.position;
+      // Fix 2: use the collider's real world size and rotation. Half-extents were scale*0.5, which assumed a unit box: a
+      // BoxGeometry(3, 0.2, 1) shop step became a 1 m cube, so bodies came to rest ~0.4 m above the step/ground.
+      m.updateWorldMatrix(true, false); const p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); m.matrixWorld.decompose(p, q, sc);
       if (Math.abs(p.x - origin.x) > 4 || Math.abs(p.z - origin.z) > 4) continue;
       if (p.y > 4) continue;
-      const body = phys.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(p.x, p.y, p.z));
+      const gp = m.geometry.parameters || { width: 1, height: 1, depth: 1 };
+      const hx = Math.abs(sc.x) * (gp.width || 1) * 0.5, hy = Math.abs(sc.y) * (gp.height || 1) * 0.5, hz = Math.abs(sc.z) * (gp.depth || 1) * 0.5;
+      if (p.y + hy < 0.02) continue; // buried (ground handles it)
+      const body = phys.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(p.x, p.y, p.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
       phys.createCollider(
-        RAPIER.ColliderDesc.cuboid(
-          Math.abs(m.scale.x) * 0.5,
-          Math.abs(m.scale.y) * 0.5,
-          Math.abs(m.scale.z) * 0.5
-        ).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
+        RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
         body
       );
       doll.statics.push(body);
