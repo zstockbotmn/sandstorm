@@ -301,6 +301,8 @@ export function createWeapon(camera, world, scene) {
     } else if (input.reloadPressed) {
       startReload();
     } else if (weapon.ammo <= 0) {
+      // Ammo floor (tester: 0/0 dead end): an empty rifle with no reserve gets one emergency magazine.
+      if (weapon.reserve <= 0) { weapon.reserve = MAG; weapon.emergencyRefills = (weapon.emergencyRefills | 0) + 1; if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('Emergency magazine'); }
       startReload();
     }
 
