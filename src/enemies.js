@@ -1510,6 +1510,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const push = Math.min((0.85 - d) * 0.5, 1.5 * dt); const la = Math.max(STREET_X, Math.abs(pa.x)), lb = Math.max(STREET_X, Math.abs(pb.x));
         pa.x -= dx * push; pa.z -= dz * push; pb.x += dx * push; pb.z += dz * push;
         if (Math.abs(pa.x) > la) pa.x = Math.sign(pa.x) * la; if (Math.abs(pb.x) > lb) pb.x = Math.sign(pb.x) * lb; } }
+    // Prop clipping (tester: a fighter inside a market cart): street fighters are pushed out of nearby prop boxes
+    // (named 'prop' colliders: carts, crates, cars, drums), along the shallowest axis, plus a 0.3 m body radius.
+    { const cols = world.colliders || [];
+      for (let i = 0; i < list.length; i++) { const e = list[i]; if (!e.alive || e.dying || e.pinned || (e.anchor && isElevated(e.anchor.type))) continue; const gp = e.group.position;
+        for (let k = 0; k < cols.length; k++) { const m = cols[k]; if (m.name !== 'prop') continue; const pp = m.position; if (Math.abs(pp.x - gp.x) > 3 || Math.abs(pp.z - gp.z) > 3) continue;
+          const hx = Math.abs(m.scale.x) * 0.5 + 0.3, hz = Math.abs(m.scale.z) * 0.5 + 0.3, dx = gp.x - pp.x, dz = gp.z - pp.z;
+          if (Math.abs(dx) >= hx || Math.abs(dz) >= hz) continue; const ox = hx - Math.abs(dx), oz = hz - Math.abs(dz);
+          if (ox < oz) gp.x += Math.sign(dx || 1) * Math.min(ox, 3 * dt + 0.02); else gp.z += Math.sign(dz || 1) * Math.min(oz, 3 * dt + 0.02); } } }
     if (window.SS) { let mn = 99; for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) { const a = list[i], b = list[j]; if (!a.alive || !b.alive) continue; const pa = a.group.position, pb = b.group.position; if (Math.abs(pa.y - pb.y) > 1) continue; mn = Math.min(mn, Math.hypot(pa.x - pb.x, pa.z - pb.z)); } window.SS.minEnemyGap = mn; }
 
     if (hold) waveActive = true;
