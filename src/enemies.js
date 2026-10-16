@@ -355,10 +355,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (let i = 0; i < enemy.legs.length; i++) {
       const L = enemy.legs[i]; L.foot.getWorldPosition(_ikF);
       const down = _ikF.y < ground + 0.05;
+      const was = L.lock;
       if (down && enemy.moving) { if (!L.lock) L.lock = _ikF.clone().setY(ground); }
       else L.lock = null;
       if (L.lock && L.lock.distanceTo(_ikF.clone().setY(ground)) > 0.32) L.lock = null; // stride too long: release
-      _ikT.copy(L.lock || _ikF); if (_ikT.y < ground) _ikT.y = ground; // never through the ground
+      // Fix 11: a released lock eases back to the clip foot over ~0.12 s instead of snapping (the visible foot "pop").
+      if (was && !L.lock) { L.rel = was; L.relT = 0.12; }
+      if (L.lock) L.relT = 0;
+      if (!L.lock && L.relT > 0) { L.relT = Math.max(0, L.relT - dt); const w = L.relT / 0.12; _ikT.copy(_ikF).lerp(L.rel, w * w); }
+      else _ikT.copy(L.lock || _ikF);
+      if (_ikT.y < ground) _ikT.y = ground; // never through the ground
       if (_ikT.distanceToSquared(_ikF) > 1e-6) {
         const d0 = _ikT.distanceTo(_ikF), qu = L.up.quaternion.clone(), qk = L.knee.quaternion.clone();
         twoBone(L.up, L.knee, L.foot, _ikT); twoBone(L.up, L.knee, L.foot, _ikT);
