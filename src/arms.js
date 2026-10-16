@@ -46,10 +46,20 @@ export function createArms(src, clips, camera) {
     holder.traverse((o) => { if (!o.isMesh) return; const p = o.geometry.attributes.position; for (let i = 0; i < p.count; i += 3) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
       zmin = Math.min(zmin, v.z); zmax = Math.max(zmax, v.z); top = Math.max(top, v.y); bot = Math.min(bot, v.y); } });
     const len = zmax - zmin;
-    holder.traverse((o) => { if (!o.isMesh) return; const p = o.geometry.attributes.position; for (let i = 0; i < p.count; i += 3) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
-      if (v.z > zmin + len * 0.55 && v.z < zmin + len * 0.8 && v.y < gy) { gy = v.y; gz = v.z; } } });
-    api.grip.position.set(0.012, gy + 0.05, gz - 0.01); api.guard.position.set(-0.01, (top + bot) * 0.5 - 0.02, zmin + len * 0.28);
-    api.mag.position.set(-0.01, bot + 0.02, gz - len * 0.14);
+    // Profile the rifle along its length (holder z): per-bin lowest point. The muzzle end is the thin one (barrel), so
+    // fractions are measured from it whichever way the model faces. M4 profile: handguard 0.1-0.42, magazine 0.45-0.55,
+    // pistol grip 0.65-0.78, stock 0.8-1 (measured from the GLB, tools/prof.mjs).
+    const NB = 20, lo = new Array(NB).fill(Infinity), hi = new Array(NB).fill(-Infinity);
+    holder.traverse((o) => { if (!o.isMesh) return; const p = o.geometry.attributes.position; for (let i = 0; i < p.count; i += 2) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+      const k = Math.min(NB - 1, Math.max(0, Math.floor((v.z - zmin) / len * NB))); lo[k] = Math.min(lo[k], v.y); hi[k] = Math.max(hi[k], v.y); } });
+    const muzzleAtMin = (hi[0] - lo[0]) <= (hi[NB - 1] - lo[NB - 1]);
+    const zAt = (f) => muzzleAtMin ? zmin + len * f : zmax - len * f;
+    const binAt = (f) => Math.min(NB - 1, Math.max(0, Math.floor((zAt(f) - zmin) / len * NB)));
+    let gyB = Infinity, gf = 0.72; for (let f = 0.62; f <= 0.8; f += 0.02) { const y = lo[binAt(f)]; if (y < gyB) { gyB = y; gf = f; } }
+    const guardBot = Math.min(lo[binAt(0.25)], lo[binAt(0.3)]), recvBot = lo[binAt(0.6)];
+    // right hand round the middle-upper pistol grip; left palm under the handguard; magwell for reloads
+    api.grip.position.set(0.0, gyB + (recvBot - gyB) * 0.6, zAt(gf - 0.02)); api.guard.position.set(0.0, guardBot - 0.005, zAt(0.27));
+    api.mag.position.set(0.0, lo[binAt(0.5)] + 0.03, zAt(0.5)); api.profile = { muzzleAtMin, gf, gyB, guardBot, recvBot, len };
     holder.add(api.grip, api.guard, api.mag); api.holder = holder;
   };
   function solve(S, target, pole) {

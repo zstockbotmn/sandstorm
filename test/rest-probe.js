@@ -12,8 +12,9 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     res.clips = await p.evaluate(() => { SS.walking = false; const e = SS.debug.spawnEnemy('shifter'); window.__e = e; const c = SS.camera.position; SS.enemies.debugPose(e, c.x + 0.6, c.z - 4.2, 'idle'); e.debugVel = null;
       document.querySelectorAll('#hud, .hud, #controls').forEach((x) => x.style.visibility = 'hidden'); return Object.keys(e.actions); });
     res.rest = [];
-    for (const x of [5.4, -5.4, 4.6, 0.8]) {
-      res.rest.push(await p.evaluate(async (x) => { const e = window.__e = SS.debug.spawnEnemy('shifter'); const c = SS.camera.position; SS.enemies.debugPose(e, x, c.z - 6, 'idle'); e.debugVel = null;
+    for (const x of [5.4, 2.2, -5.4]) {
+      await p.evaluate(() => { for (const q of SS.enemies.list || []) if (q.alive) { q.group.visible = false; q.pinned = true; q.staggerT = 1e9; q.group.position.y = -50; q.shootCd = 1e9; } });
+      res.rest.push(await p.evaluate(async (x) => { const e = window.__e = SS.debug.spawnEnemy('shifter'); const c = SS.camera.position; e.group.visible = true; SS.enemies.debugPose(e, x, c.z - 4, 'idle'); e.debugVel = null;
         await new Promise((r) => setTimeout(r, 1500)); const bonesOf = () => { let m = 1e9; e.art.root.traverse((o) => { if (o.isBone) { const v = new SS.THREE.Vector3(); o.getWorldPosition(v); m = Math.min(m, v.y); } }); return m; };
         e.takeHit('body', e.group.position.clone().setY(1.2)); e.takeHit('body', e.group.position.clone().setY(1.2));
         await new Promise((r) => setTimeout(r, 6000)); let hips = null; const h = e.art.root.getObjectByName('Hips'); if (h) { const v = new SS.THREE.Vector3(); h.getWorldPosition(v); hips = +v.y.toFixed(2); }
