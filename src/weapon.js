@@ -164,9 +164,9 @@ export function createWeapon(camera, world, scene) {
     flashT = 0.05;
     flash.intensity = 5;
     flashSprite.visible = true;
-    const kickAmt = input.scope ? 0.003 : 0.02;
-    input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt));
-    recoil += kickAmt; // recovered over time in update()
+    const p0 = input.pitch; const kickAmt0 = input.scope ? 0.003 : 0.02;
+    input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt0)); const kickAmt = p0 - input.pitch;
+    recoil += kickAmt; // only what was actually applied is recovered (clamped kicks drifted the view down) // recovered over time in update()
     kick = input.scope ? 0.03 : 0.07;
     if (weapon.onShot) weapon.onShot();
 

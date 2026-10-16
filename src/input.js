@@ -64,6 +64,7 @@ export function createInput(canvas) {
   document.body.appendChild(controls);
 
   let pressTimer = 0;
+  input.clearAim = function clearAim() { aimDX = aimDY = 0; };
   input.resetState = function resetState() { aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; fireBtn = fireKey = fireMouse = false; sync(); };
   function sync() {
     input.fire = fireBtn || fireKey || fireMouse;

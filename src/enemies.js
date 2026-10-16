@@ -863,6 +863,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     slot.line.material.opacity = 0.9;
   }
 
+  let lastPlayerHitS = 0;
   function enemyShoot(enemy) {
     const diff = difficulty();
     enemy.group.updateMatrixWorld(true);
@@ -886,8 +887,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const prog = window.SS ? window.SS.distance : 0;
     if ((prog < 120 || burstIndex <= 2) && pressure < 0.45) chance *= 0.72; // still lethal once standing-still pressure builds
     if ((enemy.suppressT || 0) > 0) chance *= 0.45; // blind-fire suppression
+    // Grace ramp (tester: nearly dead after one burst): the first ~60 s of a run land fewer hits, and any two hits on the
+    // player are spaced >= 0.9 s early (0.4 s later) so one burst can't chain 3-4 hits. Damage per hit unchanged (~5 to die).
+    const runT = window.SS && window.SS.startedAt ? (performance.now() - window.SS.startedAt) / 1000 : 999;
+    const grace = Math.min(1, runT / 60);
+    chance *= 0.45 + 0.55 * grace;
     chance = Math.max(0.02, Math.min(0.85, chance));
-    const hit = Math.random() < chance && player && player.alive;
+    const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
+    let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap;
+    if (hit) lastPlayerHitS = nowS;
     _aim.copy(camera.position);
     if (!hit) {
       _aim.x += (Math.random() - 0.5) * 2.4;
