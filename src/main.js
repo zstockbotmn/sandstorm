@@ -297,10 +297,10 @@ document.getElementById('play').addEventListener('click', () => {
   }
 });
 
-document.getElementById('restart').addEventListener('click', () => {
-  audio.unlock();
-  restartRun();
-});
+// Act on pointerdown (tester: short taps dropped at low fps - a click needs down+up on the same element); click is the
+// keyboard/fallback path, de-duplicated so one press never restarts twice.
+{ let lastR = 0; const go = (e) => { const now = performance.now(); if (now - lastR < 600) return; lastR = now; if (e && e.preventDefault) e.preventDefault(); audio.unlock(); restartRun(); };
+  const rb = document.getElementById('restart'); rb.addEventListener('pointerdown', go); rb.addEventListener('click', go); }
 
 showBest();
 

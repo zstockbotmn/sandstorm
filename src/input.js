@@ -134,7 +134,7 @@ export function createInput(canvas) {
     e.stopPropagation();
     if (kia()) return;
     if (name === 'fire') { fireBtn = true; fireShots0 = window.SS && window.SS.weapon ? window.SS.weapon.shotsFired : 0; input.pendingShots = Math.min(8, (input.pendingShots | 0) + 1); } // every touch = one queued shot (fire rate respected by the weapon)
-    else if (name === 'scope') input.scope = !input.scope; // tap-to-toggle: pop out of cover / duck back
+    else if (name === 'scope') { const now = performance.now(); if (now - (input._scopeT || 0) > 180) { input._scopeT = now; input.scope = !input.scope; input.scopeTaps = (input.scopeTaps | 0) + 1; } } // one toggle per press (no double-toggle from duplicate events) // tap-to-toggle: pop out of cover / duck back
     else if (name === 'reload') input.reloadPressed = true;
     else if (name === 'coverL' || name === 'coverR') { const cv = window.SS && window.SS.cover; if (cv && cv.relocate) cv.relocate(name === 'coverL' ? -1 : 1, 'switch'); }
     sync();
