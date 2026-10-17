@@ -151,9 +151,18 @@ export function createInput(canvas) {
   buttons.fire.addEventListener('touchstart', (e) => { e.preventDefault(); fireTouches = e.targetTouches.length; if (!kia()) { fireBtn = true; sync(); } }, { passive: false });
   const touchUp = (e) => { fireTouches = e.targetTouches.length; if (fireTouches === 0) { fireBtn = false; sync(); } };
   buttons.fire.addEventListener('touchend', touchUp); buttons.fire.addEventListener('touchcancel', touchUp);
-  buttons.fire.addEventListener('pointerup', releaseFireBtn);
-  buttons.fire.addEventListener('pointercancel', releaseFireBtn);
-  buttons.fire.addEventListener('lostpointercapture', releaseFireBtn);
+  // Hold-to-fire (tester: holds after an auto-reload fired nothing): the hold is owned by the pressing pointer and ends
+  // only on that pointer's pointerup (window-level, so a release off the button still ends it) or a touch end. Spurious
+  // pointercancel/lostpointercapture no longer end a hold; the mouse ':active' state is polled every frame as a backup.
+  let firePid = null;
+  buttons.fire.addEventListener('pointerdown', (e) => { firePid = e.pointerId; fireBtn = !kia(); sync(); });
+  buttons.fire.addEventListener('mousedown', () => { if (!kia()) { fireBtn = true; sync(); } });
+  const fireUp = (e) => { if (firePid != null && e.pointerId !== firePid) return; firePid = null; releaseFireBtn(); };
+  window.addEventListener('pointerup', fireUp, true);
+  window.addEventListener('mouseup', () => { if (fireTouches === 0) { firePid = null; fireBtn = false; sync(); } }, true);
+  window.addEventListener('blur', () => { firePid = null; fireTouches = 0; fireBtn = false; sync(); });
+  input.pollFire = function pollFire() { let act = false; try { act = buttons.fire.matches(':active') && !kia(); } catch (_) {}
+    input.fire = fireBtn || fireKey || fireMouse || act; input.fireHeld = input.fire; };
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;

@@ -321,6 +321,7 @@ export function createWeapon(camera, world, scene) {
     } else if ((input.pendingShots | 0) > 0 && weapon.ammo <= 0 && !weapon.reloading) {
       input.pendingShots = 0; // empty mag: drop queue (reload will start)
     }
+    if (input.pollFire) input.pollFire();
     for (let n = 0; n < 10; n++) { const wants = input.fire && !weapon.reloading && weapon.ammo > 0; if (!(wants && cooldown <= 0)) break; shoot(input); }
     if (!input.fire && (input.pendingShots | 0) <= 0 && cooldown < 0) cooldown = 0; // no stored burst while idle
   };
