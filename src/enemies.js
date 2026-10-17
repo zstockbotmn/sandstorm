@@ -1481,7 +1481,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         e.group.getWorldPosition(_ep); _ep.y += 1.3; _ed.copy(_ep).sub(camera.position); const d = _ed.length(); _ed.divideScalar(d);
         losRay.set(camera.position, _ed); losRay.far = d - 0.6;
         // seen = exposed, clear line, and not lost in the haze (m1p: a fogged-out roof shooter counted as seen and held the wave)
-        e.seen = e.exposed && !(scene.fog && scene.fog.density && d > 1.05 / scene.fog.density) && losRay.intersectObjects(world.colliders, false).length === 0;
+        e.seen = e.exposed && !(scene.fog && scene.fog.density && d > 1.05 / scene.fog.density) && losRay.intersectObjects(world.shotList ? world.shotList() : world.colliders, false).length === 0;
         e.unseenT = e.seen ? 0 : (e.unseenT || 0) + step;
         if (e.seen && d < HOLD_RANGE) { anySeen = true; e.engaged = true; }
         if (e.unseenT > UNSEEN_LIMIT && e.engaged && !e.pinned) toVisibleCover(e); // hidden/stuck engaged enemy -> visible cover near the player

@@ -225,7 +225,7 @@ export function createWeapon(camera, world, scene) {
   const _fhRay = new THREE.Raycaster(); _fhRay.far = 180;
   function firstHit(o, d) {
     _fhRay.set(o, d);
-    const w0 = _fhRay.intersectObjects(world.colliders, false)[0];
+    const w0 = _fhRay.intersectObjects(world.shotList ? world.shotList() : world.colliders, false)[0];
     const th = targets.length ? _fhRay.intersectObjects(targets, false) : [];
     let t0 = th[0] || null;
     // Same enemy, overlapping boxes: prefer head > body > limb within 0.35 m (an aiming arm in front of the face, or the

@@ -261,6 +261,12 @@ export function createWorld(scene, seed) {
 
   const segments = [];
   const colliders = [];
+  // Shots and sight lines test the visible prop models themselves, not their movement boxes (tester: shots stopped by
+  // invisible volume round market carts and burned-car cabs). Movement/cover/ragdolls keep the boxes (world.colliders).
+  const shotMeshes = []; let shotVer = 0, shotCache = null, shotKey = '';
+  function shotModel(seg, obj, ...boxes) { for (const b of boxes) if (b) b.userData.noShot = true;
+    obj.traverse((o) => { if (o.isMesh) { o.userData.segId = seg.id; o.userData.shotProp = true; shotMeshes.push(o); (seg.shotOwned || (seg.shotOwned = [])).push(o); } }); shotVer++; }
+  function shotList() { const k = colliders.length + ':' + shotVer; if (k !== shotKey || !shotCache) { shotKey = k; shotCache = colliders.filter((m) => !m.userData.noShot).concat(shotMeshes); } return shotCache; }
 
   function addBox(seg, mat, x, y, z, sx, sy, sz, opts = {}) {
     const m = new THREE.Mesh(boxGeo, mat);
@@ -337,7 +343,7 @@ export function createWorld(scene, seed) {
       obj.position.x += x;
       obj.position.z += z;
       seg.group.add(obj);
-      { const _c = addInvisibleBox(seg, x, y, z, sx, sy, sz); _c.name = 'lowwall'; return _c; }
+      { const _c = addInvisibleBox(seg, x, y, z, sx, sy, sz); _c.name = 'lowwall'; shotModel(seg, obj, _c); return _c; }
     }
     { const w = addBox(seg, matWall, x, y, z, sx, sy, sz); w.name = 'lowwall'; return w; }
   }
@@ -488,7 +494,7 @@ export function createWorld(scene, seed) {
     obj.position.x += x;
     obj.position.z += z;
     seg.group.add(obj);
-    (addInvisibleBox(seg, x, dims.y * 0.5, z, dims.x, dims.y, dims.z)).name = 'prop';
+    { const pb = addInvisibleBox(seg, x, dims.y * 0.5, z, dims.x, dims.y, dims.z); pb.name = 'prop'; shotModel(seg, obj, pb); }
     seg.coverPoints.push({
       pos: new THREE.Vector3(x - side * (dims.x * 0.5), 0.9, z),
       type: 'wall',
@@ -500,6 +506,7 @@ export function createWorld(scene, seed) {
     for (let i = colliders.length - 1; i >= 0; i--) {
       if (set.has(colliders[i])) colliders.splice(i, 1);
     }
+    if (seg.shotOwned && seg.shotOwned.length) { const so = new Set(seg.shotOwned); for (let i = shotMeshes.length - 1; i >= 0; i--) if (so.has(shotMeshes[i])) shotMeshes.splice(i, 1); seg.shotOwned.length = 0; shotVer++; }
     seg.owned.length = 0;
     seg.coverPoints.length = 0;
     while (seg.group.children.length) { const ch = seg.group.children[0]; if (ch.userData.ownGeo && ch.geometry) ch.geometry.dispose(); seg.group.remove(ch); }
@@ -650,9 +657,10 @@ export function createWorld(scene, seed) {
       pivot.rotation.y = yaw + jitter;
       pivot.position.set(x, 0, z);
       seg.group.add(pivot);
-      (addInvisibleBox(seg, x, 0.48, z, 1.75, 0.62, 4.15)).name = 'car';
+      const carB = addInvisibleBox(seg, x, 0.48, z, 1.75, 0.62, 4.15); carB.name = 'car';
       const cabin = addInvisibleBox(seg, x, 1.05, z + 0.15, 1.5, 0.52, 2.0); cabin.name = 'carcab';
       cabin.rotation.y = yaw;
+      shotModel(seg, pivot, carB, cabin);
     } else {
       addBox(seg, bodyMat, x, 0.48, z, 1.75, 0.62, 4.15);
       const cabin = addBox(seg, matGlass, x, 1.05, z + 0.15, 1.5, 0.52, 2.0);
@@ -720,5 +728,5 @@ export function createWorld(scene, seed) {
     update(playerZ == null ? 0 : playerZ);
   }
 
-  return { update, reset, segments, colliders, sun, overlapCount, footFree };
+  return { update, reset, segments, colliders, shotList, sun, overlapCount, footFree };
 }

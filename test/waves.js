@@ -43,7 +43,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
         await p.waitForTimeout(300);
       }
       r.secs = Math.round((Date.now() - t0) / 1000); r.ws = await p.evaluate(() => window.__ws || null);
-      if (r.ws && r.ws.eye > 20 && r.ws.phantom / r.ws.eye > 0.4) fail.push(mode + ': ' + r.ws.phantom + '/' + r.ws.eye + ' looks at a visible fighter had the shot stopped by something not drawn ' + JSON.stringify(r.ws.ex));
+      if (r.ws && r.ws.phantom > Math.max(1, r.ws.eye * 0.03)) fail.push(mode + ': ' + r.ws.phantom + '/' + r.ws.eye + ' looks at a visible fighter had the shot stopped by something not drawn ' + JSON.stringify(r.ws.ex));
       if (!r.passed) { fail.push(mode + ': ' + (r.stalled ? 'STALLED 60 s' : 'not 2 waves') + ' at ' + (r.last && r.last.d) + ' m, waves ' + (r.last && r.last.w) + ', kills ' + (r.last && r.last.k));
         r.enemies = await p.evaluate(() => (SS.enemies.list || []).filter((e) => e.alive).map((e) => ({ p: e.group.position.toArray().map((x) => +x.toFixed(1)), vis: e.group.visible, exposed: e.exposed, engaged: e.engaged, phase: e.phase, seen: e.seen, behav: e.behavior || e.kind, roof: !!e.roof, truck: !!e.fromTruck, pinned: !!e.pinned })));
         r.cam = await p.evaluate(() => SS.camera.position.toArray().map((x) => +x.toFixed(1))); }
