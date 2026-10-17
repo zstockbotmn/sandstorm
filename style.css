@@ -431,4 +431,4 @@ canvas {
 
 body.title #hud, body.title #controls { visibility: hidden; }
 /* REINFORCEMENTS / wave banners sit well below the ENEMIES badge and GOAL line */
-#wave-banner { top: 34%; }
+#wave-banner { position: fixed; top: 34%; } /* fixed: as absolute inside a 0-height #hud, 34% was 0 px, right on the ENEMIES badge */

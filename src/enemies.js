@@ -1016,13 +1016,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Bring a hidden/stuck/behind-the-player enemy to a visible ground cover spot 12-30 m ahead, already leaning out to fire.
   const _frM = new THREE.Matrix4(), _frF = new THREE.Frustum();
   function toVisibleCover(e) {
-    if (e.anchor && isElevated(e.anchor.type)) { e.unseenT = 0; e.seen = true; e.engaged = true; beginFire(e); return; } // never teleport a roof/window shooter to the street
+    const aheadE = camera.position.z - e.group.position.z, dE = e.group.position.distanceTo(camera.position);
+    // (m1p stall) a roof/window shooter stays up only while it is ahead and close enough to see through the haze
+    if (e.anchor && isElevated(e.anchor.type) && aheadE > 4 && dE < 30) { e.unseenT = 0; e.seen = true; e.engaged = true; beginFire(e); return; } // never teleport a roof/window shooter to the street
     // Never teleport a fighter the player could be looking at (tester: a close fighter vanished mid-turn): within 25 m,
     // or on screen, it steps out and fights from where it is instead.
     { const d = e.group.position.distanceTo(camera.position); camera.updateMatrixWorld(); _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM);
       // ...but only a fighter hiding in cover (not exposed). An exposed fighter that is still unseen is blocked by geometry
       // (e.g. inside a doorway collider): it can't be hit there, so it must still be moved (tester: 110 rounds, no kill).
-      if ((d < 25 || _frF.containsPoint(e.group.position)) && e.anchor && !e.exposed) { e.unseenT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} e.vanishSaved = (e.vanishSaved | 0) + 1; return; } }
+      // (m1p stall) ...and only when it is ahead and on screen: one hiding beside/behind the player held the wave forever.
+      if (d < 25 && aheadE > 2 && _frF.containsPoint(e.group.position) && e.anchor && !e.exposed) { e.unseenT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} e.vanishSaved = (e.vanishSaved | 0) + 1; return; } }
     const pz = camera.position.z; let best = null, bd = 1e9;
     for (const seg of world.segments || []) for (const c of seg.coverPoints || []) {
       if (!['car', 'barrel', 'wall', 'door'].includes(c.type)) continue;
@@ -1477,7 +1480,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const e = list[i]; if (!e.alive) continue;
         e.group.getWorldPosition(_ep); _ep.y += 1.3; _ed.copy(_ep).sub(camera.position); const d = _ed.length(); _ed.divideScalar(d);
         losRay.set(camera.position, _ed); losRay.far = d - 0.6;
-        e.seen = e.exposed && losRay.intersectObjects(world.colliders, false).length === 0;
+        // seen = exposed, clear line, and not lost in the haze (m1p: a fogged-out roof shooter counted as seen and held the wave)
+        e.seen = e.exposed && !(scene.fog && scene.fog.density && d > 1.05 / scene.fog.density) && losRay.intersectObjects(world.colliders, false).length === 0;
         e.unseenT = e.seen ? 0 : (e.unseenT || 0) + step;
         if (e.seen && d < HOLD_RANGE) { anySeen = true; e.engaged = true; }
         if (e.unseenT > UNSEEN_LIMIT && e.engaged && !e.pinned) toVisibleCover(e); // hidden/stuck engaged enemy -> visible cover near the player

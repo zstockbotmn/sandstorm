@@ -149,7 +149,7 @@ function simStep(dt) {
     window.SS.distance += SPEED * dt;
   }
   input.applyAim(dt || 0.016); input.onTarget = weapon.onTarget;
-  if (!frozen && !window.__freezeCam) cover.update(dt || 0.016, window.SS.walking && window.SS.running);
+  if (!frozen && !window.__freezeCam && (window.SS.running || !document.body.classList.contains("title"))) cover.update(dt || 0.016, window.SS.walking && window.SS.running); // title backdrop: no cover moves (camera clipped a prop)
   applyCamera(dt || 0.016);
   const step = dt || 0.016;
   // Fire BEFORE enemies move: shots test the hitboxes exactly where the last rendered frame showed them (firing after
@@ -199,7 +199,7 @@ function frame(now) {
   hud.onTarget(weapon.onTarget); hud.setScope(!!input.scope && player.alive && window.SS.running);
   hud.update({
     distance: window.SS.distance,
-    ammo: weapon.ammo, reserve: weapon.reserve,
+    ...(() => { if (weapon.reloading) { if (!window.__ammoLatch) window.__ammoLatch = { ammo: weapon.ammo, reserve: weapon.reserve }; return window.__ammoLatch; } window.__ammoLatch = null; return { ammo: weapon.ammo, reserve: weapon.reserve }; })(), // counter holds still mid-reload (tester: flickered to 5/180), then jumps once to the result
     reloading: weapon.reloading, reloadP: weapon.reloadProgress ? weapon.reloadProgress() : null,
     scoped: input.scope,
     score: window.SS.score,
@@ -325,7 +325,7 @@ if (/[?&]hitbox/.test(location.search)) {
   weapon.onShotDebug = (s) => { if (!s.hit) return; const m = new THREE.Mesh(gE, s.hit.enemy ? mE : mW); m.position.copy(s.hit.point); m.renderOrder = 99; scene.add(m); mk.push(m); setTimeout(() => { scene.remove(m); }, 2000); };
 }
 art.onReady(() => { const m4 = art.staticInstance('rifle_m4'); if (m4) m4.name = 'rifle_m4'; const r = m4 || art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search));
-  if (m4 && weapon.model && art.get('fps_arms') && !/[?&]arms=0/.test(location.search) /* hands on by default (both hands grip: hip shot verified); ?arms=0 hides them */) { try { arms = createArms(art.get('fps_arms'), art.anims('fps_arms'), camera);
+  if (m4 && weapon.model && art.get('fps_arms') && /[?&]arms=1/.test(location.search) /* hands opt-in (?arms=1) until they read as a gloved soldier grip */) { try { arms = createArms(art.get('fps_arms'), art.anims('fps_arms'), camera);
     if (arms) { weapon.model.parent.add(arms.root); arms.attach(weapon.model); window.SS.arms = arms; } } catch (err) { console.warn('arms', err); arms = null; } } });
 
 // Rapier (ragdoll physics, ~4 MB) is fetched after the first rendered frames, never before Play/first paint.
@@ -361,11 +361,12 @@ art.onReady(() => {
     for (const o of hidden) o.visible = false;
   } catch (err) { console.warn('prewarm', err && err.message); }
   scene.remove(tmp);
+  try { renderer.render(scene, camera); } catch (e) {} // redraw without the prewarm set: the title backdrop showed it (m1p: red/yellow shapes 'clipping' the camera)
   (window.SS || {}).prewarmMs = Math.round(performance.now() - t0);
 });
 
-// Ultra-low (tester: < 10 fps): fewer draw calls, not just fewer pixels. Small non-colliding street clutter (debris,
-// bottles, rubble bits) in the world segments is hidden; colliders, fighters, the rifle/hands, drops and grenades are
+// Ultra-low (tester: < 10 fps): fewer draw calls, not just fewer pixels. The distant skyline (backdrop rows, never
+// cover) is hidden; colliders, fighters, the rifle/hands, drops and grenades are
 // never touched (they are not in the segment groups), so cover and hits behave exactly as before. Re-run as segments recycle.
 const _ultraS = new THREE.Sphere(); let ultraT = 0;
 function ultraTrim() { let hid = 0; const keep = new Set(world.colliders || []);
@@ -373,7 +374,7 @@ function ultraTrim() { let hid = 0; const keep = new Set(world.colliders || []);
     if (!o.isMesh || o.isSkinnedMesh || !o.visible || keep.has(o) || o.userData.ultraKeep || !o.geometry) return;
     if (o.userData.backdrop) { o.visible = false; hid++; return; } // distant skyline: in the fog anyway
     if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); o.updateWorldMatrix(true, false); _ultraS.copy(o.geometry.boundingSphere).applyMatrix4(o.matrixWorld);
-    if (_ultraS.radius < 0.45) { o.visible = false; hid++; } else o.userData.ultraKeep = true; }); }
+    o.userData.ultraKeep = true; }); } // small clutter stays: hiding it left its collider in place, so enemies seen 'in the open' were behind invisible cover and shots never landed (m1p stall)
   window.SS.ultraHidden = (window.SS.ultraHidden | 0) + hid; }
 // Auto Low: software WebGL at start (unless ?q=high), or fps < 25 for 3 s mid-run. Applied live, no reload.
 onLow(() => {
@@ -390,6 +391,7 @@ onLow(() => {
   { const msg = (window.SS.quality === 'ultra-low' ? 'Ultra-low' : 'Low') + ' quality on for smoother play'; window.SS.tierToast = msg; if (hud.hint && window.SS.running) hud.hint(msg); else window.SS.pendingTierToast = msg; } // shown now, or at run start if it switched on the menu // names the tier actually applied (fix 8)
 });
 window.SS.gpu = rendererString(renderer.getContext());
+window.SS.THREE = THREE; window.SS.world = world; // tests
 window.SS.goUltra = (r) => { goLow(r || 'debug'); goUltra(r || 'debug'); }; // tests
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
 // Remember the auto-chosen tier across reloads (tester): a saved ultra-low starts as ultra-low.
