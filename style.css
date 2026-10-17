@@ -259,11 +259,11 @@ canvas {
   font: 700 28px system-ui, sans-serif;
 }
 
-#reloading {
+#reloading { /* left of the ammo counter, below SWITCH COVER (was on top of its label) */
   top: auto;
-  bottom: calc(62px + env(safe-area-inset-bottom));
+  bottom: calc(34px + env(safe-area-inset-bottom));
   left: auto;
-  right: calc(16px + env(safe-area-inset-right));
+  right: calc(150px + env(safe-area-inset-right));
   font: 800 16px system-ui, sans-serif;
   letter-spacing: 0.14em;
   color: #ffd27a;

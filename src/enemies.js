@@ -1019,7 +1019,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // Never teleport a fighter the player could be looking at (tester: a close fighter vanished mid-turn): within 25 m,
     // or on screen, it steps out and fights from where it is instead.
     { const d = e.group.position.distanceTo(camera.position); camera.updateMatrixWorld(); _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM);
-      if ((d < 25 || _frF.containsPoint(e.group.position)) && e.anchor) { e.unseenT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} e.vanishSaved = (e.vanishSaved | 0) + 1; return; } }
+      // ...but only a fighter hiding in cover (not exposed). An exposed fighter that is still unseen is blocked by geometry
+      // (e.g. inside a doorway collider): it can't be hit there, so it must still be moved (tester: 110 rounds, no kill).
+      if ((d < 25 || _frF.containsPoint(e.group.position)) && e.anchor && !e.exposed) { e.unseenT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} e.vanishSaved = (e.vanishSaved | 0) + 1; return; } }
     const pz = camera.position.z; let best = null, bd = 1e9;
     for (const seg of world.segments || []) for (const c of seg.coverPoints || []) {
       if (!['car', 'barrel', 'wall', 'door'].includes(c.type)) continue;

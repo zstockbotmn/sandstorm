@@ -245,7 +245,7 @@ function showOver(result) {
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const tr = document.createElement('tr');
-    const when = (r.date || '').slice(0, 10);
+    const when = (() => { const d = new Date(r.date || ''); if (isNaN(d)) return ''; const p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); })(); // local time (stored as UTC ISO)
     tr.innerHTML =
       '<td>' + (i + 1) + '</td><td>' + r.score + '</td><td>' + r.distance +
       '</td><td>' + r.kills + '</td><td>' + r.headshots + '</td><td>' + r.accuracy +
@@ -374,6 +374,8 @@ onLow(() => {
 });
 window.SS.gpu = rendererString(renderer.getContext());
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
+// Remember the auto-chosen tier across reloads (tester): a saved ultra-low starts as ultra-low.
+try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { goLow('saved'); goUltra('saved'); } } catch (e) {}
 // Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.
 { let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => {
     // Ultra-low still too slow (tester box < 3.5 fps): step the render scale down 0.4 -> 0.3 -> 0.22 (ultra-low only).

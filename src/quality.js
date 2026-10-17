@@ -3,7 +3,7 @@
 const KEY = 'ss.quality';
 function detect() {
   try { const m = /[?&]q=(low|high)\b/.exec(location.search); if (m) return m[1]; } catch (e) {}
-  try { const v = localStorage.getItem(KEY); if (v === 'low' || v === 'high') return v; } catch (e) {}
+  try { const v = localStorage.getItem(KEY); if (v === 'low' || v === 'high') return v; if (v === 'ultra-low') return 'low'; } catch (e) {}
   const ua = navigator.userAgent || '';
   const ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   const touch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
@@ -37,7 +37,7 @@ export function onLow(fn) { lowHooks.push(fn); }
 // Ultra-low: Low still under 10 fps -> half resolution, 60 m draw distance (fewer buildings), thicker fog.
 export let ULTRA = false;
 export function goUltra(reason) {
-  if (ULTRA) return false; ULTRA = true; Object.assign(Q, LOW, { res: 0.4, drawAhead: 60, fog: 0.03, far: 200, lodNear: 10, lodNearProp: 6 });
+  if (ULTRA) return false; ULTRA = true; try { if (!EXPLICIT) localStorage.setItem(KEY, 'ultra-low'); } catch (e) {} Object.assign(Q, LOW, { res: 0.4, drawAhead: 60, fog: 0.03, far: 200, lodNear: 10, lodNearProp: 6 });
   if (typeof window !== 'undefined' && window.SS) { window.SS.quality = 'ultra-low'; window.SS.autoLow = reason; }
   for (const f of lowHooks) { try { f(reason); } catch (e) { console.warn('goUltra', e); } }
   return true;

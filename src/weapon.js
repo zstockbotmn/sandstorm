@@ -10,7 +10,6 @@ const PITCH_LIMIT = 35 * Math.PI / 180;
 const HIP_SPREAD = 0.25 * Math.PI / 180; // was 0.6: at 40 m that threw centre-aimed hip shots off a torso
 const ADS_SPREAD = 0.04 * Math.PI / 180; // steadier scope
 const COVER_SPREAD = 0.25 * Math.PI / 180; // ducked fire: the crosshair is visible over the cover, so shots go where it points (was 2.2 deg = false misses)
-const ASSIST_COVER = 4.0 * Math.PI / 180, ASSIST_PULL_COVER = 0.45; // weak blind-fire pull toward torso
 
 const _dir = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -23,8 +22,6 @@ const _ads = new THREE.Vector3(0.0, -0.2, -0.4); // replaced per model in setMod
 const _cover = new THREE.Vector3(0.3, -0.4, -0.44); // tester: rifle stays in view while in cover (was lowered off-screen at y -0.78)
 const _desired = new THREE.Vector3();
 const _tp = new THREE.Vector3();
-const ASSIST_HIP = 3.0 * Math.PI / 180, ASSIST_ADS = 1.8 * Math.PI / 180, ASSIST_PULL = 0.6; // slight aim assist
-const ASSIST_TOUCH = 5.0 * Math.PI / 180, ASSIST_PULL_TOUCH = 0.8; // stronger on touch
 
 function softCircle(r, g, b, a) {
   const c = document.createElement('canvas');
@@ -129,7 +126,7 @@ export function createWeapon(camera, world, scene) {
 
   const raycaster = new THREE.Raycaster();
   raycaster.far = 180;
-  let cooldown = 0, lastUpd = 0;
+  let cooldown = 0, lastUpd = 0, holdId = 0, holdFired = 0, holdBase = 0;
   let reloadT = 0;
   let flashT = 0;
   let kick = 0;
@@ -166,7 +163,7 @@ export function createWeapon(camera, world, scene) {
     flashSprite.visible = true;
     const p0 = input.pitch; const kickAmt0 = input.scope ? 0.003 : 0.02;
     input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt0)); const kickAmt = p0 - input.pitch;
-    recoil += kickAmt; // only what was actually applied is recovered (clamped kicks drifted the view down) // recovered over time in update()
+    if (recoil > 0.07) { input.pitch += kickAmt; } else recoil += kickAmt; // cap recoil climb at ~4 deg (long holds / many rounds per frame) // only what was actually applied is recovered (clamped kicks drifted the view down) // recovered over time in update()
     kick = input.scope ? 0.03 : 0.07;
     if (weapon.onShot) weapon.onShot();
 
@@ -176,26 +173,8 @@ export function createWeapon(camera, world, scene) {
     _right.normalize();
     _camUp.crossVectors(_right, _dir).normalize();
     camera.getWorldPosition(_origin);
-    { // Slight aim assist: bend the shot part-way toward the nearest enemy torso near the crosshair.
-      const lim = input.cover ? ASSIST_COVER : input.scope ? ASSIST_ADS : input.touch ? ASSIST_TOUCH : ASSIST_HIP;
-      let best = null, bestA = lim, bestEnemy = null;
-      for (let i = 0; i < targets.length; i++) {
-        const t = targets[i]; if (!t.userData || t.userData.part === 'head' || !t.visible) continue;
-        t.getWorldPosition(_tp); _tp.sub(_origin); const a = _tp.angleTo(_dir);
-        if (a < bestA) { bestA = a; best = _tp.clone().normalize(); bestEnemy = t.userData.enemy; }
-      }
-      const pull = input.cover ? ASSIST_PULL_COVER : (input.touch && !input.scope ? ASSIST_PULL_TOUCH : ASSIST_PULL);
-      // Assist only when the crosshair ray itself would miss every enemy, and only if the bent ray reaches that enemy
-      // unobstructed. Before, a crosshair already on a head over cover was pulled toward the hidden torso -> hit the cover.
-      if (best) {
-        const raw = firstHit(_origin, _dir);
-        if (!(raw && raw.object.userData && raw.object.userData.enemy)) {
-          _tp.copy(_dir); _dir.lerp(best, pull).normalize();
-          const bent = firstHit(_origin, _dir);
-          if (!(bent && bent.object.userData && bent.object.userData.enemy === bestEnemy)) _dir.copy(_tp);
-        }
-      }
-    }
+    // No shot-bending aim assist (App PM): the hit ray is exactly the crosshair ray (+ weapon spread). The only assist is
+    // the touch view assist in input.js, which moves the view, never the shot.
     if (input.cover) {
       // Ducked fire goes exactly down the crosshair from the eye (the eye already clears the cover). The old +0.5 m
       // raised origin sent shots along a different line than the crosshair and clipped cover/props: false misses.
@@ -297,6 +276,7 @@ export function createWeapon(camera, world, scene) {
         weapon.reloading = false;
         { const take = Math.min(MAG - weapon.ammo, weapon.reserve); weapon.ammo += take; weapon.reserve -= take; }
         if (weapon.onReload) weapon.onReload('end');
+        { const h = window.SS && window.SS.hud; if (h && h.hintText === 'Emergency magazine' && h.hint) h.hint(''); } // message ends with the reload
       }
     } else if (input.reloadPressed) {
       startReload();
@@ -309,9 +289,10 @@ export function createWeapon(camera, world, scene) {
     // Recoil recovery: return the kicked pitch toward where the player aimed (no upward creep).
     if (recoil > 0) { const r = Math.min(recoil, recoil * (1 - Math.exp(-RECOIL_RECOVER * dt)) + 0.002 * dt * 60); recoil -= r; input.pitch = Math.min(PITCH_LIMIT, input.pitch + r); }
     // On-target check for the crosshair (same cone as the aim assist).
-    { camera.getWorldDirection(_dir); camera.getWorldPosition(_origin); const lim = input.scope ? ASSIST_ADS : ASSIST_HIP; let on = false;
-      for (let i = 0; i < targets.length && !on; i++) { const t = targets[i]; if (!t.visible) continue; t.getWorldPosition(_tp); _tp.sub(_origin); if (_tp.length() < 180 && _tp.angleTo(_dir) < lim) on = true; }
-      weapon.onTarget = on; }
+    // Red crosshair = the actual hit ray (same firstHit the shot uses) is on an enemy; was an angle cone around part
+    // origins, which turned red over cover/doorways the shot could not pass (tester: red crosshair, 110 rounds, no kill).
+    { camera.updateMatrixWorld(); camera.getWorldDirection(_dir); camera.getWorldPosition(_origin); const h = firstHit(_origin, _dir);
+      weapon.onTarget = !!(h && h.object.userData && h.object.userData.enemy); weapon.onTargetName = h ? (h.object.name || h.object.type) : null; }
     // Fire cadence runs on the real-time clock (sim dt is capped at low fps, which starved held FIRE).
     { const now = performance.now(); const rdt = lastUpd ? Math.min(0.5, (now - lastUpd) / 1000) : dt; lastUpd = now; cooldown -= rdt; }
     // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
@@ -322,6 +303,19 @@ export function createWeapon(camera, world, scene) {
       input.pendingShots = 0; // empty mag: drop queue (reload will start)
     }
     if (input.pollFire) input.pollFire();
+    // Swallow the Play press (tester: clicking Play fired a round): nothing fires in the first 500 ms of a run.
+    if (window.SS && window.SS.startedAt && performance.now() - window.SS.startedAt < 500) { input.pendingShots = 0; input.hold = null; input.fire = false; }
+    // FIRE-button hold timeline (input.hold): fire every round the hold has earned at the rifle's rate since it began,
+    // up to 6 per frame. While reloading/empty nothing is owed beyond one round, so firing resumes the moment the
+    // reload ends with FIRE still held.
+    { const H = input.hold; const I = SHOT_INTERVAL * 1000;
+      if (H) { if (H.id !== holdId) { holdId = H.id; holdFired = 0; holdBase = H.start; }
+        const now = performance.now(), until = H.end || now, blocked = weapon.reloading || weapon.ammo <= 0;
+        if (blocked) holdBase = Math.max(holdBase, until - holdFired * I);
+        const owed = 1 + Math.floor((until - holdBase) / I);
+        for (let n = 0; n < 6 && holdFired < owed && !weapon.reloading && weapon.ammo > 0; n++) { shoot(input); holdFired++; }
+        if (H.end && (holdFired >= owed || now - H.end > 3000)) input.hold = null;
+        weapon.holdFired = holdFired; } }
     for (let n = 0; n < 4; n++) { const wants = input.fire && !weapon.reloading && weapon.ammo > 0; if (!(wants && cooldown <= 0)) break; shoot(input); }
     if (!input.fire && (input.pendingShots | 0) <= 0 && cooldown < 0) cooldown = 0; // no stored burst while idle
   };

@@ -123,10 +123,12 @@ export function createHud() {
   function banner(text) { bannerEl.textContent = text; bannerEl.classList.remove('show'); void bannerEl.offsetWidth; bannerEl.classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => bannerEl.classList.remove('show'), 1300); }
   const hintEl = document.createElement('div'); hintEl.id = 'aim-hint'; root.appendChild(hintEl); let hintTimer = 0;
   function hint(text) {
+    if (!text) { clearTimeout(hintTimer); hintEl.classList.remove('show'); hud.hintText = ''; return; }
+    hud.hintText = text;
     hintEl.textContent = text || '';
     hintEl.classList.add('show');
     clearTimeout(hintTimer);
-    hintTimer = setTimeout(() => hintEl.classList.remove('show'), 2800);
+    hintTimer = setTimeout(() => { hintEl.classList.remove('show'); hud.hintText = ''; }, 2800);
   }
   function onTarget(on) { cross.classList.toggle('on-target', !!on); }
   function callout(text) {
@@ -158,7 +160,7 @@ export function createHud() {
 
   applyHealth();
 
-  return {
+  const hud = {
     update(info) {
       if (!info) return;
       if (info.distance != null) distanceEl.textContent = Math.floor(info.distance) + ' m';
@@ -194,4 +196,5 @@ export function createHud() {
     setNext,
     setScope,
   };
+  return hud;
 }
