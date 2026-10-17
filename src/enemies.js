@@ -8,6 +8,10 @@ export const WAVE1_DAMAGE = 0.6;
 // m1v: the softer first wave covers the opening only (game seconds) - a player who never clears wave 1 (standing still)
 // goes back to full damage after this, so loitering stays lethal (stand-still death target 60-90 s).
 export const WAVE1_SOFT_S = 40;
+// far-hit (Low): a fighter could land a hit in its very first visible frame (peek / relocation) and be gone again before
+// the player could see it. A hit now needs the shooter continuously visible (game's own gate) for this long, in real AND
+// game time; a relocation/teleport restarts that clock, cancels the burst and holds fire for the same time.
+export const SEEN_BEFORE_HIT_S = 0.6;
 // cover grace: COVER_GRACE_S in cover.js
 const BODY_DMG = 55;
 const HEAD_DMG = 100;
@@ -892,6 +896,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const fwd = dx * Math.sin(yaw) + dz * -Math.cos(yaw), right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
     if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(Math.atan2(right, fwd)); if (SSx.audio && SSx.audio.crack) SSx.audio.crack(pos); }
   function enemyShoot(enemy) {
+    { const nR = performance.now() / 1000, nS = window.SS ? (window.SS.simTime || 0) : 0; if (enemy.noFireUntilR > nR || enemy.noFireUntilSim > nS) { enemy.shootCd = Math.max(enemy.shootCd || 0, 0.1); return; } } // just relocated: let the player see them first
     // m1u: a balcony/window/roof shooter fires only while visibly present (a tracer from an empty balcony otherwise)
     enemy.group.getWorldPosition(_losP); _losP.y += 1.25; const offView = !onScreen(_losP) && !onScreen(_losP.setY(_losP.y + 0.37));
     // m1v: fire from outside the view is never damaging; it comes with a warning (edge flash on the shooter's side + crack)
@@ -933,6 +938,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (hit && window.SS && window.SS.coverGraceUntil && performance.now() < window.SS.coverGraceUntil) { hit = false; window.SS.graceBlocked = (window.SS.graceBlocked | 0) + 1; }
     if (offView) { hit = false; enemy.offViewShots = (enemy.offViewShots | 0) + 1; if (window.SS) window.SS.offViewShots = (window.SS.offViewShots | 0) + 1; warnFrom(enemy.group.position); }
     // m1t: no hits from out of the player's sight (tester: 6 min of hits from a fighter hidden behind a far burned car).
+    // far-hit: the shooter must have been continuously visible for SEEN_BEFORE_HIT_S (no first-frame hits from a peek/relocation)
+    if (hit && !(enemy.seenSinceR && nowS - enemy.seenSinceR >= SEEN_BEFORE_HIT_S && simS - (enemy.seenSinceSim || 0) >= SEEN_BEFORE_HIT_S)) { hit = false; enemy.freshBlocked = (enemy.freshBlocked | 0) + 1; if (window.SS) window.SS.freshBlocked = (window.SS.freshBlocked | 0) + 1; }
     if (hit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
@@ -1066,6 +1073,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function inView(e) { _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM); return _frF.containsPoint(e.group.position); }
   // m1t: the last fighter, unseen by the player for 10 s, is moved to a spot the player can really see (ground fighters;
   // roof/window shooters are made to peek instead - no vertical pops). Candidates are checked with clearToEye.
+  function relocated(e) { const nowR = performance.now() / 1000; e.seenSinceR = 0; e.noFireUntilR = nowR + SEEN_BEFORE_HIT_S; e.noFireUntilSim = (window.SS ? (window.SS.simTime || 0) : 0) + SEEN_BEFORE_HIT_S; e.shootCd = Math.max(e.shootCd || 0, SEEN_BEFORE_HIT_S); e.rounds = 0; }
   function toSeenSpot(e) {
     // roof/window shooters first get a forced peek; if still unseen next time, they are moved to the street while the
     // player cannot see them (no visible pop; e.warps marks it so the motion test ignores the jump)
@@ -1084,7 +1092,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (!pt) pt = new THREE.Vector3(camera.position.x, 0, pz - 14);
       e.anchor = { type: 'door', pos: new THREE.Vector3(pt.x, 1.2, pt.z) }; e.home = pt.clone(); e.group.position.copy(pt); }
     e.group.position.y = 0; e.path = null; e.pathI = 0; e.seenForced = (e.seenForced | 0) + 1; if (window.SS) window.SS.seenForced = (window.SS.seenForced | 0) + 1;
-    beginFire(e); return true;
+    beginFire(e); relocated(e); return true;
   }
   function toVisibleCover(e) {
     const aheadE = camera.position.z - e.group.position.z, dE = e.group.position.distanceTo(camera.position);
@@ -1106,7 +1114,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (best) { e.anchor = best; e.home = standPos(best); }
     else { const side = Math.sign(e.group.position.x) || 1; e.anchor = { type: 'door', pos: new THREE.Vector3(side * 5.4, 1.2, pz - 18) }; e.home = standPos(e.anchor); }
     e.group.position.copy(firePoint(e)); e.group.position.y = 0; e.path = null; e.pathI = 0;
-    beginFire(e);
+    beginFire(e); relocated(e);
   }
   function setupLoco(enemy) {
     enemy.posture = 'idle';
@@ -1574,6 +1582,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         e.unseenT = e.seen ? 0 : (e.unseenT || 0) + step;
         if (e.seen && d < HOLD_RANGE) { anySeen = true; e.engaged = true; }
         e.hiddenT = playerSees(e) ? 0 : (e.hiddenT || 0) + step;
+        { const jumped = e._seenP && e._seenP.distanceToSquared(e.group.position) > 6.25; (e._seenP || (e._seenP = new THREE.Vector3())).copy(e.group.position);
+          if (e.hiddenT === 0 && !jumped && e.phase !== 'relocate') { if (!e.seenSinceR) { e.seenSinceR = nowR; e.seenSinceSim = window.SS ? (window.SS.simTime || 0) : 0; } } else e.seenSinceR = 0; } // continuous visibility clock
         if (e.hiddenT > 10 && e.engaged && !e.pinned && !e.dying && aliveCount() === 1 && truckPending === 0) toSeenSpot(e); // last fighter out of sight 10 s
         else if (e.unseenT > UNSEEN_LIMIT && e.engaged && !e.pinned) toVisibleCover(e); // hidden/stuck engaged enemy -> visible cover near the player
       }
