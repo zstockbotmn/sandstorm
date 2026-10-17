@@ -18,10 +18,29 @@ export function createArms(src, clips, camera) {
   const side = (s) => ({ up: B('upper_arm' + s), fore: B('forearm' + s), ctl: B('hand' + s + 'control'), hand: B('hand' + s) }); // GLTFLoader strips '.' from node names
   const R = side('R'), L = side('L');
   if (!R.up || !R.fore || !R.ctl || !L.up || !L.fore || !L.ctl) return null;
-  root.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = false; o.renderOrder = 2; if (o.material) { o.material = o.material.clone(); o.material.roughness = 0.75; o.material.metalness = 0; o.material.color.setRGB(0.78, 0.6, 0.48); } } });
+  // Uniform (tester: bare skin tubes): procedural multicam-style sleeves and dark tan gloves, painted per vertex. A vertex
+  // mostly weighted to a hand/finger bone is glove, the rest is sleeve; the camo blotches come from a few octaves of
+  // value noise over the bind-pose position (no texture download, nothing to license).
+  const hash = (x, y, z) => { const h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return h - Math.floor(h); };
+  const vnoise = (x, y, z) => { const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = x - ix, fy = y - iy, fz = z - iz; const L = (a, b, t) => a + (b - a) * t * t * (3 - 2 * t);
+    return L(L(L(hash(ix, iy, iz), hash(ix + 1, iy, iz), fx), L(hash(ix, iy + 1, iz), hash(ix + 1, iy + 1, iz), fx), fy), L(L(hash(ix, iy, iz + 1), hash(ix + 1, iy, iz + 1), fx), L(hash(ix, iy + 1, iz + 1), hash(ix + 1, iy + 1, iz + 1), fx), fy), fz); };
+  const CAMO = [[0.55, 0.49, 0.37], [0.42, 0.40, 0.29], [0.33, 0.27, 0.19], [0.62, 0.56, 0.44], [0.24, 0.22, 0.17]], GLOVE = [0.21, 0.18, 0.14], CUFF = [0.36, 0.33, 0.25];
+  const camoK = +(QP.get('camok') || 16);
+  root.traverse((o) => { if (!o.isMesh) return; o.frustumCulled = false; o.castShadow = false; o.renderOrder = 2;
+    const g = o.geometry, pos = g && g.attributes.position; if (!pos) return; const si = g.attributes.skinIndex, sw = g.attributes.skinWeight, bones = o.skeleton ? o.skeleton.bones : null;
+    if (!g.boundingBox) g.computeBoundingBox(); const sz = g.boundingBox.getSize(new THREE.Vector3()).length() || 1;
+    const col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) { let handW = 0, cuffW = 0;
+      if (si && sw && bones) for (let k = 0; k < 4; k++) { const bn = bones[si.getComponent(i, k)]; const w = sw.getComponent(i, k); if (!bn || !w) continue; const nm = bn.name.toLowerCase();
+        if (/hand|f_|thumb|palm/.test(nm)) handW += w; else if (/forearm/.test(nm)) cuffW += w * 0; }
+      let c; if (handW > 0.5) c = GLOVE; else { const x = pos.getX(i) / sz * camoK, y = pos.getY(i) / sz * camoK, z = pos.getZ(i) / sz * camoK; const n = 0.6 * vnoise(x, y, z) + 0.4 * vnoise(x * 2.3 + 7, y * 2.3, z * 2.3);
+        c = handW > 0.25 ? CUFF : CAMO[Math.min(CAMO.length - 1, Math.floor(n * CAMO.length * 1.15))]; }
+      col[i * 3] = c[0] ** 2.2; col[i * 3 + 1] = c[1] ** 2.2; col[i * 3 + 2] = c[2] ** 2.2; } // palette is sRGB; vertex colours are linear
+    o.geometry = g.clone(); o.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (o.material) { o.material = o.material.clone(); o.material.map = null; o.material.vertexColors = true; o.material.color.setRGB(1, 1, 1); o.material.roughness = 0.9; o.material.metalness = 0; o.material.needsUpdate = true; } });
   root.scale.setScalar(+(QP.get('armscale') || 0.1));
   root.rotation.y = +(QP.get('armrot') || 0) * Math.PI / 180; // rig already faces -Z; the old PI flip put the right arm on the left
-  { const v = (QP.get('armpos') || '-0.05,0.0,0.2').split(',').map(Number); root.position.set(v[0], v[1], v[2]); } // shoulders roughly at eye height, just behind the camera (rig space)
+  { const v = (QP.get('armpos') || '-0.05,-0.06,0.2').split(',').map(Number); root.position.set(v[0], v[1], v[2]); } // shoulders roughly at eye height, just behind the camera (rig space)
   const clip = (clips || []).find((c) => c.name === 'grip');
   if (clip) for (const t of clip.tracks) { // apply grip pose directly: track names keep Blender's dots, node names don't
     const i = t.name.lastIndexOf('.'), prop = t.name.slice(i + 1), o = B(THREE.PropertyBinding.sanitizeNodeName(t.name.slice(0, i)).replace(/\./g, ''));
@@ -58,7 +77,8 @@ export function createArms(src, clips, camera) {
     let gyB = Infinity, gf = 0.72; for (let f = 0.62; f <= 0.8; f += 0.02) { const y = lo[binAt(f)]; if (y < gyB) { gyB = y; gf = f; } }
     const guardBot = Math.min(lo[binAt(0.25)], lo[binAt(0.3)]), recvBot = lo[binAt(0.6)];
     // right hand round the middle-upper pistol grip; left palm under the handguard; magwell for reloads
-    api.grip.position.set(0.0, gyB + (recvBot - gyB) * 0.6, zAt(gf - 0.02)); api.guard.position.set(0.0, guardBot - 0.005, zAt(+(QP.get('guardf') || 0.24)));
+    api.grip.position.set(0.0, gyB + (recvBot - gyB) * +(QP.get('gripy') || 0.4), zAt(gf + 0.01)); // round the grip itself (tester: hand sat under the receiver)
+    api.guard.position.set(0.0, guardBot - 0.005, zAt(+(QP.get('guardf') || 0.24)));
     api.mag.position.set(0.0, lo[binAt(0.5)] + 0.03, zAt(0.5)); api.profile = { muzzleAtMin, gf, gyB, guardBot, recvBot, len };
     holder.add(api.grip, api.guard, api.mag); api.holder = holder;
   };
@@ -92,7 +112,7 @@ export function createArms(src, clips, camera) {
     // left hand: handguard, or down to the magazine and back during a reload
     api.guard.getWorldPosition(_tg);
     if (reloadT > 0) { const w = Math.sin(Math.min(1, reloadT) * Math.PI); api.mag.getWorldPosition(_a); _a.y -= 0.12 * w; _tg.lerp(_a, Math.min(1, w * 1.6)); }
-    camera.localToWorld(_pole.set(-0.5, -1.0, 0.0)); solve(L, _tg, _pole);
+    camera.localToWorld(_pole.set(-0.9, -1.0, 0.3)); solve(L, _tg, _pole); // elbow down and out: forearm angles up to the handguard instead of standing stiff
   };
   return api;
 }
