@@ -35,6 +35,22 @@ export function createInput(canvas) {
     if (Math.abs(aimDX - ax) < 1e-4) ax = aimDX;
     if (Math.abs(aimDY - ay) < 1e-4) ay = aimDY;
     aimDX -= ax; aimDY -= ay;
+    // Touch-only aim assist (App PM: subtle, no snapping): view-only. Near a visible live enemy the drag slows (friction)
+    // and gains a light pull toward the enemy's chest, proportional to the drag itself (no drag = no motion). Shots are
+    // never redirected by this; the hit ray is still the crosshair.
+    if (input.touch && window.SS && window.SS.camera && window.SS.enemies && window.SS.enemies.list && !/[?&]noassist\b/.test(location.search)) {
+      const cam = window.SS.camera, cp = cam.position; let best = null, bestA = (input.scope ? 2.5 : 5) * Math.PI / 180;
+      const fy = Math.sin(input.yaw), fz = -Math.cos(input.yaw);
+      for (const e of window.SS.enemies.list) { if (!e || !e.alive || e.dying || !e.seen) continue; const gp = e.group.position;
+        const dx = gp.x - cp.x, dz = gp.z - cp.z, dy = gp.y + 1.25 - cp.y, h = Math.hypot(dx, dz); if (h < 1 || h > 80) continue;
+        const ey = Math.atan2(dx, -dz), ep = -Math.atan2(dy, h); let dyaw = ey - input.yaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw)); const dp = ep - input.pitch;
+        const ang = Math.hypot(dyaw, dp); if (ang < bestA) { bestA = ang; best = { dyaw, dp, ang }; } }
+      if (best) { const mag = Math.hypot(ax, ay), lim = (input.scope ? 2.5 : 5) * Math.PI / 180; const w = 1 - best.ang / lim;
+        const fr = 1 - 0.35 * w; ax *= fr; ay *= fr; // friction near the target
+        const pull = Math.min(0.15 * mag, 0.5 * best.ang) * w; if (pull > 0) { ax += best.dyaw / best.ang * pull; ay += best.dp / best.ang * pull; }
+        input.assistW = w; } else input.assistW = 0;
+      void fy; void fz;
+    }
     // 360 deg aim (was clamped to +-60 deg, so enemies beside/behind the player could not be aimed at or hit).
     input.yaw += ax; if (input.yaw > Math.PI) input.yaw -= Math.PI * 2; else if (input.yaw < -Math.PI) input.yaw += Math.PI * 2;
     input.pitch = clamp(input.pitch + ay, -PITCH_LIMIT, PITCH_LIMIT);
