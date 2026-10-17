@@ -813,8 +813,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // the kind follows need (low reserve -> ammo, low health -> health).
     if (SSx.stakes) { dryKills += 1; const now = performance.now(); const w = SSx.weapon || {};
       if (Math.random() < 0.5 || dryKills >= 3 || now - lastDropT > 20000) { dryKills = 0; lastDropT = now;
-        const needAmmo = (w.reserve | 0) < 60, needHp = (SSx.health ?? 100) < 65;
-        SSx.stakes.drop(needAmmo && !(needHp && (SSx.health ?? 100) < (w.reserve | 0)) ? 'ammo' : needHp ? 'health' : (Math.random() < 0.5 ? 'ammo' : 'health'), origin.clone()); } }
+        // never health at full HP; otherwise whichever need is bigger (missing HP vs missing reserve of a 120-round load)
+        const hp = SSx.player ? SSx.player.health : (SSx.health ?? 100), hpNeed = (100 - hp) / 100, ammoNeed = 1 - Math.min(1, (w.reserve | 0) / 120);
+        const kind = hp >= 99.5 ? 'ammo' : hpNeed > ammoNeed ? 'health' : ammoNeed > hpNeed ? 'ammo' : (Math.random() < 0.5 ? 'ammo' : 'health');
+        SSx.stakes.drop(kind, origin.clone()); } }
     if (aliveCount() === 0) { SSx.slowmoUntil = performance.now() + 750; if (SSx.hud && SSx.hud.banner) setTimeout(() => {}, 0); }
   }
 
