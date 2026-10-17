@@ -220,6 +220,11 @@ function onResize() {
   post.setSize(window.innerWidth, window.innerHeight);
 }
 window.addEventListener('resize', onResize);
+// Title backdrop (tester m1r: black title on Low/High): the frame loop only starts on Play, so until then redraw the
+// street a few times a second (also after resizes, which clear the canvas).
+{ let lastTitle = 0; const titleDraw = (t) => { if (started) return; if (t - lastTitle > 250 && art.done) { lastTitle = t;
+    try { camera.updateMatrixWorld(); if (Q.post && !post.low) post.render(); else renderer.render(scene, camera); } catch (e) {} } requestAnimationFrame(titleDraw); };
+  requestAnimationFrame(titleDraw); }
 
 const overEl = document.getElementById('over');
 const overNew = document.getElementById('over-new');
@@ -272,7 +277,7 @@ function restartRun() {
   eye = 1.7;
   window.SS.distance = 0;
   window.SS.health = 100;
-  window.SS.bursting = false;
+  window.SS.bursting = false; window.SS.engaged = 0; window.SS.waveClears = 0; window.SS.slowmoUntil = 0; window.SS.runs = (window.SS.runs | 0) + 1;
   window.SS.walking = true;
   window.SS.running = true; window.SS.startedAt = performance.now(); document.body.classList.remove('title'); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   cover.reset();
@@ -291,6 +296,7 @@ window.SS.onDeath = function onDeath() {
 document.getElementById('play').addEventListener('click', () => {
   audio.unlock();
   document.getElementById('start').style.display = 'none';
+  restartRun(); // first start and Restart share one full reset (tester m1r: Restart left wave/spawner state behind)
   window.SS.walking = true;
   window.SS.running = true; window.SS.startedAt = performance.now(); document.body.classList.remove('title'); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   if (!started) {

@@ -190,15 +190,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     turnTo(e, camera.position.x, camera.position.z, 100); e.shootCd = 1e9; return e; };
 
   let phase = 'quiet';
-  let phaseT = 2.5;
-  let quietCap = 1;
+  let phaseT = 0;
+  let quietCap = 0, waveOpen = false; // never stragglers (a quiet-phase spawn made the first wave 1 or 3)
+  const FIRST_WAVE_AT = 6;
+  let waveSpawned = 0, waveTotal = 0; // hard cap: every wave has a fixed total, truck included
   let burstCap = 3, burstSpawned = 0, waveActive = false, roofWave = false;
   let spawnCd = 1.2;
   let lastReal = 0, lastProg = 0, noProgT = 0, losT = 0, anySeen = false;
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
   let stallT = 0, standT = 0, graceT = 0, runT = 0, pressure = 0;
   let waveClears = 0;
-  let breatherTo = 0;          // no spawns until the player has walked this far (breather after WAVE CLEARED)
+  let breatherTo = 6;          // no spawns until the player has walked this far (breather after WAVE CLEARED)
   let prevHold = false;       // edge-detect walk resume -> WAVE CLEARED
   let displayEngaged = 0;     // stable ENEMIES HUD: only rises on new engage, falls on death
   let contactHintShown = false;
@@ -1413,7 +1415,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const alive = aliveCount();
     const dNow = window.SS ? window.SS.distance : 0;
     if (phase === 'quiet') {
-      if (phaseT <= 0 && dNow >= breatherTo) { // a real 25-40 m walk after each cleared wave
+      if (phaseT <= 0 && dNow >= breatherTo && !waveActive && alive === 0 && truckPending === 0) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
         phase = 'burst';
         burstIndex += 1;
         if (window.SS) window.SS.bursting = true;
@@ -1427,6 +1429,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         // Tester: 2-3 enemies per wave; the last one of a 3-wave (or 1 in 2 of 2-waves) is a visible flanker.
         // Step D: escalating waves (2, 2, 3, 3, then 3-4) + a reinforcement truck (+2) every 4th wave.
         burstCap = burstIndex <= 2 ? 2 : burstIndex <= 4 ? 3 : (Math.random() < 0.5 ? 4 : 3);
+        waveOpen = true; waveSpawned = 0; waveTotal = burstCap + (burstIndex >= 4 && burstIndex % 4 === 0 ? 2 : 0); if (window.SS) window.SS.waveTotal = waveTotal;
         if (burstIndex >= 4 && burstIndex % 4 === 0) startTruck();
         burstSpawned = 0; roofWave = Math.random() < 0.5;
         phaseT = 8 + Math.random() * 6;
@@ -1444,13 +1447,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const cap = phase === 'quiet' ? quietCap : burstCap;
     spawnCd -= dt;
     // Fixed wave: the whole wave (burstCap) spawns at burst start in one go; no reinforcements ever, no spawns once engaged.
-    const canSpawn = (phase === 'burst' ? (burstSpawned < burstCap && !waveActive) : alive < cap) && (firstKill || runSpawns < 2);
+    const canSpawn = (phase === 'burst' ? (burstSpawned < burstCap && !waveActive) : alive < cap) && (firstKill || runSpawns < 2) && phase === 'burst' && waveSpawned < burstCap; // hard cap: a wave never spawns more than its size (truck adds its own 2 once)
     if (window.SS && window.SS.running && !CALM && canSpawn && dNow >= breatherTo) for (let tries = 0; tries < 6 && (phase === 'burst' ? burstSpawned < burstCap : tries < 1) && (phase === 'burst' || spawnCd <= 0); tries++) {
       const flankSlot = phase === 'burst' && burstSpawned === burstCap - 1 && (burstCap === 3 || Math.random() < 0.5);
       const roofSlot = phase === 'burst' && burstSpawned === 1 && burstIndex >= 2 && roofWave;
       const made = spawnOne(flankSlot ? 'flanker' : roofSlot ? 'roof' : (phase === 'burst' && burstSpawned === 0 ? 'shifter' : undefined)) || ((flankSlot || roofSlot) ? spawnOne() : null);
       if (made && roofSlot && made.anchor && made.anchor.type === 'roof') { squadCall('Rooftop!'); if (window.SS) window.SS.roofShooters = (window.SS.roofShooters | 0) + 1; }
-      if (made) runSpawns++;
+      if (made) { runSpawns++; waveSpawned++; if (window.SS && !window.SS.firstWave && burstIndex === 1) window.SS.firstWave = { d: +dNow.toFixed(1) }; }
       if (made && phase === 'burst') burstSpawned++;
       if (made && (window.SS.engaged > 0 || waveActive) && !made.fromTruck) window.SS.spawnsWhileEngaged = (window.SS.spawnsWhileEngaged | 0) + 1; // must stay 0 (no reinforcements)
       spawnCd = made ? 2.2 : 0.6;
@@ -1552,7 +1555,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // Stable ENEMIES counter: rises only when newly engaged appear, falls on engaged deaths (no silent mid-fight bumps from unengaged spawns).
     displayEngaged = aliveCount() + truckPending; // total remaining in the wave (incl. truck still driving in)
     if (!hold) displayEngaged = 0;
-    if (running && prevHold && !hold && window.SS.hud && window.SS.hud.banner) {
+    // Tester m1r: a wave is cleared once its fixed total has spawned and every member is dead, whether or not the
+    // squad halted for it (fighters dropped before engaging used to leave the wave 'uncleared': no cue, no count).
+    const waveDone = waveOpen && waveSpawned >= burstCap && aliveCount() === 0 && truckPending === 0 && !hold;
+    if (waveDone) waveOpen = false;
+    if (running && waveDone && window.SS.hud && window.SS.hud.banner) {
       waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing'); try { squadCall('Clear! Moving up.'); } catch (_) {} // tester m1q: clear cue when the walk resumes
       breatherTo = window.SS.distance + 10 + Math.random() * 5; phase = 'quiet'; phaseT = 0; // tester: short 10-15 m breather window.SS.bursting = false;
     }
@@ -1622,13 +1629,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
       blood[i].sprite.visible = false;
     }
     phase = 'quiet';
-    phaseT = 2.5;
-    breatherTo = 0;
-    quietCap = 1;
+    phaseT = 0;
+    breatherTo = FIRST_WAVE_AT; // first wave at the same distance every run (tester: 6/8/12 m)
+    quietCap = 0;
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;
+    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false;
+    if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
     if (window.SS) window.SS.bursting = false;
   }
 

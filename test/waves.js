@@ -13,7 +13,9 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
       await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms) { const t0 = performance.now(); while (performance.now() - t0 < ms) {} } cb(t); }); });
       await p.goto('http://127.0.0.1:' + PORT + '/?seed=' + (process.env.SS_SEED || 1) + '&slow=' + (process.env.SS_SLOW || 60) + '&q=' + (mode === 'high' ? 'high' : 'low')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
       if (mode === 'ultra') await p.evaluate(() => SS.goUltra('test'));
-      await p.evaluate((c) => { window.__cone = c; }, process.env.SS_CONE !== '0'); await p.click('#play'); await p.waitForTimeout(1000); await p.evaluate(() => { window.__slowMs = +(new URLSearchParams(location.search).get("slow") || 110); });
+      await p.evaluate((c) => { window.__cone = c; }, process.env.SS_CONE !== '0'); await p.click('#play'); await p.waitForTimeout(1000);
+      if (process.env.SS_WAVES_RESTART) { // restart from the end screen first (tester m1r: Restart left run state behind)
+        await p.waitForTimeout(6000); await p.evaluate(() => SS.onDeath()); await p.waitForTimeout(1200); await p.click('#restart'); await p.waitForTimeout(1000); r.restarted = true; } await p.evaluate(() => { window.__slowMs = +(new URLSearchParams(location.search).get("slow") || 110); });
       const t0 = Date.now(); let last = '';
       while (Date.now() - t0 < LIMIT) {
         const s = await p.evaluate(() => { const v = SS.camera.position.clone(), c = SS.camera.position;
@@ -38,7 +40,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
             SS.input.fire = Math.abs(dy) < 0.035 && Math.abs(wp - SS.input.pitch) < 0.035; } else SS.input.fire = false; window.__lt = performance.now();
           const over = (() => { const o = document.getElementById('over'); return !!(o && o.offsetParent !== null && getComputedStyle(o).display !== 'none'); })();
           return { k: SS.scoreSys && SS.scoreSys.state ? SS.scoreSys.state.kills : 0, ws: window.__ws ? window.__ws.phantom + '/' + window.__ws.eye : '', over, hp: Math.round(SS.health), d: Math.round(SS.distance), w: SS.waveClears | 0, alive: (SS.enemies.list || []).filter((e) => e.alive).length, ammo: SS.weapon.ammo + '/' + SS.weapon.reserve, walking: SS.walking, see: Math.round(see), fps: SS.benchFps, q: SS.quality }; });
-        r.last = s; if ((s.w | 0) >= 2 || (s.k >= 5 && s.d >= 40)) { r.passed = true; break; } if (s.d !== r.dmax) { r.dmax = s.d; r.dT = Date.now(); } if (Date.now() - (r.dT || t0) > 60000) { r.stalled = true; break; } if (s.over) { r.died = true; break; }
+        r.last = s; if ((s.w | 0) >= 2 || (!process.env.SS_WAVES_RESTART && s.k >= 5 && s.d >= 40)) { r.passed = true; break; } if (s.d !== r.dmax) { r.dmax = s.d; r.dT = Date.now(); } if (Date.now() - (r.dT || t0) > 60000) { r.stalled = true; break; } if (s.over) { r.died = true; break; }
         const k = s.d + '/' + s.w; if (k !== last) { last = k; console.log(mode, Math.round((Date.now() - t0) / 1000) + 's', JSON.stringify(s)); }
         await p.waitForTimeout(300);
       }
