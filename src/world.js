@@ -266,7 +266,10 @@ export function createWorld(scene, seed) {
   const shotMeshes = []; let shotVer = 0, shotCache = null, shotKey = '';
   function shotModel(seg, obj, ...boxes) { for (const b of boxes) if (b) b.userData.noShot = true;
     obj.traverse((o) => { if (o.isMesh) { o.userData.segId = seg.id; o.userData.shotProp = true; shotMeshes.push(o); (seg.shotOwned || (seg.shotOwned = [])).push(o); } }); shotVer++; }
-  function shotList() { const k = colliders.length + ':' + shotVer; if (k !== shotKey || !shotCache) { shotKey = k; shotCache = colliders.filter((m) => !m.userData.noShot).concat(shotMeshes); } return shotCache; }
+  // Shots stop only on what is drawn: a prop mesh hidden by LOD / Ultra-low trim must not block (waves phantom metric).
+  const drawn = (o) => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
+  let shotT = -1;
+  function shotList() { const k = colliders.length + ':' + shotVer, now = performance.now(); if (k !== shotKey || !shotCache || now - shotT > 100) { shotKey = k; shotT = now; shotCache = colliders.filter((m) => !m.userData.noShot).concat(shotMeshes.filter(drawn)); } return shotCache; }
 
   function addBox(seg, mat, x, y, z, sx, sy, sz, opts = {}) {
     const m = new THREE.Mesh(boxGeo, mat);
