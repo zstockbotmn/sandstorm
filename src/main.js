@@ -375,7 +375,11 @@ onLow(() => {
 window.SS.gpu = rendererString(renderer.getContext());
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
 // Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.
-{ let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => { if (window.SS.quality === 'ultra-low' || (EXPLICIT && !/[?&]ultra=1/.test(location.search)) || !(raw > 0)) { n = t = 0; return; }
+{ let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => {
+    // Ultra-low still too slow (tester box < 3.5 fps): step the render scale down 0.4 -> 0.3 -> 0.22 (ultra-low only).
+    if (window.SS.quality === 'ultra-low' && raw > 0 && !EXPLICIT) { n++; t += raw; if (t < 3) return; const fps = n / t; n = t = 0; window.SS.benchFps = Math.round(fps * 10) / 10;
+      if (fps < 4 && Q.res > 0.23) { Q.res = Math.max(0.22, +(Q.res * 0.75).toFixed(2)); window.SS.ultraRes = Q.res; onResize(); } return; }
+    if (window.SS.quality === 'ultra-low' || (EXPLICIT && !/[?&]ultra=1/.test(location.search)) || !(raw > 0)) { n = t = 0; return; }
     if (skip > 0) { skip--; return; } // first frames include load/compile
     n++; t += raw; const win = window.SS.running ? 3 : 2; if (t < win) return;
     const fps = n / t; window.SS.benchFps = Math.round(fps * 10) / 10; n = t = 0; if (window.SS.quality === 'low') { if (fps < 10) goUltra('fps<10'); } else if (fps < 20) goLow('fps<20'); }; }
