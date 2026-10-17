@@ -1508,7 +1508,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (e.pinned) { if (e.debugVel) { e.group.position.addScaledVector(e.debugVel, dt); e.moving = true; e.moveKind = 'run'; e.moveSpeed = e.debugVel.length(); } }
       // Tester m1r / waves (Ultra-low): a fighter that flanked behind the player and stays out of view kept ENEMIES at 1 and the
       // walk halted for good. Engaged fighters behind the player (and off-screen) for 6 s are brought to visible cover ahead.
-      else if (e.engaged && !(e.anchor && isElevated(e.anchor.type)) && e.group.position.z > pz - 0.5 && !inView(e) && ((e.behindT = (e.behindT || 0) + dt) > 6)) { e.behindT = 0; toVisibleCover(e); }
+      else if (e.engaged && !e.dying && Math.abs(e.group.position.y) < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && e.group.position.z > pz - 0.5 && !inView(e) && ((e.behindT = (e.behindT || 0) + dt) > 6)) { e.behindT = 0; toVisibleCover(e); }
       else if (e.group.position.z > pz + 40 && e.engaged && !(e.anchor && isElevated(e.anchor.type))) toVisibleCover(e); // engaged enemies behind stay put (360 deg aim); only far-behind ones are brought back
       // Despawn only unengaged fighters left behind, or anything very far behind (tester: an engaged fighter ~12 m to the
       // side, slightly behind, vanished - every enemy 6-40 m behind was despawned, engaged or not).
