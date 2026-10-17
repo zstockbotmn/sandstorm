@@ -12,7 +12,7 @@ export const WAVE1_SOFT_S = 40;
 // the player could see it. A hit now needs the shooter continuously visible (game's own gate) for this long, in real AND
 // game time; a relocation/teleport restarts that clock, cancels the burst and holds fire for the same time.
 export const SEEN_BEFORE_HIT_S = 0.6; // within 3 s of a relocation/teleport
-export const SEEN_PEEK_S = 0.2; // ordinary peeks from the same cover (still no first-frame hits)
+export const SEEN_PEEK_S = 0; // ordinary peeks from the same cover: only the instantaneous gate (the 0.2 s hold pushed stand-still death past 180 s)
 // cover grace: COVER_GRACE_S in cover.js
 const BODY_DMG = 55;
 const HEAD_DMG = 100;
