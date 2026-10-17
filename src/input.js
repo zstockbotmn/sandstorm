@@ -178,7 +178,7 @@ export function createInput(canvas) {
   window.addEventListener('mouseup', () => { if (fireTouches === 0) { firePid = null; fireBtn = false; sync(); } }, true);
   window.addEventListener('blur', () => { firePid = null; fireTouches = 0; fireBtn = false; sync(); });
   input.pollFire = function pollFire() { let act = false; try { act = buttons.fire.matches(':active') && !kia(); } catch (_) {}
-    input.fire = fireBtn || fireKey || fireMouse || act; input.fireHeld = input.fire; };
+    if (act || fireBtn || fireKey || fireMouse) input.fire = true; input.fireHeld = input.fire; }; // only ever adds a hold (releases clear it via sync)
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
