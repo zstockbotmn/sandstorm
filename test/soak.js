@@ -29,7 +29,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
       if (Date.now() - t0 > sample * 30000) { sample++; res.last = await p.evaluate(() => { const S = window.__soak, fr = S.fr.splice(0); fr.sort((a, b) => a - b);
         const r = SS.renderer.info, s = { t: Math.round(performance.now() / 1000), d: Math.round(SS.distance), kills: SS.scoreSys.state.kills, runs: S.runs, hp: Math.round(SS.health), ammo: SS.weapon.ammo + '/' + SS.weapon.reserve,
           alive: (SS.enemies.list || []).filter((e) => e.alive).length, enemies: (SS.enemies.list || []).length, p50: +(fr[fr.length >> 1] || 0).toFixed(1), p95: +(fr[Math.floor(fr.length * 0.95)] || 0).toFixed(1),
-          geo: r.memory.geometries, tex: r.memory.textures, prog: (r.programs || []).length, calls: r.render.calls, heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e6) : null,
+          geo: r.memory.geometries, tex: r.memory.textures, prog: (r.programs || []).length, calls: r.render.calls, shots: SS.weapon.shotsFired, hit: SS.weapon.shotsHit, heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e6) : null,
           objs: (() => { let n = 0; SS.scene.traverse(() => n++); return n; })(), errs: (SS.errors || []).length }; S.samples.push(s); return s; }); console.log(JSON.stringify(res.last)); }
       await p.waitForTimeout(400);
     }
