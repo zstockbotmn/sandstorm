@@ -15,6 +15,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
       if (mode === 'ultra') await p.evaluate(() => SS.goUltra('test'));
       await p.evaluate((c) => { window.__cone = c; }, process.env.SS_CONE !== '0'); await p.click('#play'); await p.waitForTimeout(1000);
       // m1t: every hit on the player must come from a fighter the player could see (eye ray against drawn meshes, in the haze)
+      await p.evaluate((v) => { window.__wdbg = v; }, !!process.env.SS_WAVES_DBG);
       await p.evaluate(() => { if (window.__dmgHook) return; window.__dmgHook = 1; window.__uh = { hits: 0, unseen: 0, ex: [] }; const P = SS.player, d0 = P.damage.bind(P);
         P.damage = (amount, from) => { try { const c = SS.camera.position, dens = SS.scene.fog && SS.scene.fog.density || 0; const U = window.__uh; U.hits++;
             let best = null, bd = 1e9; for (const e of SS.enemies.list || []) { if (!e.alive) continue; const q = e.group.position; const dd = from ? q.distanceTo(from) : 0; if (dd < bd) { bd = dd; best = e; } }
@@ -41,7 +42,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
             if (eh.length) return false; // eye says hidden
             const h = SS.weapon.firstHit(c.clone(), dir); const ok = !!(h && h.object.userData && h.object.userData.enemy === e);
             const S = window.__ws || (window.__ws = { eye: 0, phantom: 0, ex: [] }); const sig = e.group.position.toArray().map((v) => v.toFixed(2)).join(',') + ':' + (h ? h.distance.toFixed(2) : '-') + '/' + dd.toFixed(2); if (sig === S.lastSig) return true; S.lastSig = sig; // one slow frame polled twice = one look
-            S.eye++; if (!ok && h && dd - h.distance > 0.5) { S.phantom++; if (S.ex.length < 5) S.ex.push((h.object.name || h.object.type) + '@' + h.distance.toFixed(1) + '/' + dd.toFixed(1) + (process.env.SS_WAVES_DBG ? ' ' + JSON.stringify({ vis: h.object.visible, par: h.object.parent && (h.object.parent.name || h.object.parent.type), ud: Object.keys(h.object.userData || {}), col: SS.world.colliders.includes(h.object), mat: !!h.object.material && (h.object.material.visible !== false), pos: h.point.toArray().map((v) => +v.toFixed(1)), geo: h.object.geometry && h.object.geometry.type }) : '')); }
+            S.eye++; if (!ok && h && dd - h.distance > 0.5) { S.phantom++; if (S.ex.length < 5) S.ex.push((h.object.name || h.object.type) + '@' + h.distance.toFixed(1) + '/' + dd.toFixed(1) + (window.__wdbg ? ' ' + JSON.stringify({ vis: h.object.visible, par: h.object.parent && (h.object.parent.name || h.object.parent.type), ud: Object.keys(h.object.userData || {}), col: SS.world.colliders.includes(h.object), mat: !!h.object.material && (h.object.material.visible !== false), pos: h.point.toArray().map((v) => +v.toFixed(1)), geo: h.object.geometry && h.object.geometry.type }) : '')); }
             return true; };
           const list = (SS.enemies.list || []).filter((e) => e.alive && !e.dying && vis(e)).sort((a, b) => a.group.position.distanceTo(c) - b.group.position.distanceTo(c));
           const tgt = list[0]; if (tgt) { const bm = SS.weapon.targets.find((m) => m.userData.enemy === tgt && m.userData.part === 'body'); if (bm) bm.getWorldPosition(v); else { tgt.group.getWorldPosition(v); v.y += 1.2; } v.sub(c);
