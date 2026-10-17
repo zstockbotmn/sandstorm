@@ -11,7 +11,10 @@ export function createAudio() {
   let distantT = 7;
   let wasBurst = false;
 
-  function ensure() {
+  // m1v: the gesture only creates/resumes the context (cheap); the graph (impulse + noise buffers, ~250k random
+  // samples) is built after the 'Starting...' frame painted - building it inside the Play press held that paint back.
+  let built = false, buildQueued = false;
+  function ensureCtx() {
     if (ctx) return true;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
@@ -19,6 +22,12 @@ export function createAudio() {
     master = ctx.createGain();
     master.gain.value = live ? 0.75 : 0; // m1u: silent until the first run frame is on screen (audio came before the picture)
     master.connect(ctx.destination);
+    return true;
+  }
+  function ensure() {
+    if (built) return true;
+    if (!ensureCtx()) return false;
+    built = true;
 
     const seconds = 0.85;
     const len = (ctx.sampleRate * seconds) | 0;
@@ -310,9 +319,10 @@ export function createAudio() {
   }
 
   function unlock() {
-    if (!ensure()) return;
+    if (!ensureCtx()) return;
     unlocked = true;
     if (ctx.state === 'suspended') ctx.resume();
+    if (!built && !buildQueued) { buildQueued = true; requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(ensure, 0))); }
   }
 
   function update(dt) {

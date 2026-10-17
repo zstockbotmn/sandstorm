@@ -227,12 +227,16 @@ function onResize() {
 window.addEventListener('resize', onResize);
 // Title backdrop (tester m1r: black title on Low/High): the frame loop only starts on Play, so until then redraw the
 // street a few times a second (also after resizes, which clear the canvas).
-{ let lastTitle = 0, lastRaf = 0; const titleDraw = (t) => { if (started) return; if (document.body.classList.contains('starting')) { requestAnimationFrame(titleDraw); return; } // m1v: no title GPU work while 'Starting...' must get on screen
+{ let lastTitle = 0, lastRaf = 0, lastSig = '', doneT = 0; const titleDraw = (t) => { if (started) return; if (document.body.classList.contains('starting')) { requestAnimationFrame(titleDraw); return; } // m1v: no title GPU work while 'Starting...' must get on screen
     // m1u: with no manual pick the title also benchmarks (a fresh profile sat on High at 0.5 fps): draw every frame and
     // feed the real frame time to the auto tier steps until the tier settles; a pick/?q= keeps the cheap 4 Hz redraw.
     const bench = !EXPLICIT && !PICKED && window.SS.quality !== 'ultra-low' && art.done && !/[?&]titlebench=0\b/.test(location.search); const raw = lastRaf ? (t - lastRaf) / 1000 : 0; lastRaf = t;
     if (bench && raw > 0 && window.SS.autoLowTick) window.SS.autoLowTick(Math.min(raw, 1));
-    if (bench || t - lastTitle > (art.done ? 250 : 400)) { lastTitle = t; // m1s: draw the placeholder street immediately, real art as it lands
+    // m1v: the title view is static - outside the bench, redraw only when something changed (art/textures landed, resize)
+    // plus a 1 Hz settle for 4 s after the art is done; a 4 Hz full redraw held a throttled press back by seconds.
+    const sig = (art.done ? 1 : 0) + ':' + scene.children.length + ':' + renderer.domElement.width + 'x' + renderer.domElement.height + ':' + renderer.info.memory.textures + ':' + renderer.info.memory.geometries;
+    if (art.done && !doneT) doneT = t; const settle = doneT && t - doneT < 4000 && t - lastTitle > 1000;
+    if (bench || sig !== lastSig || settle || (!art.done && t - lastTitle > 400)) { lastTitle = t; lastSig = sig; // m1s: draw the placeholder street immediately, real art as it lands
     try { camera.updateMatrixWorld(); if (Q.post && !post.low) post.render(); else renderer.render(scene, camera); } catch (e) {} } requestAnimationFrame(titleDraw); };
   requestAnimationFrame(titleDraw); }
 
@@ -283,7 +287,7 @@ function restartRun() {
   input.pitch = 0;
   input.resetState(); hud.setScope(false);
   camera.position.set(0, 1.7, 4);
-  fov = BASE_FOV;
+  fov = BASE_FOV; camera.fov = BASE_FOV; camera.updateProjectionMatrix(); // m1v: restart leaves the scope fully (fov back now)
   eye = 1.7;
   window.SS.distance = 0;
   window.SS.health = 100;
@@ -311,12 +315,21 @@ window.SS.firstRunFrame = () => { if (!document.body.classList.contains('startin
 // m1v: heavy start work only after the 'Starting...' frame was produced: two rAFs (the first frame with the overlay has
 // been committed) plus a short timeout so a slow GPU/compositor presents it before shader compiles/uploads queue up.
 const afterPaint = (fn) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(fn, 200))));
-{ const pb = document.getElementById('play'); pb.addEventListener('pointerdown', (ev) => { if (ev.cancelable) ev.preventDefault(); try { audio.unlock(); } catch (_) {} pb.click(); }); }
-document.getElementById('play').addEventListener('click', () => {
-  audio.unlock(); if (playDone) return; playDone = true; window.SS.pressT = performance.now(); document.body.classList.add('starting'); afterPaint(startNow); });
+// m1v: the overlay goes into the DOM first thing in the press; audio.unlock only creates/resumes the context (its graph is
+// built after the paint) and the heavy start waits for afterPaint.
+const playPress = (ev) => { if (!playDone) { playDone = true; const now = performance.now(); window.SS.pressT = now; document.body.classList.add('starting');
+    window.SS.startDiag = { queueMs: ev && ev.timeStamp ? Math.round(now - ev.timeStamp) : null }; requestAnimationFrame(() => { window.SS.startDiag.raf1Ms = Math.round(performance.now() - now); });
+    afterPaint(startNow); } try { audio.unlock(); } catch (_) {} };
+{ const pb = document.getElementById('play'); pb.addEventListener('pointerdown', (ev) => { if (ev.cancelable) ev.preventDefault(); playPress(ev); }); pb.addEventListener('click', playPress); }
 function startNow() { window.SS.startNowAt = Date.now(); // m1v: wall clock when the heavy start begins (tests compare with presented frames)
   document.getElementById('start').style.display = 'none';
   restartRun(); // first start and Restart share one full reset (tester m1r: Restart left wave/spawner state behind)
+  // m1v: chunked heavy start - yield after the reset, then compile the run's shaders asynchronously (parallel compile
+  // where available, capped at 2.5 s) before the first run frame, so the page keeps painting 'Starting...'.
+  setTimeout(() => { let done = false; const go = () => { if (done) return; done = true; startRunLive(); };
+    try { const pr = renderer.compileAsync ? renderer.compileAsync(scene, camera) : null; if (pr && pr.then) { pr.then(go, go); setTimeout(go, 2500); } else go(); } catch (_) { go(); } }, 0);
+}
+function startRunLive() {
   window.SS.walking = true;
   window.SS.running = true; window.SS.startedAt = performance.now(); document.body.classList.remove('title'); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   if (!started) {
@@ -327,7 +340,7 @@ function startNow() { window.SS.startNowAt = Date.now(); // m1v: wall clock when
 
 // Act on pointerdown (tester: short taps dropped at low fps - a click needs down+up on the same element); click is the
 // keyboard/fallback path, de-duplicated so one press never restarts twice.
-{ let lastR = 0; const go = (e) => { const now = performance.now(); if (now - lastR < 600) return; lastR = now; if (e && e.preventDefault) e.preventDefault(); audio.unlock(); try { audio.hush(); } catch (_) {} window.SS.pressT = now; document.body.classList.add('starting'); afterPaint(() => { window.SS.startNowAt = Date.now(); restartRun(); requestAnimationFrame(() => requestAnimationFrame(() => window.SS.firstRunFrame())); }); };
+{ let lastR = 0; const go = (e) => { const now = performance.now(); if (now - lastR < 600) return; lastR = now; if (e && e.preventDefault) e.preventDefault(); audio.unlock(); try { audio.hush(); } catch (_) {} input.scope = false; hud.setScope(false); window.SS.pressT = now; /* m1v: scope + overlay drop on the press itself */ document.body.classList.add('starting'); afterPaint(() => { window.SS.startNowAt = Date.now(); restartRun(); requestAnimationFrame(() => requestAnimationFrame(() => window.SS.firstRunFrame())); }); };
   const rb = document.getElementById('restart'); rb.addEventListener('pointerdown', go); rb.addEventListener('click', go); }
 
 showBest();
