@@ -130,7 +130,8 @@ function applyCamera(dt) {
   const aim = 1 - Math.exp(-36 * dt); // snappier ADS so soft-GL / low fps still reaches ~2.5x
   const duck = 1 - Math.exp(-14 * dt);
   fov = st.scope ? SCOPE_FOV : BASE_FOV; // instant zoom (lerp took 2-3 s at low fps)
-  eye += ((st.cover ? 1.28 : 1.7) - eye) * duck; // crouched eye clears lowered sandbags (~0.9 m)
+  const upEye = cover.kind === 'car' && cover.state !== 'none' ? 1.85 : 1.7; // m1s: see over a burned car's roof
+  eye += ((st.cover ? (cover.kind === 'car' && cover.state !== 'none' ? 1.32 : 1.28) : upEye) - eye) * duck; // crouched eye clears lowered sandbags (~0.9 m)
   if (Math.abs(camera.fov - fov) > 0.01) {
     camera.fov = fov;
     camera.updateProjectionMatrix();
@@ -222,7 +223,7 @@ function onResize() {
 window.addEventListener('resize', onResize);
 // Title backdrop (tester m1r: black title on Low/High): the frame loop only starts on Play, so until then redraw the
 // street a few times a second (also after resizes, which clear the canvas).
-{ let lastTitle = 0; const titleDraw = (t) => { if (started) return; if (t - lastTitle > 250 && art.done) { lastTitle = t;
+{ let lastTitle = 0; const titleDraw = (t) => { if (started) return; if (t - lastTitle > (art.done ? 250 : 400)) { lastTitle = t; // m1s: draw the placeholder street immediately, real art as it lands
     try { camera.updateMatrixWorld(); if (Q.post && !post.low) post.render(); else renderer.render(scene, camera); } catch (e) {} } requestAnimationFrame(titleDraw); };
   requestAnimationFrame(titleDraw); }
 
@@ -330,6 +331,7 @@ if (/[?&]hitbox/.test(location.search)) {
   const mk = [], gE = new THREE.SphereGeometry(0.06, 8, 6), mE = new THREE.MeshBasicMaterial({ color: 0xff2020, depthTest: false }), mW = new THREE.MeshBasicMaterial({ color: 0xffee00, depthTest: false });
   weapon.onShotDebug = (s) => { if (!s.hit) return; const m = new THREE.Mesh(gE, s.hit.enemy ? mE : mW); m.position.copy(s.hit.point); m.renderOrder = 99; scene.add(m); mk.push(m); setTimeout(() => { scene.remove(m); }, 2000); };
 }
+art.onReady(() => { document.body.classList.add('ready'); });
 art.onReady(() => { const m4 = art.staticInstance('rifle_m4'); if (m4) m4.name = 'rifle_m4'; const r = m4 || art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search));
   if (m4 && weapon.model && art.get('fps_arms') && /[?&]arms=1/.test(location.search) /* hands opt-in (?arms=1) until they read as a gloved soldier grip */) { try { arms = createArms(art.get('fps_arms'), art.anims('fps_arms'), camera);
     if (arms) { weapon.model.parent.add(arms.root); arms.attach(weapon.model); window.SS.arms = arms; } } catch (err) { console.warn('arms', err); arms = null; } } });

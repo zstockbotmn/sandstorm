@@ -7,9 +7,9 @@ let reloadEnd = 0;
 const RELOAD_TIME = 2.0;
 const SHOT_INTERVAL = 60 / 600;
 const PITCH_LIMIT = 35 * Math.PI / 180;
-const HIP_SPREAD = 0.25 * Math.PI / 180; // was 0.6: at 40 m that threw centre-aimed hip shots off a torso
-const ADS_SPREAD = 0.04 * Math.PI / 180; // steadier scope
-const COVER_SPREAD = 0.25 * Math.PI / 180; // ducked fire: the crosshair is visible over the cover, so shots go where it points (was 2.2 deg = false misses)
+const HIP_SPREAD = 0.08 * Math.PI / 180; // m1s: 0.25 deg threw half of centre-aimed rounds off a torso at 50 m (red crosshair, no kill); was 0.6 before that // // was 0.6: at 40 m that threw centre-aimed hip shots off a torso
+const ADS_SPREAD = 0.02 * Math.PI / 180; // steadier scope
+const COVER_SPREAD = 0.08 * Math.PI / 180; // // ducked fire: the crosshair is visible over the cover, so shots go where it points (was 2.2 deg = false misses)
 
 const _dir = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -154,6 +154,7 @@ export function createWeapon(camera, world, scene) {
     if (weapon.onReload) weapon.onReload('start');
   }
 
+  let frameShots = 0;
   function shoot(input) {
     weapon.ammo -= 1;
     weapon.shotsFired += 1;
@@ -161,7 +162,7 @@ export function createWeapon(camera, world, scene) {
     flashT = 0.05;
     flash.intensity = 5;
     flashSprite.visible = true;
-    const p0 = input.pitch; const kickAmt0 = input.scope ? 0.003 : 0.02;
+    const p0 = input.pitch; const kickAmt0 = (input.scope ? 0.003 : 0.02) * (frameShots++ < 1 ? 1 : 0.25); // m1s: at ~6 fps several rounds land per frame; full kick for each threw the view metres over a far target
     input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt0)); const kickAmt = p0 - input.pitch;
     if (recoil > 0.07) { input.pitch += kickAmt; } else recoil += kickAmt; // cap recoil climb at ~4 deg (long holds / many rounds per frame) // only what was actually applied is recovered (clamped kicks drifted the view down) // recovered over time in update()
     kick = input.scope ? 0.03 : 0.07;
@@ -239,6 +240,7 @@ export function createWeapon(camera, world, scene) {
   // A drag after a shot means the player is controlling the muzzle: drop the pending recoil recovery (no drift back).
   weapon.cancelRecoil = function cancelRecoil() { recoil = 0; };
   weapon.update = function update(dt, input) {
+    frameShots = 0;
     const k = 1 - Math.exp(-10 * dt);
     if (input.cover) _desired.copy(_cover);
     else if (input.scope) _desired.copy(_ads);

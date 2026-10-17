@@ -29,23 +29,28 @@ export function createCover(scene, camera, world, input) {
   c.prewarmMesh = () => { const m = new THREE.Mesh(geo, mat.clone()); m.castShadow = m.receiveShadow = true; return m; };
   // pick(exclude, dir): first cover on engage (nearest ahead), or the next cover left (-1) / right (+1) of the current one.
   function pick(exclude, dir) {
-    const pz = camera.position.z; let best = null, bd = 1e9;
+    const pz = camera.position.z; let best = null, bd = 1e9, bestType = '';
     for (const seg of world.segments || []) for (const p of seg.coverPoints || []) {
       if (p.type !== 'barrel' && p.type !== 'car') continue;
       const ahead = pz - p.pos.z; if (ahead < (exclude ? -1 : 1.5) || ahead > (exclude ? SEARCH_AHEAD + 3 : SEARCH_AHEAD) || Math.abs(p.pos.x) > STREET_X) continue;
       if (exclude && Math.hypot(p.pos.x - exclude.x, p.pos.z - exclude.z) < 1.6) continue;
       if (dir && Math.sign(p.pos.x - camera.position.x) !== dir) continue;
-      const d = ahead + Math.abs(p.pos.x - camera.position.x); if (d < bd) { bd = d; best = p.pos; }
+      const d = ahead + Math.abs(p.pos.x - camera.position.x); if (d < bd) { bd = d; best = p.pos; bestType = p.type; }
     }
     if (best) {
       // stop at the cover's real surface: union the colliders around the spot and stand PLAYER_R behind its near face
       const box = new THREE.Box3(), tmp = new THREE.Box3(); let any = false;
       for (const m of world.colliders) { if (!m.geometry) continue; tmp.setFromObject(m); const cx = (tmp.min.x + tmp.max.x) / 2, cz = (tmp.min.z + tmp.max.z) / 2;
         if (Math.abs(cx - best.x) < 1.6 && Math.abs(cz - best.z) < 2.8 && tmp.max.y < 3) { box.union(tmp); any = true; } }
+      c.kind = bestType;
+      // m1s: behind a burned car (1.5 m roof, 4 m long) the body filled the lower half of the view: stand at its
+      // street-side rear corner (the car still covers the body; the street ahead is open) - the eye is raised too (main).
+      if (any && bestType === 'car') { c.surface = box; const inner = (box.min.x + box.max.x) / 2 > 0 ? box.min.x + 0.15 : box.max.x - 0.15; return new THREE.Vector3(inner, 0, box.max.z + PLAYER_R); }
       if (any) { c.surface = box; return new THREE.Vector3(Math.max(box.min.x + 0.3, Math.min(box.max.x - 0.3, camera.position.x)), 0, box.max.z + PLAYER_R); }
       return new THREE.Vector3(best.x, 0, best.z + BEHIND);
     }
     // none close: drop a sandbag-style wall just ahead of the halt point
+    c.kind = 'sandbag';
     clearSpawned();
     const bx = dir ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + dir * 3)) : exclude ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + (camera.position.x > 0 ? -3 : 3))) : camera.position.x;
     const m = new THREE.Mesh(geo, mat.clone()); m.position.set(bx, BAG_H / 2, pz - 2.2); m.castShadow = m.receiveShadow = true;

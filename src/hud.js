@@ -74,11 +74,19 @@ export function createHud() {
     healthFill.style.width = h + '%';
   }
 
+  // m1s: every hit shows a marker, a kill a distinct one (red, larger), and each stays up for a minimum time AND at
+  // least 2 painted frames, so it is seen at 4-6 fps (a 380 ms timer could expire between two slow frames). A kill
+  // marker is never downgraded by a later plain hit while it is showing.
+  let hideAt = 0, framesLeft = 0, hudRaf = 0, shownKind = '';
+  const isKill = (k) => k === 'kill' || k === 'headkill';
+  function markerTick() { framesLeft -= 1; if (framesLeft <= 0 && performance.now() >= hideAt) { marker.classList.remove('show', 'kill', 'head', 'headkill'); shownKind = ''; hudRaf = 0; return; } hudRaf = requestAnimationFrame(markerTick); }
   function hitMarker(kind) {
-    marker.classList.remove('kill', 'head', 'headkill'); if (kind && kind !== 'hit') { void marker.offsetWidth; marker.classList.add(kind); }
-    marker.classList.add('show');
-    clearTimeout(hitTimer);
-    hitTimer = setTimeout(() => marker.classList.remove('show', 'kill', 'head', 'headkill'), kind === 'kill' || kind === 'headkill' ? 520 : 380); // >= blood spray life
+    kind = kind || 'hit'; const now = performance.now();
+    if (isKill(shownKind) && !isKill(kind) && now < hideAt) { framesLeft = Math.max(framesLeft, 2); return; }
+    marker.classList.remove('kill', 'head', 'headkill'); if (kind !== 'hit') { void marker.offsetWidth; marker.classList.add(kind); }
+    marker.classList.add('show'); shownKind = kind; hud.markerCount = (hud.markerCount | 0) + 1; if (isKill(kind)) hud.killMarkers = (hud.killMarkers | 0) + 1;
+    hideAt = now + (isKill(kind) ? 600 : 400); framesLeft = 3; // >= blood spray life
+    if (!hudRaf) hudRaf = requestAnimationFrame(markerTick);
   }
 
   function damageVignette(amount) {

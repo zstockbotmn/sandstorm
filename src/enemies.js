@@ -1176,6 +1176,19 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.goal = enemy.path[0];
   }
 
+  // Tester m1s: a lone last fighter far down the street (>35 m) dragged the fight out. It runs up to ground cover
+  // 14-28 m from the player (in the open, so it can be shot on the way).
+  function advanceNearer(enemy) {
+    const pz = camera.position.z, here = enemy.group.position; const pool = coverPool(['wall', 'barrel', 'car', 'door']);
+    let best = null, bestD = 1e9;
+    for (let i = 0; i < pool.length; i++) { const c = pool[i]; const ahead = pz - c.pos.z; if (ahead < 12 || ahead > 28 || Math.abs(c.pos.x) > 9) continue;
+      if (occupiedBy(c.pos, enemy)) continue; const d = c.pos.distanceToSquared(here); if (d < bestD) { bestD = d; best = c; } }
+    if (!best) { toVisibleCover(enemy); return; }
+    enemy.anchor = best; enemy.home = standPos(best); enemy.path = pathOnto(enemy, best); enemy.pathI = 0;
+    enemy.phase = 'relocate'; enemy.posture = 'idle'; enemy.exposed = true; enemy.moveKind = 'run'; enemy.goal = enemy.path[0]; enemy.advanced = (enemy.advanced | 0) + 1;
+    try { squadCall('He\'s moving up!'); } catch (_) {}
+  }
+
   // Horizontal run/walk, or a short climb when the waypoint is up the facade. No Y pop.
   function stepToward(enemy, dest, speed, dt) {
     const p = enemy.group.position;
@@ -1505,6 +1518,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
         continue;
       }
       if (!(e.group.position.z > pz - 0.5)) e.behindT = 0;
+      { const dP = e.group.position.distanceTo(camera.position); // lone far last fighter -> advances (8 s beyond 35 m)
+        if (e.engaged && !e.pinned && !e.dying && dP > 35 && e.phase !== 'relocate' && aliveCount() === 1 && truckPending === 0) { e.farT = (e.farT || 0) + dt;
+          if (e.farT > 8) { e.farT = 0; if (e.anchor && isElevated(e.anchor.type)) toVisibleCover(e); else advanceNearer(e); } } else e.farT = 0; }
       if (e.pinned) { if (e.debugVel) { e.group.position.addScaledVector(e.debugVel, dt); e.moving = true; e.moveKind = 'run'; e.moveSpeed = e.debugVel.length(); } }
       // Tester m1r / waves (Ultra-low): a fighter that flanked behind the player and stays out of view kept ENEMIES at 1 and the
       // walk halted for good. Engaged fighters behind the player (and off-screen) for 6 s are brought to visible cover ahead.

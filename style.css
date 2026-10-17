@@ -4,7 +4,7 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #000;
+  background: #000 linear-gradient(#9fb3c4 0%, #d9c7a3 48%, #b59a74 52%, #6d5d4b 100%); /* m1s: dusk street backdrop until the first frame draws */
   color: #f4efe4;
   font-family: system-ui, sans-serif;
   touch-action: none;
@@ -437,3 +437,6 @@ body.title #hud, body.title #controls { visibility: hidden; }
 /* FIRE: an invisible ring around the button also counts as FIRE (tester m1q: taps at the edge missed at low fps) */
 #controls button[data-ctl="fire"]::after { content: ''; position: absolute; inset: -26px; border-radius: 50%; }
 #controls button[data-ctl="fire"], #controls button[data-ctl="fire"]::after { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#loading { margin: 6px 0 0; font-size: 13px; opacity: 0.8; }
+body.ready #loading { display: none; }
