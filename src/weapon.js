@@ -304,7 +304,7 @@ export function createWeapon(camera, world, scene) {
     }
     if (input.pollFire) input.pollFire();
     // Swallow the Play press (tester: clicking Play fired a round): nothing fires in the first 500 ms of a run.
-    if (window.SS && window.SS.startedAt && performance.now() - window.SS.startedAt < 500) { input.pendingShots = 0; input.hold = null; input.fire = false; }
+    if (window.SS && window.SS.startedAt && performance.now() - window.SS.startedAt < 500) { input.pendingShots = 0; input.hold = null; if (input.holdQ) input.holdQ.length = 0; input.fire = false; }
     // FIRE-button hold timeline (input.hold): fire every round the hold has earned at the rifle's rate since it began,
     // up to 6 per frame. While reloading/empty nothing is owed beyond one round, so firing resumes the moment the
     // reload ends with FIRE still held.
@@ -317,6 +317,7 @@ export function createWeapon(camera, world, scene) {
         if (input.hold) { const owed = 1 + Math.floor((until - holdBase) / I);
         for (let n = 0; n < 6 && holdFired < owed && !weapon.reloading && weapon.ammo > 0; n++) { shoot(input); holdFired++; }
         if (H.end && (holdFired >= owed || now - H.end > 3000)) input.hold = null; }
+        if (!input.hold && input.holdQ && input.holdQ.length) input.hold = input.holdQ.shift(); // next queued tap fires next frame
         weapon.holdFired = holdFired; } }
     for (let n = 0; n < 4; n++) { const wants = input.fire && !weapon.reloading && weapon.ammo > 0; if (!(wants && cooldown <= 0)) break; shoot(input); }
     if (!input.fire && (input.pendingShots | 0) <= 0 && cooldown < 0) cooldown = 0; // no stored burst while idle

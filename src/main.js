@@ -16,7 +16,7 @@ import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { preloadRapier } from './ragdoll.js';
-import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, isSoftwareRenderer, rendererString } from './quality.js';
+import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, PICKED, isSoftwareRenderer, rendererString } from './quality.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
@@ -335,8 +335,11 @@ document.getElementById('play').addEventListener('click', () => requestAnimation
 
 // Quality toggle on the start screen (saved in localStorage; applies on reload).
 { const b = document.getElementById('quality');
-  if (b) { const label = () => { b.textContent = 'Quality: ' + (QUALITY === 'low' ? 'Low' : 'High'); }; label();
-    b.addEventListener('click', (ev) => { ev.stopPropagation(); setQuality(QUALITY === 'low' ? 'high' : 'low'); }); }
+  // Shows the tier in use (incl. an auto/saved Ultra-low) and cycles Ultra-low -> Low -> High; a pick sticks (no auto override).
+  if (b) { const cur = () => (window.SS.quality === 'ultra-low' ? 'ultra-low' : QUALITY === 'low' || window.SS.quality === 'low' ? 'low' : 'high');
+    const label = () => { const c = cur(); b.textContent = 'Quality: ' + (c === 'ultra-low' ? 'Ultra-low' : c === 'low' ? 'Low' : 'High') + (window.SS.autoLow && !PICKED ? ' (auto) - tap to change' : ' - tap to change'); };
+    window.SS.qualityLabel = label; label();
+    b.addEventListener('click', (ev) => { ev.stopPropagation(); const c = cur(); setQuality(c === 'ultra-low' ? 'low' : c === 'low' ? 'high' : 'ultra-low'); }); }
   window.SS.quality = QUALITY; }
 
 // Prewarm (tester: 1-2 s hitches at first contact): compile every shader and upload every texture the fight will use
@@ -387,13 +390,13 @@ onLow(() => {
   // rubble bits) is hidden and every remaining static mesh stops recomputing its matrix each frame. Colliders, fighters,
   // the rifle/hands and drops are untouched, so cover and hits behave exactly as before.
   if (window.SS.quality === 'ultra-low') ultraTrim();
-  const b = document.getElementById('quality'); if (b) b.textContent = 'Quality: ' + (window.SS.quality === 'ultra-low' ? 'Ultra-low' : 'Low');
+  if (window.SS.qualityLabel) window.SS.qualityLabel();
   { const msg = (window.SS.quality === 'ultra-low' ? 'Ultra-low' : 'Low') + ' quality on for smoother play'; window.SS.tierToast = msg; if (hud.hint && window.SS.running) hud.hint(msg); else window.SS.pendingTierToast = msg; } // shown now, or at run start if it switched on the menu // names the tier actually applied (fix 8)
 });
 window.SS.gpu = rendererString(renderer.getContext());
 window.SS.THREE = THREE; window.SS.world = world; // tests
 window.SS.goUltra = (r) => { goLow(r || 'debug'); goUltra(r || 'debug'); }; // tests
-if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
+if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT && !PICKED) goLow('software-gl');
 // Remember the auto-chosen tier across reloads (tester): a saved ultra-low starts as ultra-low.
 try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { goLow('saved'); goUltra('saved'); } } catch (e) {}
 // Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.
@@ -401,7 +404,7 @@ try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { goL
     // Ultra-low still too slow (tester box < 3.5 fps): step the render scale down 0.4 -> 0.3 -> 0.22 (ultra-low only).
     if (window.SS.quality === 'ultra-low' && raw > 0 && !EXPLICIT) { n++; t += raw; if (t < 3) return; const fps = n / t; n = t = 0; window.SS.benchFps = Math.round(fps * 10) / 10;
       if (fps < 4 && Q.res > 0.23) { Q.res = Math.max(0.22, +(Q.res * 0.75).toFixed(2)); window.SS.ultraRes = Q.res; onResize(); } return; }
-    if (window.SS.quality === 'ultra-low' || (EXPLICIT && !/[?&]ultra=1/.test(location.search)) || !(raw > 0)) { n = t = 0; return; }
+    if (window.SS.quality === 'ultra-low' || ((EXPLICIT || PICKED) && !/[?&]ultra=1/.test(location.search)) || !(raw > 0)) { n = t = 0; return; } // a menu pick is never auto-lowered
     if (skip > 0) { skip--; return; } // first frames include load/compile
     n++; t += raw; const win = window.SS.running ? 3 : 2; if (t < win) return;
     const fps = n / t; window.SS.benchFps = Math.round(fps * 10) / 10; n = t = 0; if (window.SS.quality === 'low') { if (fps < 10) goUltra('fps<10'); } else if (fps < 20) goLow('fps<20'); }; }

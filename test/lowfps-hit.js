@@ -27,6 +27,9 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     res.target = await p.evaluate(() => ({ onTarget: SS.weapon.onTarget, name: SS.weapon.onTargetName, ray: (() => { const c = SS.camera; c.updateMatrixWorld(); const o = c.position.clone(), d = c.position.clone(); c.getWorldPosition(o); c.getWorldDirection(d); const h = SS.weapon.firstHit(o, d); return h ? (h.object.userData && h.object.userData.enemy ? 'enemy:' + h.object.userData.part : 'world:' + h.object.name) : null; })() }));
     if (!(res.target.onTarget === /^enemy/.test(res.target.ray || ''))) fail.push('red crosshair does not match the hit ray ' + JSON.stringify(res.target));
     const bb = await p.locator('[data-ctl=fire]').boundingBox(); const x = bb.x + bb.width / 2, y = bb.y + bb.height / 2;
+    // nothing may sit on top of FIRE (centre, edge, and the extended ring just outside the button)
+    res.fireTop = await p.evaluate(([x, y, r]) => [[0, 0], [r * 0.9, 0], [0, -r * 0.9], [r + 18, 0], [0, -(r + 18)]].map(([dx, dy]) => { const el = document.elementFromPoint(x + dx, y + dy); return !!(el && el.closest && el.closest('[data-ctl=fire]')); }), [x, y, bb.width / 2]);
+    if (res.fireTop.some((v) => !v)) fail.push('FIRE hit area blocked/too small ' + JSON.stringify(res.fireTop));
     // tap: press + release well inside one slow frame
     await p.evaluate(() => { window.__e.health = 1e9; }); let s0 = await p.evaluate(() => SS.weapon.shotsFired);
     await p.mouse.move(x, y); await p.mouse.down(); await p.waitForTimeout(250); await p.mouse.up(); await p.waitForTimeout(2500);

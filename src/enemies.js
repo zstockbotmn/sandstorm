@@ -804,6 +804,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     root.remove(enemy.group);
   }
   let dryKills = 0, lastDropT = performance.now();
+  let runSpawns = 0, firstKill = false; // App PM: first wave is exactly 2 fighters; nothing more arrives until the first kill
   function killFx(enemy, point, part) {
     const origin = enemy.group.position;
     if (window.SS && window.SS.scoreSys) window.SS.scoreSys.addKill(part === 'head');
@@ -814,6 +815,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (part === 'head') { const hp = (point || origin.clone().setY(origin.y + 1.6)); spray(hp); spray(hp); spray(hp); }
     // Drops (tester: none in a whole run, ammo dead-ended): 50% per kill, guaranteed after 2 dry kills or 20 s (pity);
     // the kind follows need (low reserve -> ammo, low health -> health).
+    firstKill = true;
     if (SSx.stakes) { dryKills += 1; const now = performance.now(); const w = SSx.weapon || {};
       const dry = (w.reserve | 0) <= 0; // tester: a kill at 22/0 gave nothing - an empty reserve always earns an ammo drop
       if (dry || Math.random() < 0.5 || dryKills >= 3 || now - lastDropT > 20000) { dryKills = 0; lastDropT = now;
@@ -1442,12 +1444,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const cap = phase === 'quiet' ? quietCap : burstCap;
     spawnCd -= dt;
     // Fixed wave: the whole wave (burstCap) spawns at burst start in one go; no reinforcements ever, no spawns once engaged.
-    const canSpawn = phase === 'burst' ? (burstSpawned < burstCap && !waveActive) : alive < cap;
+    const canSpawn = (phase === 'burst' ? (burstSpawned < burstCap && !waveActive) : alive < cap) && (firstKill || runSpawns < 2);
     if (window.SS && window.SS.running && !CALM && canSpawn && dNow >= breatherTo) for (let tries = 0; tries < 6 && (phase === 'burst' ? burstSpawned < burstCap : tries < 1) && (phase === 'burst' || spawnCd <= 0); tries++) {
       const flankSlot = phase === 'burst' && burstSpawned === burstCap - 1 && (burstCap === 3 || Math.random() < 0.5);
       const roofSlot = phase === 'burst' && burstSpawned === 1 && burstIndex >= 2 && roofWave;
       const made = spawnOne(flankSlot ? 'flanker' : roofSlot ? 'roof' : (phase === 'burst' && burstSpawned === 0 ? 'shifter' : undefined)) || ((flankSlot || roofSlot) ? spawnOne() : null);
       if (made && roofSlot && made.anchor && made.anchor.type === 'roof') { squadCall('Rooftop!'); if (window.SS) window.SS.roofShooters = (window.SS.roofShooters | 0) + 1; }
+      if (made) runSpawns++;
       if (made && phase === 'burst') burstSpawned++;
       if (made && (window.SS.engaged > 0 || waveActive) && !made.fromTruck) window.SS.spawnsWhileEngaged = (window.SS.spawnsWhileEngaged | 0) + 1; // must stay 0 (no reinforcements)
       spawnCd = made ? 2.2 : 0.6;
@@ -1550,7 +1553,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     displayEngaged = aliveCount() + truckPending; // total remaining in the wave (incl. truck still driving in)
     if (!hold) displayEngaged = 0;
     if (running && prevHold && !hold && window.SS.hud && window.SS.hud.banner) {
-      waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED');
+      waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing'); try { squadCall('Clear! Moving up.'); } catch (_) {} // tester m1q: clear cue when the walk resumes
       breatherTo = window.SS.distance + 10 + Math.random() * 5; phase = 'quiet'; phaseT = 0; // tester: short 10-15 m breather window.SS.bursting = false;
     }
     prevHold = hold;
@@ -1622,7 +1625,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     phaseT = 2.5;
     breatherTo = 0;
     quietCap = 1;
-    burstCap = 3; burstSpawned = 0; waveActive = false;
+    burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;

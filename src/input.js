@@ -92,12 +92,17 @@ export function createInput(canvas) {
   const evNow = () => { const n = performance.now(); return n - evAt < 8 && evT && evT <= n && n - evT < 5000 ? evT : n; };
   for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'touchcancel'])
     window.addEventListener(t, (e) => { evT = e.timeStamp || 0; evAt = performance.now(); }, true);
-  function startHold() { if (kia()) return; if (input.hold && !input.hold.end) return; input.hold = { start: evNow(), end: null, id: ++holdN, at: performance.now() }; input.holdLog.push(input.hold); if (input.holdLog.length > 20) input.holdLog.shift(); }
+  // Every tap counts (tester m1q: taps lost at low fps): a tap that lands while the previous one is still being fired
+  // (ended but not yet consumed by the weapon, e.g. two taps inside one long frame) is queued, not dropped.
+  input.holdQ = [];
+  const openHold = () => (input.holdQ.length ? input.holdQ[input.holdQ.length - 1] : input.hold);
+  function startHold() { if (kia()) return; const o = openHold(); if (o && !o.end) return; const h = { start: evNow(), end: null, id: ++holdN, at: performance.now() };
+    if (input.hold) { if (input.holdQ.length < 8) input.holdQ.push(h); } else input.hold = h; input.holdLog.push(h); if (input.holdLog.length > 20) input.holdLog.shift(); }
   let lastUpT = 0;
-  function endHold() { lastUpT = performance.now(); if (input.hold && !input.hold.end) input.hold.end = evNow(); }
+  function endHold() { lastUpT = performance.now(); const o = openHold(); if (o && !o.end) o.end = evNow(); }
   input.startHold = startHold; input.endHold = endHold;
   input.clearAim = function clearAim() { aimDX = aimDY = 0; };
-  input.resetState = function resetState() { input.hold = null; aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; fireBtn = fireKey = fireMouse = false; sync(); };
+  input.resetState = function resetState() { input.hold = null; input.holdQ.length = 0; aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; fireBtn = fireKey = fireMouse = false; sync(); };
   function sync() {
     input.fire = fireKey || fireMouse; // the FIRE button drives input.hold (timeline), not this flag
     if (!fireBtn) endHold();
@@ -188,7 +193,7 @@ export function createInput(canvas) {
   // only on that pointer's pointerup (window-level, so a release off the button still ends it) or a touch end. Spurious
   // pointercancel/lostpointercapture no longer end a hold; the mouse ':active' state is polled every frame as a backup.
   let firePid = null;
-  buttons.fire.addEventListener('pointerdown', (e) => { firePid = e.pointerId; fireBtn = !kia(); if (fireBtn) startHold(); sync(); });
+  buttons.fire.addEventListener('pointerdown', (e) => { try { buttons.fire.setPointerCapture(e.pointerId); } catch (_) {} firePid = e.pointerId; fireBtn = !kia(); if (fireBtn) startHold(); sync(); });
   buttons.fire.addEventListener('mousedown', () => { if (!kia()) { fireBtn = true; startHold(); sync(); } });
   const fireUp = (e) => { if (firePid != null && e.pointerId !== firePid) return; firePid = null; releaseFireBtn(); };
   window.addEventListener('pointerup', fireUp, true);
