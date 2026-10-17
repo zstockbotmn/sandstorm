@@ -1338,7 +1338,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // ---- Step C: grenade flush. A ground enemy lobs a grenade at a player who camps in cover; it lands beside the
   // cover, auto-cover immediately runs to another spot, and it blows 2.4 s after landing (35 dmg within 3.5 m).
-  const nadeMat = visMat(0x2f3324); const nadeGeo = new THREE.SphereGeometry(0.09, 10, 8);
+  const nadeMat = visMat(0x2f3324); const nadeGeo = new THREE.SphereGeometry(0.12, 10, 8);
+  // Visible grenade (tester: the camera turned with no visible grenade): red blinking warning ring where it lands.
+  const nadeRingMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }); const nadeRingGeo = new THREE.RingGeometry(0.35, 0.55, 24);
   const nades = []; let nadeThisWave = false, campT = 0;
   function throwGrenade(e) {
     const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
@@ -1357,8 +1359,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     for (let i = nades.length - 1; i >= 0; i--) { const n = nades[i]; n.t += dt;
       if (!n.landed) { const k = Math.min(1, n.t / n.flight); n.m.position.lerpVectors(n.from, n.to, k); n.m.position.y += Math.sin(k * Math.PI) * 3.2;
-        if (k >= 1) { n.landed = true; n.t = 0; if (cov && cov.relocate) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
-      else if (n.t >= n.fuse) {
+        if (k >= 1) { n.landed = true; n.t = 0; n.ring = new THREE.Mesh(nadeRingGeo, nadeRingMat); n.ring.rotation.x = -Math.PI / 2; n.ring.position.copy(n.to).setY(0.05); n.ring.renderOrder = 4; scene.add(n.ring); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('GRENADE! Moving cover'); if (cov && cov.relocate) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
+      else if (n.ring && n.t < n.fuse) { n.ring.visible = Math.floor(n.t * 6) % 2 === 0; }
+      if (n.landed && n.t >= n.fuse) { if (n.ring) { scene.remove(n.ring); n.ring = null; }
         for (let j = 0; j < 4; j++) muzzleFlash(n.m.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)));
         const d = n.m.position.distanceTo(camera.position.clone().setY(n.m.position.y)); if (d < 3.5) player.damage(35 * (1 - d / 4.5), n.m.position);
         if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);
@@ -1598,7 +1601,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function reset() {
     if (truck) { scene.remove(truck.g); truck = null; } truckPending = 0;
-    for (const n of nades) scene.remove(n.m); nades.length = 0; nadeThisWave = false; campT = 0;
+    for (const n of nades) { scene.remove(n.m); if (n.ring) scene.remove(n.ring); } nades.length = 0; nadeThisWave = false; campT = 0;
     for (let i = list.length - 1; i >= 0; i--) despawn(list[i]);
     list.length = 0;
     while (fallers.length) { const f = fallers.pop(); if (f.group.parent) f.group.parent.remove(f.group); }
