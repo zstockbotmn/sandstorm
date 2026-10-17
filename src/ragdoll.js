@@ -575,8 +575,10 @@ export function createRagdollSystem(scene) {
       }
       if (doll.skin) driveSkin(doll.skin);
       // Corpses stay >= 25 s of real time (tester: bodies vanished within seconds); max 8 kept, oldest removed first.
-      if (!doll.born) doll.born = performance.now();
-      if (performance.now() - doll.born > 25000 || behind || (dolls.length > 8 && d === 0)) removeDoll(doll);
+      if (!doll.born) doll.born = performance.now(); // (born at first update)
+      const age = performance.now() - doll.born, R = (typeof window !== 'undefined' && window.SS) ? (window.SS.dollRemovals = window.SS.dollRemovals || []) : [];
+      // >= 25 s guaranteed: the far-behind and over-cap paths also wait for 25 s (bodies vanished early before).
+      if (age > 25000 && (age > 45000 || behind || dolls.length > 12)) { R.push({ age: Math.round(age), why: age > 45000 ? 'age' : behind ? 'behind' : 'cap' }); removeDoll(doll); }
     }
   }
 

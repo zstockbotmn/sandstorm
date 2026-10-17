@@ -796,7 +796,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       model.traverse((obj) => { if (obj.isMesh) obj.frustumCulled = false; });
       doll.skin = { model, links: ragdolls.bindSkin(doll, enemy.bones) };
     } catch (err) { reportErr('ragdoll skin', err); if (enemy.art && enemy.art.root.parent) enemy.art.root.parent.remove(enemy.art.root); }
-    else if (enemy.art && enemy.art.root.parent === scene) scene.remove(enemy.art.root);
+    else if (enemy.art) { // no ragdoll (physics failed): leave the body in its death pose for 25 s instead of vanishing
+      try { const model = enemy.art.root; scene.attach(model); const death = enemy.actions && enemy.actions.death;
+        if (death && enemy.mixer) { enemy.mixer.stopAllAction(); death.reset().setLoop(THREE.LoopOnce, 1); death.clampWhenFinished = true; death.play(); enemy.mixer.update((death.getClip().duration || 1) * 0.99); }
+        stopMixer(model, enemy.mixer); setTimeout(() => { if (model.parent) model.parent.remove(model); }, 25000); } catch (err) { reportErr('static corpse', err); } }
     enemy.group.visible = false;
     root.remove(enemy.group);
   }
@@ -1576,7 +1579,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
 
     stepFallers(dt);
-    try { ragdolls.update(dt, pz); } catch (err) { reportErr('ragdoll update', err); try { ragdolls.clear && ragdolls.clear(); } catch (_) {} }
+    try { ragdolls.update(dt, pz); } catch (err) { reportErr('ragdoll update', err); } // never wipe every corpse on one error
   }
 
   function despawn(enemy) {
