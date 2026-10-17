@@ -311,10 +311,12 @@ export function createWeapon(camera, world, scene) {
     { const H = input.hold; const I = SHOT_INTERVAL * 1000;
       if (H) { if (H.id !== holdId) { holdId = H.id; holdFired = 0; holdBase = H.start; }
         const now = performance.now(), until = H.end || now, blocked = weapon.reloading || weapon.ammo <= 0;
-        if (blocked) holdBase = Math.max(holdBase, until - holdFired * I);
-        const owed = 1 + Math.floor((until - holdBase) / I);
+        // Reloading/empty: owe nothing, and resume one interval after the reload ends (tester: a round fired as the
+        // reload finished, so 0/150 became 29/120). A hold released during the reload is simply over.
+        if (blocked && H.end) input.hold = null; else if (blocked) { holdBase = Math.max(holdBase, now - (holdFired - 1) * I); }
+        if (input.hold) { const owed = 1 + Math.floor((until - holdBase) / I);
         for (let n = 0; n < 6 && holdFired < owed && !weapon.reloading && weapon.ammo > 0; n++) { shoot(input); holdFired++; }
-        if (H.end && (holdFired >= owed || now - H.end > 3000)) input.hold = null;
+        if (H.end && (holdFired >= owed || now - H.end > 3000)) input.hold = null; }
         weapon.holdFired = holdFired; } }
     for (let n = 0; n < 4; n++) { const wants = input.fire && !weapon.reloading && weapon.ammo > 0; if (!(wants && cooldown <= 0)) break; shoot(input); }
     if (!input.fire && (input.pendingShots | 0) <= 0 && cooldown < 0) cooldown = 0; // no stored burst while idle

@@ -815,10 +815,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // Drops (tester: none in a whole run, ammo dead-ended): 50% per kill, guaranteed after 2 dry kills or 20 s (pity);
     // the kind follows need (low reserve -> ammo, low health -> health).
     if (SSx.stakes) { dryKills += 1; const now = performance.now(); const w = SSx.weapon || {};
-      if (Math.random() < 0.5 || dryKills >= 3 || now - lastDropT > 20000) { dryKills = 0; lastDropT = now;
+      const dry = (w.reserve | 0) <= 0; // tester: a kill at 22/0 gave nothing - an empty reserve always earns an ammo drop
+      if (dry || Math.random() < 0.5 || dryKills >= 3 || now - lastDropT > 20000) { dryKills = 0; lastDropT = now;
         // never health at full HP; otherwise whichever need is bigger (missing HP vs missing reserve of a 120-round load)
         const hp = SSx.player ? SSx.player.health : (SSx.health ?? 100), hpNeed = (100 - hp) / 100, ammoNeed = 1 - Math.min(1, (w.reserve | 0) / 120);
-        const kind = hp >= 99.5 ? 'ammo' : hpNeed > ammoNeed ? 'health' : ammoNeed > hpNeed ? 'ammo' : (Math.random() < 0.5 ? 'ammo' : 'health');
+        const kind = dry || hp >= 99.5 ? 'ammo' : hpNeed > ammoNeed ? 'health' : ammoNeed > hpNeed ? 'ammo' : (Math.random() < 0.5 ? 'ammo' : 'health');
         SSx.stakes.drop(kind, origin.clone()); } }
     if (aliveCount() === 0) { SSx.slowmoUntil = performance.now() + 750; if (SSx.hud && SSx.hud.banner) setTimeout(() => {}, 0); }
   }

@@ -81,14 +81,14 @@ export function createCover(scene, camera, world, input) {
     if (c.state === 'none' || !window.SS || !window.SS.running) return false;
     const cur = c.target ? c.target.clone() : camera.position.clone(); const old = c.spawned; if (old) c.spawned = null;
     c.surface = null; const t = pick(cur, dir || 0); if (old && old !== c.spawned) { scene.remove(old); const i = world.colliders.indexOf(old); if (i >= 0) world.colliders.splice(i, 1); }
-    c.target = t; c.state = 'moving'; input.cover = false; if (why === 'grenade' || why === 'switch') { c.reaim = 1.2; input.pitch = 0; if (input.clearAim) input.clearAim(); const w = window.SS && window.SS.weapon; if (w && w.cancelRecoil) w.cancelRecoil(); } /* hard level reset (tester: stuck looking at the bags) */ c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;
+    c.target = t; c.state = 'moving'; input.cover = false; if (why === 'grenade') { c.reaim = 1.2; input.pitch = 0; /* only the announced grenade move turns the view; a SWITCH COVER tap never does (tester: view swung ~90 deg during a hold) */ if (input.clearAim) input.clearAim(); const w = window.SS && window.SS.weapon; if (w && w.cancelRecoil) w.cancelRecoil(); } /* hard level reset (tester: stuck looking at the bags) */ c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;
   };
   // Fix 5: after a grenade-forced move the view was left facing a wall. Ease the view (yaw toward the nearest live enemy,
   // else straight down the street; pitch level) over the run + ~1 s, unless the player drags meanwhile.
   function reaim(dt) {
     if ((input.aimMovedT || 0) > performance.now() - 150) { c.reaim = 0; return; }
     c.reaim -= dt; let tx = 0, tz = -1, bd = 1e9; const el = window.SS.enemies && window.SS.enemies.list;
-    if (el) for (const e of el) { if (!e || !e.alive || e.dying) continue; const dx = e.group.position.x - camera.position.x, dz = e.group.position.z - camera.position.z, d = Math.hypot(dx, dz); if (d > 1 && d < bd) { bd = d; tx = dx; tz = dz; } }
+    if (el) for (const e of el) { if (!e || !e.alive || e.dying) continue; const dx = e.group.position.x - camera.position.x, dz = e.group.position.z - camera.position.z, d = Math.hypot(dx, dz); if (d > 1 && d < bd && -dz > Math.abs(dx) * 0.6) { /* only enemies ahead (within ~60 deg of down-street): never a big swing */ bd = d; tx = dx; tz = dz; } }
     const want = Math.atan2(tx, -tz); let dy = want - input.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     const k = 1 - Math.exp(-8 * dt); input.yaw += dy * k; input.pitch = 0;
     if (c.reaim <= 0) c.reaim = 0;

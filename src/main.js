@@ -1,5 +1,6 @@
 import { createArms } from './arms.js';
 let arms = null;
+document.body.classList.add('title'); // HUD + controls hidden behind the title menu (tester: visible after a page reload)
 import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { art } from './art.js';
@@ -154,6 +155,7 @@ function simStep(dt) {
   // Fire BEFORE enemies move: shots test the hitboxes exactly where the last rendered frame showed them (firing after
   // the enemy update tested next-frame positions - a running fighter at 20 fps had moved ~0.25 m off the crosshair).
   weapon.update(dt, input.state);
+  if (window.SS.quality === 'ultra-low' && (ultraT += dt || 0) > 2) { ultraT = 0; try { ultraTrim(); } catch (e) {} }
   if (arms) { try { arms.update(weapon.reloadProgress()); } catch (err) { console.warn('arms', err); arms = null; } }
   player.update(step);
   if (!frozen) enemies.update(step);
@@ -272,7 +274,7 @@ function restartRun() {
   window.SS.health = 100;
   window.SS.bursting = false;
   window.SS.walking = true;
-  window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
+  window.SS.running = true; window.SS.startedAt = performance.now(); document.body.classList.remove('title'); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   cover.reset();
   world.reset(camera.position.z);
   score.setDistance(0);
@@ -290,7 +292,7 @@ document.getElementById('play').addEventListener('click', () => {
   audio.unlock();
   document.getElementById('start').style.display = 'none';
   window.SS.walking = true;
-  window.SS.running = true; window.SS.startedAt = performance.now(); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
+  window.SS.running = true; window.SS.startedAt = performance.now(); document.body.classList.remove('title'); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   if (!started) {
     started = true;
     requestAnimationFrame(frame);
@@ -362,6 +364,17 @@ art.onReady(() => {
   (window.SS || {}).prewarmMs = Math.round(performance.now() - t0);
 });
 
+// Ultra-low (tester: < 10 fps): fewer draw calls, not just fewer pixels. Small non-colliding street clutter (debris,
+// bottles, rubble bits) in the world segments is hidden; colliders, fighters, the rifle/hands, drops and grenades are
+// never touched (they are not in the segment groups), so cover and hits behave exactly as before. Re-run as segments recycle.
+const _ultraS = new THREE.Sphere(); let ultraT = 0;
+function ultraTrim() { let hid = 0; const keep = new Set(world.colliders || []);
+  for (const seg of world.segments || []) { if (!seg || !seg.group) continue; seg.group.traverse((o) => {
+    if (!o.isMesh || o.isSkinnedMesh || !o.visible || keep.has(o) || o.userData.ultraKeep || !o.geometry) return;
+    if (o.userData.backdrop) { o.visible = false; hid++; return; } // distant skyline: in the fog anyway
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); o.updateWorldMatrix(true, false); _ultraS.copy(o.geometry.boundingSphere).applyMatrix4(o.matrixWorld);
+    if (_ultraS.radius < 0.45) { o.visible = false; hid++; } else o.userData.ultraKeep = true; }); }
+  window.SS.ultraHidden = (window.SS.ultraHidden | 0) + hid; }
 // Auto Low: software WebGL at start (unless ?q=high), or fps < 25 for 3 s mid-run. Applied live, no reload.
 onLow(() => {
   renderer.setPixelRatio(baseDPR() * resScale); renderer.setSize(window.innerWidth, window.innerHeight); post.setSize(window.innerWidth, window.innerHeight);
@@ -369,10 +382,15 @@ onLow(() => {
   scene.traverse((o) => { if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m.needsUpdate = true; });
   if (scene.fog && scene.fog.density != null) scene.fog.density = Q.fog;
   camera.far = Q.far; camera.updateProjectionMatrix();
+  // Ultra-low (tester: < 10 fps): fewer draw calls, not just fewer pixels. Small non-colliding clutter (debris, bottles,
+  // rubble bits) is hidden and every remaining static mesh stops recomputing its matrix each frame. Colliders, fighters,
+  // the rifle/hands and drops are untouched, so cover and hits behave exactly as before.
+  if (window.SS.quality === 'ultra-low') ultraTrim();
   const b = document.getElementById('quality'); if (b) b.textContent = 'Quality: ' + (window.SS.quality === 'ultra-low' ? 'Ultra-low' : 'Low');
   { const msg = (window.SS.quality === 'ultra-low' ? 'Ultra-low' : 'Low') + ' quality on for smoother play'; window.SS.tierToast = msg; if (hud.hint && window.SS.running) hud.hint(msg); else window.SS.pendingTierToast = msg; } // shown now, or at run start if it switched on the menu // names the tier actually applied (fix 8)
 });
 window.SS.gpu = rendererString(renderer.getContext());
+window.SS.goUltra = (r) => { goLow(r || 'debug'); goUltra(r || 'debug'); }; // tests
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT) goLow('software-gl');
 // Remember the auto-chosen tier across reloads (tester): a saved ultra-low starts as ultra-low.
 try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { goLow('saved'); goUltra('saved'); } } catch (e) {}
