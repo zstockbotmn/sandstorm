@@ -105,6 +105,7 @@ export function createScore(hud, audio) {
       kills: state.kills,
       headshots: state.headshots,
       accuracy: Math.round(acc * 10) / 10,
+      hits: state.shotsHit, shots: state.shotsFired,
       date: new Date().toISOString(),
     };
     const list = loadTable();

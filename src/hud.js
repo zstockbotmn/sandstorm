@@ -50,6 +50,22 @@ export function createHud() {
   arrow.className = 'arrow';
   const arc = document.createElement('div'); arc.className = 'arc'; // m1t: red arc toward the shooter
   dir.append(arc, arrow);
+  // m1v: the arc is an SVG ring segment ON the viewport edge (an ellipse inset from the real screen rect, so it hugs the
+  // edge at every aspect ratio); the old rotated CSS ring sat ~46vmin from the centre, mid-screen on wide windows.
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  function edgeSvg(cls) { const sv = document.createElementNS(SVGNS, 'svg'); sv.setAttribute('class', cls); const pth = document.createElementNS(SVGNS, 'path'); sv.appendChild(pth); return [sv, pth]; }
+  const [dirSvg, dirPath] = edgeSvg('edge-arc'); dir.appendChild(dirSvg);
+  const warn = document.createElement('div'); warn.id = 'edge-warn'; const [warnSvg, warnPath] = edgeSvg('edge-arc'); warn.appendChild(warnSvg);
+  // Segment of the viewport rectangle (inset) centred where the ray from the centre toward the shooter meets it, so the
+  // arc hugs the real screen edge at any aspect ratio, corners included. halfSpan = fraction of min(W,H) on each side.
+  function edgePath(sv, pth, angle, halfSpan, inset) { const W = window.innerWidth || 844, H = window.innerHeight || 390; sv.setAttribute('viewBox', '0 0 ' + W + ' ' + H); sv.setAttribute('width', W); sv.setAttribute('height', H);
+    const x0 = inset, y0 = inset, w = W - 2 * inset, h = H - 2 * inset, cx = W / 2, cy = H / 2, sx = Math.sin(angle), sy = -Math.cos(angle);
+    const t = Math.min(Math.abs(sx) > 1e-6 ? (w / 2) / Math.abs(sx) : 1e9, Math.abs(sy) > 1e-6 ? (h / 2) / Math.abs(sy) : 1e9); const px = cx + sx * t, py = cy + sy * t;
+    const P = 2 * (w + h); const toS = (x, y) => (y <= y0 + 0.5 ? x - x0 : x >= x0 + w - 0.5 ? w + (y - y0) : y >= y0 + h - 0.5 ? w + h + (x0 + w - x) : 2 * w + h + (y0 + h - y));
+    const at = (q) => { q = ((q % P) + P) % P; if (q < w) return [x0 + q, y0]; q -= w; if (q < h) return [x0 + w, y0 + q]; q -= h; if (q < w) return [x0 + w - q, y0 + h]; q -= w; return [x0, y0 + h - q]; };
+    const s0 = toS(px, py), L = halfSpan * Math.min(W, H); let d = '';
+    for (let i = 0; i <= 16; i++) { const q = at(s0 - L + (2 * L * i) / 16); d += (i ? 'L' : 'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1); }
+    pth.setAttribute('d', d); return [px, py]; }
 
   const hs = document.createElement('div');
   hs.id = 'hs-icon';
@@ -62,7 +78,7 @@ export function createHud() {
 
   const lowhp = document.createElement('div'); lowhp.id = 'lowhp';
   const ring = document.createElement('div'); ring.id = 'reload-ring';
-  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, hs, radioStack, lowhp, ring);
+  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, warn, hs, radioStack, lowhp, ring);
 
   let health = 100;
   let score = 0;
@@ -104,10 +120,15 @@ export function createHud() {
   let dirHideAt = 0, dirFrames = 0, dirRaf = 0;
   function dirTick() { if (window.SS && window.SS.hudFreeze) { dirRaf = requestAnimationFrame(dirTick); return; } dirFrames -= 1; if (dirFrames <= 0 && performance.now() >= dirHideAt) { dir.classList.remove('show'); dirRaf = 0; return; } dirRaf = requestAnimationFrame(dirTick); }
   function damageDirection(angle) {
-    dir.style.transform = 'rotate(' + angle + 'rad)'; dir.classList.add('show'); dir.style.opacity = '';
+    hud.dirPoint = edgePath(dirSvg, dirPath, angle, 0.3, 12); dir.style.transform = 'none'; dir.classList.add('show'); dir.style.opacity = '';
     dirHideAt = performance.now() + 900; dirFrames = 3; hud.dirCount = (hud.dirCount | 0) + 1; hud.dirAngle = angle;
     if (!dirRaf) dirRaf = requestAnimationFrame(dirTick);
   }
+
+  // m1v: warning streak on the edge toward an off-view shooter (no damage from there; this tells the player to look)
+  let warnHideAt = 0, warnFrames = 0, warnRaf = 0;
+  function warnTick() { if (window.SS && window.SS.hudFreeze) { warnRaf = requestAnimationFrame(warnTick); return; } warnFrames -= 1; if (warnFrames <= 0 && performance.now() >= warnHideAt) { warn.classList.remove('show'); warnRaf = 0; return; } warnRaf = requestAnimationFrame(warnTick); }
+  function edgeWarn(angle) { hud.warnPoint = edgePath(warnSvg, warnPath, angle, 0.18, 6); warn.classList.add('show'); warnHideAt = performance.now() + 700; warnFrames = 3; hud.warnCount = (hud.warnCount | 0) + 1; hud.warnAngle = angle; if (!warnRaf) warnRaf = requestAnimationFrame(warnTick); }
 
   function setHealth(v) {
     health = v;
@@ -194,6 +215,7 @@ export function createHud() {
     hitMarker,
     damageVignette,
     damageDirection,
+    edgeWarn,
     setHealth,
     setScore,
     headshotFlash,

@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { art, SPLIT_ANIMS } from './art.js';
 import { createRagdollSystem } from './ragdoll.js';
 
+// m1v tunables: wave-1 enemy damage multiplier (tester died at the first cover every run) and the cover grace period
+export const WAVE1_DAMAGE = 0.6;
+// cover grace: COVER_GRACE_S in cover.js
 const BODY_DMG = 55;
 const HEAD_DMG = 100;
 const MAX_HEALTH = 100;
@@ -880,10 +883,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     slot.line.material.opacity = 0.9;
   }
 
-  let lastPlayerHitS = 0;
+  let lastPlayerHitS = 0, lastPlayerHitSim = -99;
+  // m1v: warning for fire from outside the view - edge flash on the shooter's side + a supersonic crack
+  function warnFrom(pos) { const SSx = window.SS; if (!SSx) return; const c = camera.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = pos.x - c.x, dz = pos.z - c.z;
+    const fwd = dx * Math.sin(yaw) + dz * -Math.cos(yaw), right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
+    if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(Math.atan2(right, fwd)); if (SSx.audio && SSx.audio.crack) SSx.audio.crack(pos); }
   function enemyShoot(enemy) {
     // m1u: a balcony/window/roof shooter fires only while visibly present (a tracer from an empty balcony otherwise)
-    if (((enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.05) && !playerSees(enemy)) { enemy.silentSkips = (enemy.silentSkips | 0) + 1; return; }
+    enemy.group.getWorldPosition(_losP); _losP.y += 1.25; const offView = !onScreen(_losP) && !onScreen(_losP.setY(_losP.y + 0.37));
+    // m1v: fire from outside the view is never damaging; it comes with a warning (edge flash on the shooter's side + crack)
+    if (!offView && ((enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.05) && !playerSees(enemy)) { enemy.silentSkips = (enemy.silentSkips | 0) + 1; return; }
     if (window.SS) window.SS.enemyShots = (window.SS.enemyShots | 0) + 1;
     const diff = difficulty();
     enemy.group.updateMatrixWorld(true);
@@ -915,10 +924,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (window.SS && window.SS.testAccuracy) chance *= window.SS.testAccuracy; // tests only: draw enough hits to exercise the sight check
     chance = Math.max(0.02, Math.min(0.85, chance));
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
-    let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap;
+    const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
+    let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap && simS - (lastPlayerHitSim || -99) >= gap; // spacing holds in BOTH real and game time
+    // m1v grace: no damage for COVER_GRACE_S (real time) after first reaching cover in a run
+    if (hit && window.SS && window.SS.coverGraceUntil && performance.now() < window.SS.coverGraceUntil) { hit = false; window.SS.graceBlocked = (window.SS.graceBlocked | 0) + 1; }
+    if (offView) { hit = false; enemy.offViewShots = (enemy.offViewShots | 0) + 1; if (window.SS) window.SS.offViewShots = (window.SS.offViewShots | 0) + 1; warnFrom(enemy.group.position); }
     // m1t: no hits from out of the player's sight (tester: 6 min of hits from a fighter hidden behind a far burned car).
     if (hit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
-    if (hit) lastPlayerHitS = nowS;
+    if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
     if (!hit) {
       _aim.x += (Math.random() - 0.5) * 2.4;
@@ -933,7 +946,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.rounds = 0;
     }
     if (hit) {
-      const amount = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4));
+      const amount = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 ? WAVE1_DAMAGE : 1); // m1v: softer first wave
+      // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
+      if (!playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       player.damage(window.SS && window.SS.input && window.SS.input.cover ? amount * 0.6 : amount, _muzzle); // cover also softens hits
     }
   }
@@ -1034,7 +1049,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // m1u: 'sees' = a meaningful part of the fighter: the chest centre AND one more point (head or a shoulder) clear,
   // and the body at least ~12 px tall on screen (a few pixels behind a far cart is not visible).
   const _losS = new THREE.Vector3();
+  // m1v: on screen = inside the CURRENT camera frustum (matrices refreshed now, so it holds at 1 fps), with a margin
+  const _osV = new THREE.Vector3();
+  function onScreen(pt, margin) { camera.updateMatrixWorld(); _osV.copy(pt).project(camera); const m = margin == null ? 0.94 : margin; return _osV.z > -1 && _osV.z < 1 && Math.abs(_osV.x) <= m && Math.abs(_osV.y) <= m; }
+  api.onScreen = onScreen;
   function playerSees(e) { e.group.getWorldPosition(_losP); const x0 = _losP.x, y0 = _losP.y, z0 = _losP.z, c = camera.position;
+    _losS.set(x0, y0 + 1.25, z0); if (!onScreen(_losS)) { _losS.set(x0, y0 + 1.62, z0); if (!onScreen(_losS)) return false; } // chest or head on screen
     const d = Math.hypot(x0 - c.x, z0 - c.z, y0 + 1.2 - c.y); const px = 1.7 / (2 * d * Math.tan(camera.fov * Math.PI / 360)) * (window.innerHeight || 390); if (px < 12) return false;
     _losP.set(x0, y0 + 1.25, z0); if (!clearToEye(_losP)) return false;
     const rx = (z0 - c.z), rz = -(x0 - c.x), rl = Math.hypot(rx, rz) || 1; // sideways unit (shoulders)
@@ -1705,7 +1725,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;
-    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
+    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
     if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
     if (window.SS) window.SS.bursting = false;
   }
@@ -1726,6 +1746,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   api.debugTruck = () => startTruck();
   api.debugGrenade = () => { const th = list.find((e) => e.alive); if (th) throwGrenade(th); return !!th; };
   api.debugRoof = () => spawnOne('roof');
+  api.debugShoot = (e) => enemyShoot(e); // tests: one real enemy shot (all gates apply)
   api.spawnEnemy = function spawnEnemy(behavior) {
     return spawnOne(behavior || undefined);
   };

@@ -164,6 +164,13 @@ export function createAudio() {
     tone(68, 0.09, 0.12, 'sine', p);
   }
 
+  // m1v: supersonic crack for fire from outside the view (sharp high snap, panned to the shooter's side)
+  function crack(pos) {
+    if (!ctx) return;
+    const p = panNode(bearing(pos) * 1.2); const g = ctx.createGain(); g.gain.value = 0.5; p.connect(g); g.connect(master);
+    burst(0.035, 0.7, 4200, 1.2, 'highpass', p); burst(0.06, 0.25, 2400, 2, 'bandpass', p);
+  }
+
   function distantShot() {
     if (!ctx) return;
     const p = panNode((Math.random() * 2 - 1) * 0.85);
@@ -333,5 +340,5 @@ export function createAudio() {
     }
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, hit, kill, headshot, reload, radio, pickup };
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup };
 }

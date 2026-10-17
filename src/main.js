@@ -92,8 +92,9 @@ window.SS.renderer = renderer; // headless shots read info.render.triangles
 
 const priorHit = weapon.onHit;
 weapon.onHit = function onHit(info) {
+  const wasAlive = !!(info && info.enemy && info.enemy.alive); // m1v: accuracy counts hits on LIVE enemies only
   if (priorHit) priorHit(info);
-  score.registerHit();
+  if (wasAlive) score.registerHit();
   audio.hit();
 };
 weapon.onShot = function onShot() {
@@ -144,6 +145,7 @@ function applyCamera(dt) {
 }
 
 function simStep(dt) {
+  if (window.SS.running) window.SS.simTime = (window.SS.simTime || 0) + (dt || 0);
   const frozen = !player.alive; // death freezes the world: no walking, no enemy/world updates
   if (window.SS.walking && !frozen) {
     camera.position.z -= SPEED * dt;
@@ -185,6 +187,7 @@ function adaptRes(raw) {
 const frameErrs = new Set();
 function frame(now) {
   requestAnimationFrame(frame);
+  if (!window.SS.running && document.body.classList.contains('starting')) { last = 0; return; } // m1v: let 'Starting...' present (no GPU work until the run is live)
   const raw = last ? (now - last) / 1000 : 0; const tFrame = performance.now();
   last = now;
   adaptRes(raw); if (window.SS.autoLowTick) window.SS.autoLowTick(Math.min(raw, 1));
@@ -224,7 +227,7 @@ function onResize() {
 window.addEventListener('resize', onResize);
 // Title backdrop (tester m1r: black title on Low/High): the frame loop only starts on Play, so until then redraw the
 // street a few times a second (also after resizes, which clear the canvas).
-{ let lastTitle = 0, lastRaf = 0; const titleDraw = (t) => { if (started) return;
+{ let lastTitle = 0, lastRaf = 0; const titleDraw = (t) => { if (started) return; if (document.body.classList.contains('starting')) { requestAnimationFrame(titleDraw); return; } // m1v: no title GPU work while 'Starting...' must get on screen
     // m1u: with no manual pick the title also benchmarks (a fresh profile sat on High at 0.5 fps): draw every frame and
     // feed the real frame time to the auto tier steps until the tier settles; a pick/?q= keeps the cheap 4 Hz redraw.
     const bench = !EXPLICIT && !PICKED && window.SS.quality !== 'ultra-low' && art.done && !/[?&]titlebench=0\b/.test(location.search); const raw = lastRaf ? (t - lastRaf) / 1000 : 0; lastRaf = t;
@@ -252,7 +255,7 @@ function showOver(result) {
       ' · ' + e.distance + ' m' +
       ' · Kills ' + e.kills +
       ' · Headshots ' + e.headshots +
-      ' · Accuracy ' + e.accuracy + '%';
+      ' · Accuracy ' + e.accuracy + '%' + (e.shots != null ? ' (' + e.hits + '/' + e.shots + ' hits)' : '');
   }
   overTable.innerHTML = '<tr><th>#</th><th>Score</th><th>Dist</th><th>Kills</th><th>HS</th><th>Acc</th><th>Date</th></tr>';
   const rows = result.table || [];
@@ -286,7 +289,7 @@ function restartRun() {
   window.SS.health = 100;
   window.SS.bursting = false; window.SS.engaged = 0; window.SS.waveClears = 0; window.SS.slowmoUntil = 0; window.SS.runs = (window.SS.runs | 0) + 1;
   window.SS.walking = true;
-  window.SS.running = true; window.SS.startedAt = performance.now(); document.body.classList.remove('title'); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
+  window.SS.running = true; window.SS.startedAt = performance.now(); window.SS.firstCoverT = 0; window.SS.coverGraceUntil = 0; window.SS.simTime = 0; document.body.classList.remove('title'); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   cover.reset();
   world.reset(camera.position.z);
   score.setDistance(0);
@@ -305,11 +308,13 @@ let playDone = false;
 // m1u: instant feedback - 'Starting...' paints on the press, the heavy start runs after that paint, the overlay and the
 // audio (muted until then) come up with the first run frame.
 window.SS.firstRunFrame = () => { if (!document.body.classList.contains('starting')) return; document.body.classList.remove('starting'); try { audio.go(); } catch (_) {} window.SS.startPaintMs = Math.round(performance.now() - (window.SS.pressT || 0)); };
-const afterPaint = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
+// m1v: heavy start work only after the 'Starting...' frame was produced: two rAFs (the first frame with the overlay has
+// been committed) plus a short timeout so a slow GPU/compositor presents it before shader compiles/uploads queue up.
+const afterPaint = (fn) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(fn, 200))));
 { const pb = document.getElementById('play'); pb.addEventListener('pointerdown', (ev) => { if (ev.cancelable) ev.preventDefault(); try { audio.unlock(); } catch (_) {} pb.click(); }); }
 document.getElementById('play').addEventListener('click', () => {
   audio.unlock(); if (playDone) return; playDone = true; window.SS.pressT = performance.now(); document.body.classList.add('starting'); afterPaint(startNow); });
-function startNow() {
+function startNow() { window.SS.startNowAt = Date.now(); // m1v: wall clock when the heavy start begins (tests compare with presented frames)
   document.getElementById('start').style.display = 'none';
   restartRun(); // first start and Restart share one full reset (tester m1r: Restart left wave/spawner state behind)
   window.SS.walking = true;
@@ -322,7 +327,7 @@ function startNow() {
 
 // Act on pointerdown (tester: short taps dropped at low fps - a click needs down+up on the same element); click is the
 // keyboard/fallback path, de-duplicated so one press never restarts twice.
-{ let lastR = 0; const go = (e) => { const now = performance.now(); if (now - lastR < 600) return; lastR = now; if (e && e.preventDefault) e.preventDefault(); audio.unlock(); try { audio.hush(); } catch (_) {} window.SS.pressT = now; document.body.classList.add('starting'); afterPaint(() => { restartRun(); requestAnimationFrame(() => requestAnimationFrame(() => window.SS.firstRunFrame())); }); };
+{ let lastR = 0; const go = (e) => { const now = performance.now(); if (now - lastR < 600) return; lastR = now; if (e && e.preventDefault) e.preventDefault(); audio.unlock(); try { audio.hush(); } catch (_) {} window.SS.pressT = now; document.body.classList.add('starting'); afterPaint(() => { window.SS.startNowAt = Date.now(); restartRun(); requestAnimationFrame(() => requestAnimationFrame(() => window.SS.firstRunFrame())); }); };
   const rb = document.getElementById('restart'); rb.addEventListener('pointerdown', go); rb.addEventListener('click', go); }
 
 showBest();

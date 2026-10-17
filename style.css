@@ -463,3 +463,12 @@ body.ready #loading { display: block; visibility: hidden; }
 #starting { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.82);
   color: #f4efe4; font: 600 22px system-ui, sans-serif; letter-spacing: 0.08em; pointer-events: none; }
 body.starting #starting { display: flex; }
+
+/* m1v: damage arc + off-view warning drawn as SVG ring segments on the real viewport edge */
+#dmg-dir { left: 0 !important; top: 0 !important; width: 100vw !important; height: 100vh !important; margin: 0 !important; transform: none !important; }
+#dmg-dir .arc, #dmg-dir .arrow { display: none !important; }
+#dmg-dir svg, #edge-warn svg { position: absolute; left: 0; top: 0; overflow: visible; }
+#dmg-dir path { fill: none; stroke: rgba(255, 30, 30, 0.95); stroke-width: 18; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(255, 0, 0, 0.9)); }
+#edge-warn { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 4; transition: opacity 0.35s linear; }
+#edge-warn.show { opacity: 1; transition: none; }
+#edge-warn path { fill: none; stroke: rgba(255, 236, 170, 0.95); stroke-width: 8; stroke-linecap: round; filter: drop-shadow(0 0 8px rgba(255, 210, 90, 0.95)); }
