@@ -19,7 +19,7 @@ export function createArms(src, clips, camera) {
   const R = side('R'), L = side('L');
   if (!R.up || !R.fore || !R.ctl || !L.up || !L.fore || !L.ctl) return null;
   root.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = false; o.renderOrder = 2; if (o.material) { o.material = o.material.clone(); o.material.roughness = 0.75; o.material.metalness = 0; o.material.color.setRGB(0.78, 0.6, 0.48); } } });
-  root.scale.setScalar(+(QP.get('armscale') || 0.13));
+  root.scale.setScalar(+(QP.get('armscale') || 0.1));
   root.rotation.y = +(QP.get('armrot') || 0) * Math.PI / 180; // rig already faces -Z; the old PI flip put the right arm on the left
   { const v = (QP.get('armpos') || '-0.05,0.0,0.2').split(',').map(Number); root.position.set(v[0], v[1], v[2]); } // shoulders roughly at eye height, just behind the camera (rig space)
   const clip = (clips || []).find((c) => c.name === 'grip');
@@ -58,7 +58,7 @@ export function createArms(src, clips, camera) {
     let gyB = Infinity, gf = 0.72; for (let f = 0.62; f <= 0.8; f += 0.02) { const y = lo[binAt(f)]; if (y < gyB) { gyB = y; gf = f; } }
     const guardBot = Math.min(lo[binAt(0.25)], lo[binAt(0.3)]), recvBot = lo[binAt(0.6)];
     // right hand round the middle-upper pistol grip; left palm under the handguard; magwell for reloads
-    api.grip.position.set(0.0, gyB + (recvBot - gyB) * 0.6, zAt(gf - 0.02)); api.guard.position.set(0.0, guardBot - 0.005, zAt(0.27));
+    api.grip.position.set(0.0, gyB + (recvBot - gyB) * 0.6, zAt(gf - 0.02)); api.guard.position.set(0.0, guardBot - 0.005, zAt(+(QP.get('guardf') || 0.24)));
     api.mag.position.set(0.0, lo[binAt(0.5)] + 0.03, zAt(0.5)); api.profile = { muzzleAtMin, gf, gyB, guardBot, recvBot, len };
     holder.add(api.grip, api.guard, api.mag); api.holder = holder;
   };
@@ -76,10 +76,17 @@ export function createArms(src, clips, camera) {
     S.hand.getWorldPosition(_a); api.reach = Math.max(api.reach, _a.distanceTo(target));
   }
   const _pole = new THREE.Vector3(), _tg = new THREE.Vector3();
+  const LSH = (QP.get('lsh') || '0.09,-0.02,-0.24').split(',').map(Number); // camera-space shift of the left shoulder
   api.update = function update(reloadT) {
     if (!api.holder) return;
     for (const [b, q] of rest) b.quaternion.copy(q);
     root.updateMatrixWorld(true);
+    // Left shoulder forward and in (supporting arm reaches out along the rifle): the handguard is ~0.7 m from the rest
+    // shoulder but the arm is 0.53 m long, so the hand stopped short at the magazine.
+    if (!L.up0) L.up0 = L.up.position.clone();
+    L.up.position.copy(L.up0); root.updateMatrixWorld(true); L.up.getWorldPosition(_a);
+    camera.localToWorld(_b.set(LSH[0], LSH[1], LSH[2])); camera.localToWorld(_S.set(0, 0, 0)); _a.add(_b.sub(_S));
+    L.up.parent.updateMatrixWorld(true); L.up.position.copy(L.up.parent.worldToLocal(_a)); root.updateMatrixWorld(true);
     // right hand on the grip; elbow down and out to the right
     api.grip.getWorldPosition(_tg); camera.localToWorld(_pole.set(0.6, -0.9, 0.2)); solve(R, _tg, _pole);
     // left hand: handguard, or down to the magazine and back during a reload
