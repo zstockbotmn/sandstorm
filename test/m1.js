@@ -106,6 +106,9 @@ const res = {};
     await p.keyboard.up('Space');
     await p.evaluate(() => { SS.input.fire = false; SS.input.scope = false; });
   }
+  res.shoot.diag = await p.evaluate(() => { const e = window.__shootTarget; const c = SS.camera.position.clone(); const v = e.group.position.clone(); v.y += 1.3; const d = v.clone().sub(c).normalize();
+    const h = SS.weapon.firstHit && SS.weapon.firstHit(c, d); return { alive: e.alive, hp: e.health, ammo: SS.weapon.ammo, reserve: SS.weapon.reserve, running: SS.running, cover: SS.cover && SS.cover.state, health: SS.player.health,
+      hit: h ? [h.object.name || h.object.type, !!(h.object.userData && h.object.userData.enemy === e), +h.distance.toFixed(1)] : null, dist: +v.distanceTo(c).toFixed(1), starting: document.body.classList.contains('starting') }; });
   res.shoot.k1 = await p.evaluate(() => SS.scoreSys.state.kills);
   res.shoot.k0 = res.shoot.k0;
   // if soft-GL never landed a kill, clear the halt so distance can advance (shoot assert still fails)
