@@ -91,7 +91,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1V ? process.env.SS_M
       for (let y = 5; y < img.height; y += 11) for (let x = 5; x < img.width; x += 11) { const i = (y * img.width + x) * 4; tot++; if (img.data[i] + img.data[i + 1] + img.data[i + 2] < 120) dark++; }
       (res.Elog = res.Elog || []).push([Math.round(f.ts - tTap), +(dark / tot).toFixed(2)]); if (!seen && dark / tot > 0.8) { seen = { ms: Math.round(f.ts - tTap), beforeStart: f.ts < startAt, startAtMs: startAt - tTap }; fs.writeFileSync(OUT + '/E-starting.png', Buffer.from(f.data, 'base64')); } }
     res.E = { seen, throttle: 6 }; await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
-    await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 }).catch(() => {}); res.E.startPaintMs = await p.evaluate(() => SS.startPaintMs);
+    await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 }).catch(() => {}); res.E.startPaintMs = await p.evaluate(() => SS.startPaintMs); res.E.diag = await p.evaluate(() => SS.startDiag || null);
     if (!seen) fail.push('E: Starting... never seen on screen with a 6x throttled CPU'); else { if (!seen.beforeStart) fail.push('E: Starting... only reached the screen after the heavy start began'); if (seen.ms > 4000) fail.push('E: Starting... took ' + seen.ms + ' ms to reach the screen'); }
     await p.context().close(); } catch (e) { fail.push('E exception ' + e.message); }
   // F) arc on the viewport edge at several aspect ratios
