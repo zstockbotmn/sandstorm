@@ -67,5 +67,5 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
       fs.mkdirSync('screenshots/waves', { recursive: true }); await p.screenshot({ path: 'screenshots/waves/' + mode + '.png' }); await ctx.close();
     } catch (e) { fail.push(mode + ' exception ' + e.message); }
   }
-  if (process.env.SS_WAVES_PASSIVE) { const tot = Object.values(res).reduce((a, r) => a + ((r && r.uh && r.uh.hits) | 0), 0); res.passiveHits = tot; if (tot < 4) fail.push('passive phases drew only ' + tot + ' hits in total (unseen-hit check not exercised)'); }
+  if (process.env.SS_WAVES_PASSIVE) { const tot = Object.values(res).reduce((a, r) => a + ((r && r.uh && r.uh.hits) | 0), 0); res.passiveHits = tot; const gated = Object.values(res).reduce((a, r) => a + ((r && r.uh && r.uh.shots) | 0), 0); res.passiveShots = gated; /* m1v: hits are rarer by design now (game-time spacing, cover grace) - require the gate to be exercised: >=20 gated shots, >=2 landed */ if (tot < 2 || gated < 20) fail.push('passive phases drew only ' + tot + ' hits / ' + gated + ' gated shots in total (unseen-hit check not exercised)'); }
   res.fail = fail; console.log(JSON.stringify(res)); console.log(fail.length ? 'WAVES FAIL' : 'WAVES PASS'); await b.close(); srv.close(); process.exit(fail.length ? 1 : 0); })();
