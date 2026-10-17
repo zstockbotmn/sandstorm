@@ -5,6 +5,9 @@ import { createRagdollSystem } from './ragdoll.js';
 
 // m1v tunables: wave-1 enemy damage multiplier (tester died at the first cover every run) and the cover grace period
 export const WAVE1_DAMAGE = 0.6;
+// m1v: the softer first wave covers the opening only (game seconds) - a player who never clears wave 1 (standing still)
+// goes back to full damage after this, so loitering stays lethal (stand-still death target 60-90 s).
+export const WAVE1_SOFT_S = 40;
 // cover grace: COVER_GRACE_S in cover.js
 const BODY_DMG = 55;
 const HEAD_DMG = 100;
@@ -946,7 +949,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.rounds = 0;
     }
     if (hit) {
-      const amount = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 ? WAVE1_DAMAGE : 1); // m1v: softer first wave
+      const amount = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1); // m1v: softer first wave (opening only)
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       player.damage(window.SS && window.SS.input && window.SS.input.cover ? amount * 0.6 : amount, _muzzle); // cover also softens hits

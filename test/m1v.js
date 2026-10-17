@@ -19,7 +19,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1V ? process.env.SS_M
     await p.evaluate(() => { window.__dmg = []; const P = SS.player, d0 = P.damage.bind(P); P.damage = (amount, from) => { const c = SS.camera; c.updateMatrixWorld(); let ndc = null;
         if (from) { let best = null, bd = 1e9; for (const e of SS.enemies.list || []) { if (!e.alive) continue; const dd = e.group.position.distanceTo(from); if (dd < bd) { bd = dd; best = e; } }
           if (best) { const w = best.group.position.clone(); w.y += 1.25; const v = w.project(c); ndc = [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(3)]; } }
-        window.__dmg.push({ t: performance.now(), amount: +(+amount).toFixed(2), ndc, wave: SS.waveClears | 0, cover: !!SS.input.cover }); return d0(amount, from); }; }); }
+        window.__dmg.push({ t: performance.now(), amount: +(+amount).toFixed(2), ndc, wave: SS.waveClears | 0, soft: (SS.waveClears | 0) === 0 && (SS.simTime || 0) < 40, cover: !!SS.input.cover }); return d0(amount, from); }; }); }
   const hideOthers = (p) => p.evaluate(() => { for (const q of SS.enemies.list) if (q !== window.__e && q.alive) { q.group.position.y = -50; q.pinned = true; q.shootCd = 1e9; } });
   const want = (k) => !ONLY || ONLY.includes(k);
   // A) off-view rooftop shooter (upper right, outside the frustum) at ~2 fps; then the same shooter on screen as the control
@@ -47,7 +47,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1V ? process.env.SS_M
     await hideOthers(p);
     await p.waitForFunction(() => SS.firstCoverT > 0, null, { timeout: 90000 }).catch(() => {}); await p.waitForTimeout(5000);
     res.B = await p.evaluate(() => { clearInterval(window.__iv); const fc = SS.firstCoverT; const D = window.__dmg; return { firstCover: !!fc, inGrace: D.filter((d) => d.t >= fc && d.t < fc + 1450).length, afterGrace: D.filter((d) => d.t >= fc + 1500).length,
-      blocked: SS.graceBlocked | 0, wave1Max: Math.max(0, ...D.filter((d) => d.wave === 0).map((d) => d.amount)), wave1Hits: D.filter((d) => d.wave === 0).length }; });
+      blocked: SS.graceBlocked | 0, wave1Max: Math.max(0, ...D.filter((d) => d.soft).map((d) => d.amount)), wave1Hits: D.filter((d) => d.soft).length }; });
     if (!res.B.firstCover) fail.push('B: never reached cover'); else { if (res.B.inGrace) fail.push('B: ' + res.B.inGrace + ' hits inside the 1.5 s cover grace'); if (!res.B.afterGrace) fail.push('B: no hits after the grace (test not exercised)'); }
     if (!res.B.wave1Hits) fail.push('B: no wave-1 hits sampled'); else if (res.B.wave1Max > 22 * 0.6 + 0.01) fail.push('B: wave-1 hit of ' + res.B.wave1Max + ' > ' + (22 * 0.6).toFixed(1));
     await p.context().close(); } catch (e) { fail.push('B exception ' + e.message); }
