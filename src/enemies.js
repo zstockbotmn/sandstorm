@@ -1013,8 +1013,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Ground path into the opening, then a short climb. No underground hide point.
   // Bring a hidden/stuck/behind-the-player enemy to a visible ground cover spot 12-30 m ahead, already leaning out to fire.
+  const _frM = new THREE.Matrix4(), _frF = new THREE.Frustum();
   function toVisibleCover(e) {
     if (e.anchor && isElevated(e.anchor.type)) { e.unseenT = 0; e.seen = true; e.engaged = true; beginFire(e); return; } // never teleport a roof/window shooter to the street
+    // Never teleport a fighter the player could be looking at (tester: a close fighter vanished mid-turn): within 25 m,
+    // or on screen, it steps out and fights from where it is instead.
+    { const d = e.group.position.distanceTo(camera.position); camera.updateMatrixWorld(); _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM);
+      if ((d < 25 || _frF.containsPoint(e.group.position)) && e.anchor) { e.unseenT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} e.vanishSaved = (e.vanishSaved | 0) + 1; return; } }
     const pz = camera.position.z; let best = null, bd = 1e9;
     for (const seg of world.segments || []) for (const c of seg.coverPoints || []) {
       if (!['car', 'barrel', 'wall', 'door'].includes(c.type)) continue;
@@ -1484,7 +1489,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       }
       if (e.pinned) { if (e.debugVel) { e.group.position.addScaledVector(e.debugVel, dt); e.moving = true; e.moveKind = 'run'; e.moveSpeed = e.debugVel.length(); } }
       else if (e.group.position.z > pz + 40 && e.engaged && !(e.anchor && isElevated(e.anchor.type))) toVisibleCover(e); // engaged enemies behind stay put (360 deg aim); only far-behind ones are brought back
-      else if (e.group.position.z > pz + 6) {
+      // Despawn only unengaged fighters left behind, or anything very far behind (tester: an engaged fighter ~12 m to the
+      // side, slightly behind, vanished - every enemy 6-40 m behind was despawned, engaged or not).
+      else if ((e.group.position.z > pz + 6 && !e.engaged) || e.group.position.z > pz + 60) {
         e.alive = false;
         unregister(e);
         root.remove(e.group);
