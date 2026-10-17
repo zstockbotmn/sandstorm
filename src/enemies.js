@@ -1050,7 +1050,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function toVisibleCover(e) {
     const aheadE = camera.position.z - e.group.position.z, dE = e.group.position.distanceTo(camera.position);
     // (m1p stall) a roof/window shooter stays up only while it is ahead and close enough to see through the haze
-    if (e.anchor && isElevated(e.anchor.type) && aheadE > 4 && dE < 30) { e.unseenT = 0; e.seen = true; e.engaged = true; beginFire(e); return; } // never teleport a roof/window shooter to the street
+    if ((e.anchor && isElevated(e.anchor.type)) || e.group.position.y > 0.05) { e.unseenT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} return; } // m1t: never teleport anyone off a roof/window/climb (vertical pop); they peek (hits still need the player's sight) // never teleport a roof/window shooter to the street
     // Never teleport a fighter the player could be looking at (tester: a close fighter vanished mid-turn): within 25 m,
     // or on screen, it steps out and fights from where it is instead.
     { const d = e.group.position.distanceTo(camera.position); camera.updateMatrixWorld(); _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM);
