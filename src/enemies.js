@@ -941,7 +941,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // m1t: no hits from out of the player's sight (tester: 6 min of hits from a fighter hidden behind a far burned car).
     // far-hit: the shooter must have been continuously visible for SEEN_BEFORE_HIT_S (no first-frame hits from a peek/relocation)
     const needSeen = nowS - (enemy.movedR || -99) < 3 ? SEEN_BEFORE_HIT_S : SEEN_PEEK_S; // full hold right after a relocation, a short one for peeks from known cover
-    if (hit && !(enemy.seenSinceR && nowS - enemy.seenSinceR >= needSeen && simS - (enemy.seenSinceSim || 0) >= needSeen)) { hit = false; enemy.freshBlocked = (enemy.freshBlocked | 0) + 1; if (window.SS) window.SS.freshBlocked = (window.SS.freshBlocked | 0) + 1; }
+    if (hit && needSeen > 0 && !(enemy.seenSinceR && nowS - enemy.seenSinceR >= needSeen && simS - (enemy.seenSinceSim || 0) >= needSeen)) { hit = false; enemy.freshBlocked = (enemy.freshBlocked | 0) + 1; if (window.SS) window.SS.freshBlocked = (window.SS.freshBlocked | 0) + 1; }
     if (hit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
