@@ -1019,6 +1019,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Ground path into the opening, then a short climb. No underground hide point.
   // Bring a hidden/stuck/behind-the-player enemy to a visible ground cover spot 12-30 m ahead, already leaning out to fire.
   const _frM = new THREE.Matrix4(), _frF = new THREE.Frustum();
+  function inView(e) { _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM); return _frF.containsPoint(e.group.position); }
   function toVisibleCover(e) {
     const aheadE = camera.position.z - e.group.position.z, dE = e.group.position.distanceTo(camera.position);
     // (m1p stall) a roof/window shooter stays up only while it is ahead and close enough to see through the haze
@@ -1503,7 +1504,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
         list.splice(i, 1);
         continue;
       }
+      if (!(e.group.position.z > pz - 0.5)) e.behindT = 0;
       if (e.pinned) { if (e.debugVel) { e.group.position.addScaledVector(e.debugVel, dt); e.moving = true; e.moveKind = 'run'; e.moveSpeed = e.debugVel.length(); } }
+      // Tester m1r / waves (Ultra-low): a fighter that flanked behind the player and stays out of view kept ENEMIES at 1 and the
+      // walk halted for good. Engaged fighters behind the player (and off-screen) for 6 s are brought to visible cover ahead.
+      else if (e.engaged && !(e.anchor && isElevated(e.anchor.type)) && e.group.position.z > pz - 0.5 && !inView(e) && ((e.behindT = (e.behindT || 0) + dt) > 6)) { e.behindT = 0; toVisibleCover(e); }
       else if (e.group.position.z > pz + 40 && e.engaged && !(e.anchor && isElevated(e.anchor.type))) toVisibleCover(e); // engaged enemies behind stay put (360 deg aim); only far-behind ones are brought back
       // Despawn only unengaged fighters left behind, or anything very far behind (tester: an engaged fighter ~12 m to the
       // side, slightly behind, vanished - every enemy 6-40 m behind was despawned, engaged or not).
