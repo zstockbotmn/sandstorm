@@ -24,7 +24,8 @@ export function createArms(src, clips, camera) {
   const hash = (x, y, z) => { const h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return h - Math.floor(h); };
   const vnoise = (x, y, z) => { const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = x - ix, fy = y - iy, fz = z - iz; const L = (a, b, t) => a + (b - a) * t * t * (3 - 2 * t);
     return L(L(L(hash(ix, iy, iz), hash(ix + 1, iy, iz), fx), L(hash(ix, iy + 1, iz), hash(ix + 1, iy + 1, iz), fx), fy), L(L(hash(ix, iy, iz + 1), hash(ix + 1, iy, iz + 1), fx), L(hash(ix, iy + 1, iz + 1), hash(ix + 1, iy + 1, iz + 1), fx), fy), fz); };
-  const CAMO = [[0.55, 0.49, 0.37], [0.42, 0.40, 0.29], [0.33, 0.27, 0.19], [0.62, 0.56, 0.44], [0.24, 0.22, 0.17]], GLOVE = [0.21, 0.18, 0.14], CUFF = [0.36, 0.33, 0.25];
+  const CAMO = [[0.15, 0.14, 0.10], [0.30, 0.24, 0.15], [0.40, 0.41, 0.26], [0.60, 0.53, 0.38], [0.74, 0.68, 0.52]], GLOVE = [0.20, 0.17, 0.13], CUFF = [0.30, 0.27, 0.20];
+  const GSEG = { '01': 1.0, '02': 0.82, '03': 1.18 }; // finger segments shaded apart so knuckles/fingers read on the glove
   const camoK = +(QP.get('camok') || 16);
   root.traverse((o) => { if (!o.isMesh) return; o.frustumCulled = false; o.castShadow = false; o.renderOrder = 2;
     const g = o.geometry, pos = g && g.attributes.position; if (!pos) return; const si = g.attributes.skinIndex, sw = g.attributes.skinWeight, bones = o.skeleton ? o.skeleton.bones : null;
@@ -33,8 +34,9 @@ export function createArms(src, clips, camera) {
     for (let i = 0; i < pos.count; i++) { let handW = 0, cuffW = 0;
       if (si && sw && bones) for (let k = 0; k < 4; k++) { const bn = bones[si.getComponent(i, k)]; const w = sw.getComponent(i, k); if (!bn || !w) continue; const nm = bn.name.toLowerCase();
         if (/hand|f_|thumb|palm/.test(nm)) handW += w; else if (/forearm/.test(nm)) cuffW += w * 0; }
-      let c; if (handW > 0.5) c = GLOVE; else { const x = pos.getX(i) / sz * camoK, y = pos.getY(i) / sz * camoK, z = pos.getZ(i) / sz * camoK; const n = 0.6 * vnoise(x, y, z) + 0.4 * vnoise(x * 2.3 + 7, y * 2.3, z * 2.3);
-        c = handW > 0.25 ? CUFF : CAMO[Math.min(CAMO.length - 1, Math.floor(n * CAMO.length * 1.15))]; }
+      let c; if (handW > 0.5) { let seg = '', best = 0; if (si && sw && bones) for (let k = 0; k < 4; k++) { const bn = bones[si.getComponent(i, k)], w = sw.getComponent(i, k); if (bn && w > best) { best = w; seg = (bn.name.match(/0([123])[LR]$/) || [])[0] || (/palm/.test(bn.name) ? 'palm' : ''); } }
+        const f = seg.startsWith('0') ? GSEG[seg.slice(0, 2)] || 1 : seg === 'palm' ? 1.1 : 0.95; c = [GLOVE[0] * f, GLOVE[1] * f, GLOVE[2] * f]; } else { const x = pos.getX(i) / sz * camoK, y = pos.getY(i) / sz * camoK, z = pos.getZ(i) / sz * camoK; let n = 0.6 * vnoise(x, y, z) + 0.4 * vnoise(x * 2.3 + 7, y * 2.3, z * 2.3); n = Math.max(0, Math.min(0.999, (n - 0.5) * 2.4 + 0.5)); // high-contrast blotches
+        c = handW > 0.25 ? CUFF : CAMO[Math.floor(n * CAMO.length)]; }
       col[i * 3] = c[0] ** 2.2; col[i * 3 + 1] = c[1] ** 2.2; col[i * 3 + 2] = c[2] ** 2.2; } // palette is sRGB; vertex colours are linear
     o.geometry = g.clone(); o.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
     if (o.material) { o.material = o.material.clone(); o.material.map = null; o.material.vertexColors = true; o.material.color.setRGB(1, 1, 1); o.material.roughness = 0.9; o.material.metalness = 0; o.material.needsUpdate = true; } });
@@ -96,7 +98,8 @@ export function createArms(src, clips, camera) {
     S.hand.getWorldPosition(_a); api.reach = Math.max(api.reach, _a.distanceTo(target));
   }
   const _pole = new THREE.Vector3(), _tg = new THREE.Vector3();
-  const LSH = (QP.get('lsh') || '0.09,-0.02,-0.24').split(',').map(Number); // camera-space shift of the left shoulder
+  const LPOLE = (QP.get('lpole') || '-2.5,-0.3,-0.8').split(',').map(Number); // left elbow out and down: the forearm angles in to the handguard
+  const LSH = (QP.get('lsh') || '-0.06,-0.16,-0.08').split(',').map(Number); // camera-space shift of the left shoulder
   api.update = function update(reloadT) {
     if (!api.holder) return;
     for (const [b, q] of rest) b.quaternion.copy(q);
@@ -112,7 +115,7 @@ export function createArms(src, clips, camera) {
     // left hand: handguard, or down to the magazine and back during a reload
     api.guard.getWorldPosition(_tg);
     if (reloadT > 0) { const w = Math.sin(Math.min(1, reloadT) * Math.PI); api.mag.getWorldPosition(_a); _a.y -= 0.12 * w; _tg.lerp(_a, Math.min(1, w * 1.6)); }
-    camera.localToWorld(_pole.set(-0.9, -1.0, 0.3)); solve(L, _tg, _pole); // elbow down and out: forearm angles up to the handguard instead of standing stiff
+    camera.localToWorld(_pole.set(...LPOLE)); solve(L, _tg, _pole); // elbow down and out: forearm angles up to the handguard instead of standing stiff
   };
   return api;
 }
