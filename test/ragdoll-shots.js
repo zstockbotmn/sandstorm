@@ -13,6 +13,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     res.tgt = await p.evaluate(async () => { const t0 = performance.now(); while (performance.now() - t0 < 120000) {
       const c = SS.camera.position, e = (SS.enemies.list || []).filter((x) => x.alive && x.exposed && x.art && (window.__ROOF ? x.anchor && x.anchor.type === 'roof' : !(x.anchor && /roof|window/.test(x.anchor.type))) && x.group.position.distanceTo(c) < 30).sort((a, b) => a.group.position.distanceTo(c) - b.group.position.distanceTo(c))[0];
       if (e) { window.__rdT = e; const v = e.group.position.clone(); v.y += 1.0; v.sub(c); SS.input.yaw = Math.atan2(v.x, -v.z); SS.input.pitch = -Math.atan2(v.y, Math.hypot(v.x, v.z)); return +e.group.position.distanceTo(c).toFixed(1); }
+      if (!window.__spawned && performance.now() - t0 > 20000 && !window.__ROOF) { window.__spawned = 1; const n = SS.debug.spawnEnemy('shifter'); if (n) n.engaged = true; } // seed gave only a roof fighter: add a ground one
       await new Promise((r) => setTimeout(r, 250)); } return null; });
     res.under = await p.evaluate(() => { const e = window.__rdT; if (!e) return null; const o = e.group.position.clone(); const rc = new SS.THREE.Raycaster(o.clone().setY(o.y + 0.6), new SS.THREE.Vector3(0, -1, 0), 0, 30);
       const vis = []; SS.scene.traverseVisible((m) => { if (!m.isMesh || m.isSkinnedMesh) return; let q = m; while (q) { if (q === e.group || q === SS.camera) return; q = q.parent; } vis.push(m); });
