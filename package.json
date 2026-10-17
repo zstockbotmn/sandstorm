@@ -24,6 +24,7 @@
   "dependencies": {
     "@dimforge/rapier3d": "^0.21.0",
     "@dimforge/rapier3d-compat": "^0.21.0",
-    "postprocessing": "^6.39.5"
+    "postprocessing": "^6.39.5",
+    "recast-navigation": "^0.43.1"
   }
 }

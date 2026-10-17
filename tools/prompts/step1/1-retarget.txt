@@ -1,0 +1,22 @@
+Write a NEW offline tool tools/retarget-loco.mjs (node ESM, run as `node tools/retarget-loco.mjs`) that builds assets/models/fighter.loco.anim.glb: legs+hips locomotion clips retargeted onto the Meshy fighter rig (assets/models/fighter1.rig.glb, same skeleton as fighter2/3). Read tools/retarget-quaternius.mjs first and reuse its approach for writing the glb (gltf-transform Document/NodeIO, node names, the rig's centimetre node space for Hips Y, FPS sampling) and src/art.js (how clips are loaded; bone names). Do NOT change src/ in this step.
+
+Sources:
+- CMU BVH files in assets-src/cmu/*.bvh (parse with three/examples/jsm/loaders/BVHLoader.js .parse(text); joints LeftUpLeg/LeftLeg/LeftFoot/LeftToeBase, Right*, Hips, LowerBack, Spine; units ~0.054 m per unit: scale so source hip height maps to the Meshy rig's hip height). Rest pose of a BVH = all joint rotations identity (T-pose, legs straight down).
+- KayKit glb files in assets-src/kaykit/src/KayKit_Character_Animations_1.1/Animations/gltf/Rig_Medium/*.glb (load with gltf-transform or a minimal three GLTFLoader-free parse; bones hips, upperleg.l, lowerleg.l, foot.l, toes.l, .r, spine, chest). Rest pose = the 'T-Pose' clip frame 0 (or bind pose if equal).
+
+Retarget method (handles different rest poses): for each mapped bone b, sample source world rotations S_b(t) and source rest world rotation S_b0; target rest world rotation T_b0 from the Meshy rig bind pose. Per bone, a swing correction C_b = rotation taking the target rest bone direction (bone -> its child, world) onto the source rest bone direction. Target world rotation T_b(t) = (S_b(t) * inv(S_b0)) * C_b * T_b0; convert to local with the parent's target world rotation. Map: Hips, LeftUpLeg, LeftLeg, LeftFoot, LeftToeBase, Right* and spine (CMU LowerBack->Spine02 at 50% strength via slerp toward rest; KayKit spine->Spine02 50%). Output tracks ONLY for Hips (rotation + position Y) and the leg bones (+ Spine02): the game keeps the Meshy upper body (art.js LOWER_ONLY/SPLIT_ANIMS mechanism).
+
+In place + heading: remove all Hips XZ translation. Remove the segment's heading: compute the hips' yaw per frame, fit a line yaw(t)=a+b*t over the segment, and rotate every frame's hips world rotation by -(a+b*t) about world Y so the body faces the Meshy model forward (+Z of the rig; verify by checking which way the rig's feet/toes point in bind pose) with no drift. Report b (deg/s) as the clip's turn rate. Measure the clip's average ground velocity in the body frame (forward m/s, right m/s, after the scale) from the removed root translation.
+
+Segment extraction for CMU takes (they contain walk + turns): slide a window, choose the longest-steady segment of exactly 2 full gait cycles (detect left-foot contacts: local minima of left foot world height with near-zero foot speed) where the body-frame velocity direction is stable (stddev < 15 deg) and |yaw rate| < 10 deg/s (except turn clips). Loop closure: blend the last 0.2 s toward the first frame pose (per-bone slerp) so it loops seamlessly; report the residual pose error.
+
+Clips to produce (name: source):
+- strafeL / strafeR: CMU 69_42..69_67 sideways segments (pick the best-scoring segment per direction across files; direction from the measured body-frame right velocity sign).
+- backWalk: CMU 69_50..69_55 backward segment (fallback KayKit Walking_Backwards).
+- runStrafeL / runStrafeR: KayKit Running_Strafe_Left / Running_Strafe_Right (whole clip, already a loop).
+- backRun: KayKit Walking_Backwards (it is a loop; the game plays it faster).
+- crouchWalk: KayKit Sneaking (or Crouching if it is a crouched walk; pick the lower hips).
+- turnL / turnR: CMU 69_16..69_19 turn-in-place: a 1-2 step segment, yaw removed by the linear fit, turn rate reported (sign: positive = turning left, counter-clockwise seen from above).
+Write each clip's metadata into a JSON sidecar assets/models/fighter.loco.meta.json: { name: { src, duration, fwd, right, speed, turnRate, loopErr } }.
+
+Also write tools/loco-check.mjs that loads the output glb + rig with three in node (no browser) and, for every clip, samples 60 frames, applies them to the rig, and reports per clip: max per-frame bone rotation delta (deg), foot-contact world drift when the clip's root velocity is re-applied (cm per contact), and feet-below-ground. Run both tools and fix problems until clips look sane (no bone flipping > 40 deg/frame, contact drift < 5 cm). Print the summary table. Keep total output file under 600 KB (sample 30 fps, quantize as the quaternius tool does).
