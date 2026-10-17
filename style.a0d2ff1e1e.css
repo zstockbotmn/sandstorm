@@ -440,3 +440,16 @@ body.title #hud, body.title #controls { visibility: hidden; }
 
 #loading { margin: 6px 0 0; font-size: 13px; opacity: 0.8; }
 body.ready #loading { display: none; }
+
+/* m1t: damage direction = red arc toward the shooter (+ arrow); hit markers bigger for low fps */
+#dmg-dir { width: 300px; height: 300px; margin: -150px 0 0 -150px; transition: opacity 0.3s linear; }
+#dmg-dir.show { opacity: 1; transition: none; }
+#dmg-dir .arc { position: absolute; inset: 0; border-radius: 50%; border: 10px solid transparent; border-top-color: rgba(255, 30, 30, 0.9);
+  filter: drop-shadow(0 0 6px rgba(255, 0, 0, 0.8)); }
+#dmg-dir .arrow { top: -14px; }
+#hit-marker span { width: 26px !important; height: 5px !important; background: #fff; box-shadow: 0 0 5px #000, 0 0 2px #f33; }
+#hit-marker span:nth-child(1) { left: 7px; top: 9px; }
+#hit-marker span:nth-child(2) { left: -33px; top: 9px; }
+#hit-marker span:nth-child(3) { left: 7px; top: -14px; }
+#hit-marker span:nth-child(4) { left: -33px; top: -14px; }
+#hit-marker.kill span, #hit-marker.headkill span { width: 30px !important; height: 6px !important; }
