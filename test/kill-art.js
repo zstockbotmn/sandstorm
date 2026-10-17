@@ -11,7 +11,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     p.on('console', m => { if (m.type() === 'error') res.errs.push('console: ' + m.text()); });
     await p.goto('http://127.0.0.1:8798/' + (process.env.SS_Q || '?seed=7') + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 120000 });
     res.art = await p.evaluate(() => ({ tier: SS.art.tier, failed: SS.art.failed }));
-    await p.tap('#play'); const t0 = Date.now();
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); const t0 = Date.now();
     // first contact within ~15 s
     // headless soft-GL runs ~0.1-0.3x real time, so measure first contact in GAME distance: 15 s at 3 m/s = 45 m
     res.firstContactM = await p.waitForFunction(() => SS.engaged > 0 || !SS.walking, null, { timeout: 150000, polling: 250 }).then(() => p.evaluate(() => SS.distance)).catch(() => null);

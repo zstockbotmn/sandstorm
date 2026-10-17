@@ -26,7 +26,7 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
   }
   function take(it) {
     if (it.kind === 'health') { it.gained = Math.min(100, player.health + 35) - player.health; player.health = Math.min(100, player.health + 35); if (window.SS) window.SS.health = player.health; if (hud.setHealth) hud.setHealth(player.health); hud.hint && hud.hint('+35 HEALTH'); }
-    else { const before = weapon.reserve; weapon.reserve = Math.min(weapon.reserveMax || 210, (weapon.reserve | 0) + 60); it.gained = weapon.reserve - before; }
+    else { const before = weapon.reserve; weapon.reserve = Math.max(before | 0, Math.min(weapon.reserveMax || 210, (weapon.reserve | 0) + 60)); it.gained = weapon.reserve - before; }
     popup(it.kind === 'health' ? '+35 HP' : '+' + (it.gained | 0) + ' AMMO', it.kind === 'health' ? '#ff6a5a' : '#ffd23a');
     if (audio && audio.pickup) audio.pickup(it.kind); else if (audio && audio.reload) audio.reload('end');
     if (window.SS) { window.SS.lastPickup = { kind: it.kind, health: player.health, reserve: weapon.reserve }; }

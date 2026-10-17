@@ -11,7 +11,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     // times, heap and GPU-resource growth, stuck/floating enemies, ammo/health sanity.
     const SOAK = +(process.env.SS_SOAK_S || 330) * 1000;
     await p.goto('http://127.0.0.1:8803/?seed=11' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.tap('#play'); await p.waitForTimeout(1500);
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1500);
     await p.evaluate(() => { window.__soak = { fr: [], last: performance.now(), samples: [], runs: 1, bad: [] }; const S = window.__soak;
       (function tick() { const t = performance.now(); S.fr.push(t - S.last); S.last = t; requestAnimationFrame(tick); })(); });
     const t0 = Date.now(); let sample = 0;

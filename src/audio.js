@@ -3,7 +3,9 @@ export function createAudio() {
   let master = null;
   let shotBus = null;
   let windGain = null;
-  let unlocked = false;
+  let unlocked = false, live = false;
+  function go() { live = true; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0.75, t + 0.25); } }
+  function hush() { live = false; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + 0.05); } } // m1u: Restart is silent until its first frame
   let chatterT = 10;
   let barkT = 9;
   let distantT = 7;
@@ -15,7 +17,7 @@ export function createAudio() {
     if (!AC) return false;
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.75;
+    master.gain.value = live ? 0.75 : 0; // m1u: silent until the first run frame is on screen (audio came before the picture)
     master.connect(ctx.destination);
 
     const seconds = 0.85;
@@ -331,5 +333,5 @@ export function createAudio() {
     }
   }
 
-  return { unlock, update, gunfire, enemyShot, hit, kill, headshot, reload, radio, pickup };
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, hit, kill, headshot, reload, radio, pickup };
 }

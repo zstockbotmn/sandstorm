@@ -13,7 +13,7 @@ const res = {};
   await p.goto('http://127.0.0.1:8785/?calm=1&seed=7' + (process.env.SS_QS || ''));
   await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
   await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 60000 });
-  await p.tap('#play'); await p.waitForTimeout(2500);
+  await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(2500);
   // Foot sequence: a fighter runs across 7 m ahead; planted (locked) feet must not slide.
   const foot = await p.evaluate(async () => {
     const frames = (n) => new Promise((ok) => { let k = 0; const f = () => (++k >= n ? ok() : requestAnimationFrame(f)); requestAnimationFrame(f); });

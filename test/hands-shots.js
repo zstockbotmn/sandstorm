@@ -8,7 +8,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   const errs = [], res = {};
   try { const p = await (await b.newContext({ viewport: { width: 640, height: 360 }, isMobile: true, hasTouch: true })).newPage(); p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://127.0.0.1:8800/?calm=1&arms=1&seed=7' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.tap('#play'); await p.waitForTimeout(1200);
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1200);
     await p.waitForTimeout(3000);
     res.arms = await p.evaluate(() => !!SS.arms);
     const shot = async (n) => { await p.screenshot({ path: OUT + '/' + n + '.png' }); };

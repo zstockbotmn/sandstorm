@@ -192,7 +192,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   let phase = 'quiet';
   let phaseT = 0;
-  let quietCap = 0, waveOpen = false; // never stragglers (a quiet-phase spawn made the first wave 1 or 3)
+  let quietCap = 0, waveOpen = false, regenWaitT = 0; // never stragglers (a quiet-phase spawn made the first wave 1 or 3)
   const FIRST_WAVE_AT = 6;
   let waveSpawned = 0, waveTotal = 0; // hard cap: every wave has a fixed total, truck included
   let burstCap = 3, burstSpawned = 0, waveActive = false, roofWave = false;
@@ -882,6 +882,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   let lastPlayerHitS = 0;
   function enemyShoot(enemy) {
+    // m1u: a balcony/window/roof shooter fires only while visibly present (a tracer from an empty balcony otherwise)
+    if (((enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.05) && !playerSees(enemy)) { enemy.silentSkips = (enemy.silentSkips | 0) + 1; return; }
+    if (window.SS) window.SS.enemyShots = (window.SS.enemyShots | 0) + 1;
     const diff = difficulty();
     enemy.group.updateMatrixWorld(true);
     if (enemy.art && enemy.bones && enemy.bones.RightHand) {
@@ -909,6 +912,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const runT = window.SS && window.SS.startedAt ? (performance.now() - window.SS.startedAt) / 1000 : 999;
     const grace = Math.min(1, runT / 60);
     chance *= 0.45 + 0.55 * grace;
+    if (window.SS && window.SS.testAccuracy) chance *= window.SS.testAccuracy; // tests only: draw enough hits to exercise the sight check
     chance = Math.max(0.02, Math.min(0.85, chance));
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap;
@@ -1027,12 +1031,24 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function clearToEye(pt) { const c = camera.position; _losD.copy(pt).sub(c); const d = _losD.length(); if (d < 0.01) return true;
     if (scene.fog && scene.fog.density && d > 1.05 / scene.fog.density) return false; _losD.divideScalar(d); _losR.set(c, _losD); _losR.far = d - 0.35;
     return _losR.intersectObjects(world.shotList ? world.shotList() : world.colliders, false).length === 0; }
-  function playerSees(e) { e.group.getWorldPosition(_losP); const y0 = _losP.y; _losP.y = y0 + 1.25; if (clearToEye(_losP)) return true; _losP.y = y0 + 1.62; return clearToEye(_losP); }
+  // m1u: 'sees' = a meaningful part of the fighter: the chest centre AND one more point (head or a shoulder) clear,
+  // and the body at least ~12 px tall on screen (a few pixels behind a far cart is not visible).
+  const _losS = new THREE.Vector3();
+  function playerSees(e) { e.group.getWorldPosition(_losP); const x0 = _losP.x, y0 = _losP.y, z0 = _losP.z, c = camera.position;
+    const d = Math.hypot(x0 - c.x, z0 - c.z, y0 + 1.2 - c.y); const px = 1.7 / (2 * d * Math.tan(camera.fov * Math.PI / 360)) * (window.innerHeight || 390); if (px < 12) return false;
+    _losP.set(x0, y0 + 1.25, z0); if (!clearToEye(_losP)) return false;
+    const rx = (z0 - c.z), rz = -(x0 - c.x), rl = Math.hypot(rx, rz) || 1; // sideways unit (shoulders)
+    for (const [ox, oy] of [[0, 1.62], [0.22, 1.4], [-0.22, 1.4]]) { _losS.set(x0 + rx / rl * ox, y0 + oy, z0 + rz / rl * ox); if (clearToEye(_losS)) return true; }
+    return false; }
   function inView(e) { _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM); return _frF.containsPoint(e.group.position); }
   // m1t: the last fighter, unseen by the player for 10 s, is moved to a spot the player can really see (ground fighters;
   // roof/window shooters are made to peek instead - no vertical pops). Candidates are checked with clearToEye.
   function toSeenSpot(e) {
-    if ((e.anchor && isElevated(e.anchor.type)) || e.group.position.y > 0.05) { e.engaged = true; e.hiddenT = 6; try { beginFire(e); } catch (_) {} return false; }
+    // roof/window shooters first get a forced peek; if still unseen next time, they are moved to the street while the
+    // player cannot see them (no visible pop; e.warps marks it so the motion test ignores the jump)
+    if (((e.anchor && isElevated(e.anchor.type)) || e.group.position.y > 0.05) && !e.peekForced) { e.peekForced = true; e.engaged = true; e.hiddenT = 6; try { beginFire(e); } catch (_) {} return false; }
+    if (playerSees(e)) { e.hiddenT = 0; return false; }
+    e.peekForced = false; e.warps = (e.warps | 0) + 1;
     const pz = camera.position.z, a0 = e.anchor, h0 = e.home; let best = null, bd = 1e9;
     for (const seg of world.segments || []) for (const c of seg.coverPoints || []) {
       if (!['car', 'barrel', 'wall', 'door'].includes(c.type)) continue; const ahead = pz - c.pos.z; if (ahead < 10 || ahead > 26 || Math.abs(c.pos.x) > 9 || occupiedBy(c.pos, e)) continue;
@@ -1456,7 +1472,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const alive = aliveCount();
     const dNow = window.SS ? window.SS.distance : 0;
     if (phase === 'quiet') {
-      if (phaseT <= 0 && dNow >= breatherTo && !waveActive && alive === 0 && truckPending === 0) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
+      // m1u: the next wave waits (up to 8 s past its distance) for out-of-combat regen to bring the player to >= 90 hp
+      if (dNow >= breatherTo && waveClears > 0 && !waveActive && alive === 0) { regenWaitT += dt; } else regenWaitT = 0;
+      const healthy = !window.SS || waveClears === 0 || (window.SS.health == null ? 100 : window.SS.health) >= 90 || regenWaitT > 8;
+      if (phaseT <= 0 && dNow >= breatherTo && !waveActive && alive === 0 && truckPending === 0 && healthy) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
         phase = 'burst';
         burstIndex += 1;
         if (window.SS) window.SS.bursting = true;
@@ -1686,7 +1705,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;
-    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false;
+    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
     if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
     if (window.SS) window.SS.bursting = false;
   }

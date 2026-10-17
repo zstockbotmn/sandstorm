@@ -13,7 +13,7 @@ const res = {};
   await p.goto('http://127.0.0.1:8793/?calm=1&seed=7&hitbox=1' + (process.env.SS_QS || ''));
   await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
   await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 60000 });
-  await p.tap('#play');
+  await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 });
   await p.waitForTimeout(2500);
   res.tier = await p.evaluate(() => SS.art.tier);
   const cases = [];

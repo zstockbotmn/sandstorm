@@ -12,7 +12,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms) { const t0 = performance.now(); while (performance.now() - t0 < ms) {} } cb(t); }); });
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     if (process.env.SS_ULTRA !== '0') await p.evaluate(() => SS.goUltra && SS.goUltra('test'));
-    await p.click('#play'); await p.waitForTimeout(1500);
+    await p.click('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1500);
     await p.evaluate(() => { SS.player.health = 1e9; SS.walking = false; SS.weapon.reserve = 900; window.__e = SS.debug.spawnEnemy('shifter'); });
     await p.waitForTimeout(6000);
     await p.evaluate(() => { window.__aimF = () => { SS.walking = false; const e = window.__e, c = SS.camera.position, D = window.__D;

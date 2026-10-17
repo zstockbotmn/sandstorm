@@ -84,6 +84,7 @@ export function createCover(scene, camera, world, input) {
   // Move to another cover (grenade flush / SWITCH COVER): a short exposed run, then duck again.
   c.relocate = function relocate(dir, why) {
     if (c.state === 'none' || !window.SS || !window.SS.running) return false;
+    input.scope = false; // m1u: a cover move always leaves the scope
     const cur = c.target ? c.target.clone() : camera.position.clone(); const old = c.spawned; if (old) c.spawned = null;
     c.surface = null; const t = pick(cur, dir || 0); if (old && old !== c.spawned) { scene.remove(old); const i = world.colliders.indexOf(old); if (i >= 0) world.colliders.splice(i, 1); }
     c.target = t; c.state = 'moving'; input.cover = false; if (why === 'grenade') { c.reaim = 1.2; input.pitch = 0; /* only the announced grenade move turns the view; a SWITCH COVER tap never does (tester: view swung ~90 deg during a hold) */ if (input.clearAim) input.clearAim(); const w = window.SS && window.SS.weapon; if (w && w.cancelRecoil) w.cancelRecoil(); } /* hard level reset (tester: stuck looking at the bags) */ c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;

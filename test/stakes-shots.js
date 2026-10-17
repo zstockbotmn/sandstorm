@@ -9,7 +9,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true }); const p = await ctx.newPage();
     p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://127.0.0.1:8794/?calm=1&seed=7' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 120000 });
-    await p.tap('#play'); await p.waitForTimeout(1500);
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1500);
     // engage: one enemy -> halt -> auto cover; truck rolls in
     await p.evaluate(() => { const e = SS.debug.spawnEnemy('shifter'); if (e) e.engaged = true; SS.enemies.debugTruck(); SS.enemies.debugRoof(); });
     await p.waitForFunction(() => SS.cover.state === 'in', null, { timeout: 60000, polling: 250 }).catch(() => {});

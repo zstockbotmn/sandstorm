@@ -8,7 +8,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   const errs = [], res = {};
   try { const p = await (await b.newContext({ viewport: { width: 640, height: 360 }, isMobile: true, hasTouch: true })).newPage(); p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://127.0.0.1:8803/?seed=7' + (process.env.SS_QS || ''));  await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.tap('#play'); await p.waitForTimeout(1200); if (process.env.ROOF) await p.evaluate(() => { window.__ROOF = 1; });
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1200); if (process.env.ROOF) await p.evaluate(() => { window.__ROOF = 1; });
     const out = []; for (let k = 0; k < 3; k++) { await p.waitForTimeout(10000); out.push(await p.evaluate(() => ({ q: SS.quality, alive: SS.player && SS.player.alive, hp: SS.health, d: Math.round(SS.distance), walk: SS.walking, en: (SS.enemies.list || []).map((x) => x ? [x.alive ? 1 : 0, x.exposed ? 1 : 0, !!x.art, x.anchor && x.anchor.type, Math.round(x.group.position.distanceTo(SS.camera.position)), x.phase] : 'UNDEF') }))); }
     console.log(JSON.stringify(out));
   } catch (e) { console.log('ERR', e.message); } await b.close(); srv.close(); process.exit(0); })();

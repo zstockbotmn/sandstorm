@@ -8,7 +8,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   const errs = [], res = {};
   try { const p = await (await b.newContext({ viewport: { width: 640, height: 360 }, isMobile: true, hasTouch: true })).newPage(); p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://127.0.0.1:8798/?calm=1&seed=7' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.tap('#play'); await p.waitForTimeout(1200);
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1200);
     res.clips = await p.evaluate(() => { SS.walking = false; const e = SS.debug.spawnEnemy('shifter'); window.__e = e; const c = SS.camera.position; SS.enemies.debugPose(e, c.x + 0.6, c.z - 4.2, 'idle'); e.debugVel = null;
       document.querySelectorAll('#hud, .hud, #controls').forEach((x) => x.style.visibility = 'hidden'); return Object.keys(e.actions); });
     await p.waitForTimeout(12000); res.cam = await p.evaluate(() => ({ y: +SS.camera.position.y.toFixed(2), cover: SS.input.cover, state: SS.cover && SS.cover.state })); // let auto-cover settle so the camera isn't ducked below the fighter

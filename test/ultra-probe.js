@@ -18,7 +18,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
         await p.waitForTimeout(700); res.cat[k] = [n, await shot()]; await p.evaluate(() => { for (const o of window.__h) o.visible = true; }); } }
     res.titleHudHidden = await p.evaluate(() => getComputedStyle(document.getElementById('hud')).visibility);
     fs.mkdirSync('screenshots/ultra', { recursive: true }); await p.screenshot({ path: 'screenshots/ultra/0-title.png' });
-    await p.click('#play'); await p.waitForTimeout(4000); res.hudRun = await p.evaluate(() => getComputedStyle(document.getElementById('hud')).visibility);
+    await p.click('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(4000); res.hudRun = await p.evaluate(() => getComputedStyle(document.getElementById('hud')).visibility);
     res.low = await p.evaluate(() => SS.renderer.info.render.calls); await p.screenshot({ path: 'screenshots/ultra/1-low.png' });
     await p.evaluate(() => SS.goUltra('probe')); await p.waitForTimeout(4000);
     res.ultra = await p.evaluate(() => ({ calls: SS.renderer.info.render.calls, hidden: SS.ultraHidden, q: SS.quality })); await p.screenshot({ path: 'screenshots/ultra/2-ultra.png' });

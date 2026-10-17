@@ -14,7 +14,7 @@ const res = {};
   // High tier loads on the start screen. Record it before Play.
   await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 40000 });
   res.art = await p.evaluate(() => ({ tier: SS.art.tier, loaded: SS.art.loaded.slice(), failed: SS.art.failed.slice() }));
-  await p.tap('#play'); await p.waitForTimeout(4000); res.ammoAfterPlay = await p.evaluate(() => SS.weapon.ammo);
+  await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(4000); res.ammoAfterPlay = await p.evaluate(() => SS.weapon.ammo);
   const d0 = await p.evaluate(() => SS.distance); await p.waitForTimeout(6000); const d1 = await p.evaluate(() => SS.distance);
   res.walk = { d0, d1, walking: await p.evaluate(() => SS.walking) };
   await p.screenshot({ path: OUT + '/2-walking.png' });

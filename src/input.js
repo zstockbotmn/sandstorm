@@ -27,6 +27,7 @@ export function createInput(canvas) {
     if (kia()) { aimDX = aimDY = 0; input.pendingShots = 0; input.fire = false; endHold(); return; }
     const now = performance.now();
     const rdt = Math.min(0.25, Math.max(0, (now - (input._aimT || now)) / 1000)); input._aimT = now;
+    if (input.scope !== input._lastScope) { input._lastScope = input.scope; aimDX = aimDY = 0; } // m1u: hip-rate deltas still queued must not land zoomed (overshoot)
     if (!aimDX && !aimDY) return;
     // FPS-independent: queued deltas drain on a real-time exponential (tau 35 ms), so aim speed is the same at 10 or 60 fps
     // and no input is dropped; tiny remainders snap so the queue empties.
@@ -38,7 +39,8 @@ export function createInput(canvas) {
     // Touch-only aim assist (App PM: subtle, no snapping): view-only. Near a visible live enemy the drag slows (friction)
     // and gains a light pull toward the enemy's chest, proportional to the drag itself (no drag = no motion). Shots are
     // never redirected by this; the hit ray is still the crosshair.
-    if (input.touch && window.SS && window.SS.camera && window.SS.enemies && window.SS.enemies.list && !/[?&]noassist\b/.test(location.search)) {
+    // m1u: scoped aim is strictly linear (no friction/pull: the pull could push against a small drag and felt inverted)
+    if (!input.scope && input.touch && window.SS && window.SS.camera && window.SS.enemies && window.SS.enemies.list && !/[?&]noassist\b/.test(location.search)) {
       const cam = window.SS.camera, cp = cam.position; let best = null, bestA = (input.scope ? 2.5 : 5) * Math.PI / 180;
       const fy = Math.sin(input.yaw), fz = -Math.cos(input.yaw);
       for (const e of window.SS.enemies.list) { if (!e || !e.alive || e.dying || !e.seen) continue; const gp = e.group.position;
@@ -145,7 +147,8 @@ export function createInput(canvas) {
     // Spikes (coalesced/late events) are capped so one event can't fling the view; gentle friction on a target.
     // Tester: ~1:1 drag (the scene tracks the finger: radians per px = vertical FOV / viewport height, so scoped
     // aim slows with the zoom), applied immediately (no smoothing tail -> no overshoot), spike-capped, no friction.
-    const cam = window.SS && window.SS.camera; const fovRad = (cam ? cam.fov : 70) * Math.PI / 180;
+    // m1u: rate from the scope STATE (not camera.fov, which only changes on the next frame) so every scoped px is the same angle
+    const fovRad = (input.scope ? 28 : 70) * Math.PI / 180;
     const sens = fovRad / Math.max(200, window.innerHeight || 390);
     if (kia()) return;
     // Per-event clamp sized to the screen: a real fast swipe moves < ~60% width / 35% height between two events;

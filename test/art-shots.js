@@ -14,7 +14,7 @@ const res = {};
   await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
   await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 40000 });
   res.art = await p.evaluate(() => ({ tier: SS.art.tier, loaded: SS.art.loaded.slice(), failed: SS.art.failed.slice() }));
-  await p.tap('#play');
+  await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 });
   await p.waitForTimeout(3000); // walk down the street before the stills
   // Slightly left, then right, still looking down the street.
   await p.evaluate(() => { SS.input.yaw = -0.35; });

@@ -10,13 +10,14 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true }); const p = await ctx.newPage();
     p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=7' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.tap('#play'); await p.waitForTimeout(1000);
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1000);
     await p.evaluate(() => { SS.player.health = 1e9; for (let i = 0; i < 3; i++) { const e = SS.debug.spawnEnemy('shifter'); if (e) e.engaged = true; } SS.enemies.debugTruck(); SS.enemies.debugRoof();
       window.__r = { samples: 0, maxVy: 0, vyAt: null, floatMax: 0, floatAt: null, overlaps: 0 }; const last = new Map(); let lt = performance.now();
       const foot = (e) => { let m = 1e9; e.group.traverse((o) => { if (o.isBone && /Foot$/.test(o.name)) { const v = new SS.THREE.Vector3(); o.getWorldPosition(v); m = Math.min(m, v.y); } }); return m; };
       window.__iv = setInterval(() => { const t = performance.now(), dt = (t - lt) / 1000; lt = t; const R = window.__r; R.samples++;
         { const n = SS.world.overlapCount(); if (n > R.overlaps) { R.overlaps = n; R.ovl = SS.world.overlapCount.last; } }
         for (const e of SS.enemies.list || []) { if (!e.alive || e.fromTruckRide) { last.delete(e); continue; }
+          if ((e.warps | 0) !== (e.__w | 0)) { e.__w = e.warps | 0; last.delete(e); } // an unseen relocation (player can't see it) is not a visible pop
           const y = e.group.position.y; if (last.has(e) && dt > 0) { const vy = Math.abs(y - last.get(e)) / dt; if (vy > R.maxVy) { R.maxVy = vy; R.vyAt = { type: e.anchor && e.anchor.type, y, phase: e.phase }; } } last.set(e, y);
           const elev = e.anchor && /roof|window|balcony/.test(e.anchor.type); if (!elev && e.art) { const f = foot(e); if (f < 1e8 && f > R.floatMax) { R.floatMax = f; R.floatAt = { type: e.anchor && e.anchor.type, y, phase: e.phase, kind: e.moveKind, po: e.pelvisOff, r0: e.rootY0, rn: e.art.root && e.art.root.name, ry: e.art.root && e.art.root.position.y, ah: e.ankleH, lo: e.ikLo, end: e.ikEnd, rej: e.ikRejects, sync: e.ikSync, fr: SS.frames, gy: e.ikGy, dy: e.dying, nb: (() => { const a = []; e.group.traverse((o) => { if (/LeftFoot$/.test(o.name)) { const v = new SS.THREE.Vector3(); o.getWorldPosition(v); a.push([o.type, o === (e.legs && e.legs[0] && e.legs[0].foot), +v.y.toFixed(2), o.parent && o.parent.name]); } }); return a; })(), rf: (() => { const v = new SS.THREE.Vector3(); e.legs && e.legs[1] && e.legs[1].foot.getWorldPosition(v); return [+v.y.toFixed(2), e.legs && e.legs[1] && e.legs[1].foot.name]; })(), legs: e.legs && e.legs.length, d: +SS.camera.position.distanceTo(e.group.position).toFixed(1), anim: e.currentAction && e.currentAction.getClip().name }; } } } }, 100); });
     await p.waitForTimeout(+(process.env.SS_RULES_MS || 45000));

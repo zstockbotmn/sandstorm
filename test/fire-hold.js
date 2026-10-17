@@ -8,7 +8,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   const res = {}; const fail = [];
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true }); const p = await ctx.newPage();
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=7' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.click('#play'); await p.waitForTimeout(1500); await p.evaluate(() => { SS.player.health = 1e9; SS.weapon.reserve = 999; });
+    await p.click('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1500); await p.evaluate(() => { SS.player.health = 1e9; SS.weapon.reserve = 999; });
     const bb = await p.locator('[data-ctl=fire]').boundingBox(); const x = bb.x + bb.width / 2, y = bb.y + bb.height / 2;
     const s0 = await p.evaluate(() => SS.weapon.shotsFired); await p.mouse.move(x, y); await p.mouse.down(); await p.waitForTimeout(1500); await p.mouse.up();
     res.mouse = (await p.evaluate(() => SS.weapon.shotsFired)) - s0; await p.waitForTimeout(3000); await p.evaluate(() => { SS.weapon.ammo = 30; });

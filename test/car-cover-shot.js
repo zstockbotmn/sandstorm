@@ -7,7 +7,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
 (async () => { const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }); const res = {};
   try { const p = await (await b.newContext({ viewport: { width: 844, height: 390 } })).newPage();
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=' + (process.env.SEED || 2) + '&calm=1' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.click('#play'); await p.waitForTimeout(1000); await p.evaluate(() => { SS.player.health = 1e9; });
+    await p.click('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1000); await p.evaluate(() => { SS.player.health = 1e9; });
     // walk until a car cover point is 3-6 m ahead, then halt and engage
     res.found = await p.evaluate(async () => { for (let i = 0; i < 400; i++) { const pz = SS.camera.position.z;
         for (const s of SS.world.segments) for (const c of s.coverPoints || []) if (c.type === 'car' && pz - c.pos.z > 3 && pz - c.pos.z < 6 && Math.abs(c.pos.x) < 4.4) { SS.walking = false; return { pz, c: c.pos.toArray() }; }

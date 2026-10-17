@@ -9,6 +9,6 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true }); const p = await ctx.newPage();
     await p.addInitScript(() => { window.__lt = []; new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push([Math.round(e.startTime), Math.round(e.duration)]); }).observe({ type: 'longtask', buffered: true }); });
     await p.goto('http://127.0.0.1:8799/' + q); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 90000 });
-    const tPlay = await p.evaluate(() => Math.round(performance.now())); await p.tap('#play'); if (process.env.EXP) { await p.waitForTimeout(4000); await p.evaluate(process.env.EXP); await p.waitForTimeout(8000); } else await p.waitForTimeout(25000);
+    const tPlay = await p.evaluate(() => Math.round(performance.now())); await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); if (process.env.EXP) { await p.waitForTimeout(4000); await p.evaluate(process.env.EXP); await p.waitForTimeout(8000); } else await p.waitForTimeout(25000);
     console.log(JSON.stringify(await p.evaluate((tPlay) => ({ tPlay, long: window.__lt.filter(x => x[1] > 300), T: window.SS_T, prewarm: SS.prewarmMs, spikes: window.SS_SPIKES, prog: SS.prog, progLog: SS.progLog, quality: SS.quality, autoLow: SS.autoLow }), tPlay)));
   } finally { await b.close(); srv.close(); } })().catch(e => { console.error(e); process.exit(1); });

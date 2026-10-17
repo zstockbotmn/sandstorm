@@ -208,6 +208,7 @@ function frame(now) {
   });
   const tr = performance.now(); const simMs = tr - tFrame;
   if (Q.post && !post.low) post.render(); else renderer.render(scene, camera);
+  if (window.SS.running && window.SS.firstRunFrame) window.SS.firstRunFrame(); // drop 'Starting...' + unmute with the first run frame
   window.SS.lastRI = [renderer.info.render.calls, renderer.info.render.triangles];
   { const rm = performance.now() - tr; { const P = renderer.info.programs || []; if (P.length !== (window.SS.progN | 0)) { window.SS.progN = P.length; const seen = window.SS.progSeen = window.SS.progSeen || new Set(); const fresh = P.filter(x => !seen.has(x.cacheKey)); fresh.forEach(x => seen.add(x.cacheKey)); (window.SS.progLog = window.SS.progLog || []).push([Math.round(tr), Math.round(performance.now() - tr), fresh.map(x => x.name + '|' + String(x.cacheKey).replace(/,false/g, ',f').slice(0, 400))]); } }
   window.SS.prog = [(renderer.info.programs || []).length, renderer.info.memory.geometries, renderer.info.memory.textures]; if (window.SS.running && (rm > 900 || simMs > 150)) (window.SS_SPIKES = window.SS_SPIKES || []).push(['frame', Math.round(tr), Math.round(simMs), Math.round(rm), (renderer.info.programs || []).length, renderer.info.memory.geometries, renderer.info.memory.textures, renderer.info.render.calls, renderer.info.render.triangles, window.SS.distance.toFixed(1), window.SS.engaged|0, (window.SS.enemies.list||[]).length]); }
@@ -223,7 +224,12 @@ function onResize() {
 window.addEventListener('resize', onResize);
 // Title backdrop (tester m1r: black title on Low/High): the frame loop only starts on Play, so until then redraw the
 // street a few times a second (also after resizes, which clear the canvas).
-{ let lastTitle = 0; const titleDraw = (t) => { if (started) return; if (t - lastTitle > (art.done ? 250 : 400)) { lastTitle = t; // m1s: draw the placeholder street immediately, real art as it lands
+{ let lastTitle = 0, lastRaf = 0; const titleDraw = (t) => { if (started) return;
+    // m1u: with no manual pick the title also benchmarks (a fresh profile sat on High at 0.5 fps): draw every frame and
+    // feed the real frame time to the auto tier steps until the tier settles; a pick/?q= keeps the cheap 4 Hz redraw.
+    const bench = !EXPLICIT && !PICKED && window.SS.quality !== 'ultra-low' && art.done && !/[?&]titlebench=0\b/.test(location.search); const raw = lastRaf ? (t - lastRaf) / 1000 : 0; lastRaf = t;
+    if (bench && raw > 0 && window.SS.autoLowTick) window.SS.autoLowTick(Math.min(raw, 1));
+    if (bench || t - lastTitle > (art.done ? 250 : 400)) { lastTitle = t; // m1s: draw the placeholder street immediately, real art as it lands
     try { camera.updateMatrixWorld(); if (Q.post && !post.low) post.render(); else renderer.render(scene, camera); } catch (e) {} } requestAnimationFrame(titleDraw); };
   requestAnimationFrame(titleDraw); }
 
@@ -296,9 +302,14 @@ window.SS.onDeath = function onDeath() {
 
 // m1t: Play acts on pointerdown (one press under lag), once per title; click remains the keyboard path + audio unlock.
 let playDone = false;
+// m1u: instant feedback - 'Starting...' paints on the press, the heavy start runs after that paint, the overlay and the
+// audio (muted until then) come up with the first run frame.
+window.SS.firstRunFrame = () => { if (!document.body.classList.contains('starting')) return; document.body.classList.remove('starting'); try { audio.go(); } catch (_) {} window.SS.startPaintMs = Math.round(performance.now() - (window.SS.pressT || 0)); };
+const afterPaint = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
 { const pb = document.getElementById('play'); pb.addEventListener('pointerdown', (ev) => { if (ev.cancelable) ev.preventDefault(); try { audio.unlock(); } catch (_) {} pb.click(); }); }
 document.getElementById('play').addEventListener('click', () => {
-  audio.unlock(); if (playDone) return; playDone = true;
+  audio.unlock(); if (playDone) return; playDone = true; window.SS.pressT = performance.now(); document.body.classList.add('starting'); afterPaint(startNow); });
+function startNow() {
   document.getElementById('start').style.display = 'none';
   restartRun(); // first start and Restart share one full reset (tester m1r: Restart left wave/spawner state behind)
   window.SS.walking = true;
@@ -307,11 +318,11 @@ document.getElementById('play').addEventListener('click', () => {
     started = true;
     requestAnimationFrame(frame);
   }
-});
+}
 
 // Act on pointerdown (tester: short taps dropped at low fps - a click needs down+up on the same element); click is the
 // keyboard/fallback path, de-duplicated so one press never restarts twice.
-{ let lastR = 0; const go = (e) => { const now = performance.now(); if (now - lastR < 600) return; lastR = now; if (e && e.preventDefault) e.preventDefault(); audio.unlock(); restartRun(); };
+{ let lastR = 0; const go = (e) => { const now = performance.now(); if (now - lastR < 600) return; lastR = now; if (e && e.preventDefault) e.preventDefault(); audio.unlock(); try { audio.hush(); } catch (_) {} window.SS.pressT = now; document.body.classList.add('starting'); afterPaint(() => { restartRun(); requestAnimationFrame(() => requestAnimationFrame(() => window.SS.firstRunFrame())); }); };
   const rb = document.getElementById('restart'); rb.addEventListener('pointerdown', go); rb.addEventListener('click', go); }
 
 showBest();
@@ -411,7 +422,7 @@ onLow(() => {
 window.SS.gpu = rendererString(renderer.getContext());
 window.SS.THREE = THREE; window.SS.world = world; // tests
 window.SS.goUltra = (r) => { goLow(r || 'debug'); goUltra(r || 'debug'); }; // tests
-if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT && !PICKED) goLow('software-gl');
+if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT && !PICKED && !/[?&]start=high\b/.test(location.search)) goLow('software-gl'); // ?start=high (tests): act like a weak real GPU
 // Remember the auto-chosen tier across reloads (tester): a saved ultra-low starts as ultra-low.
 try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { const why = PICKED ? 'picked' : 'saved'; goLow(why); goUltra(why); if (PICKED) window.SS.autoLow = null; } } catch (e) {} // a picked Ultra-low is not 'auto'
 // Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.

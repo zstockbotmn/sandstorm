@@ -11,7 +11,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true }); const p = await ctx.newPage();
     await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms) { const t0 = performance.now(); while (performance.now() - t0 < ms) {} } cb(t); }); });
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.click('#play'); await p.waitForTimeout(1500);
+    await p.click('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1500);
     await p.evaluate(() => { SS.player.health = 1e9; SS.walking = false;  SS.weapon.reserve = 300; const e = window.__e = SS.debug.spawnEnemy('shifter'); });
     await p.waitForTimeout(8000); // let auto-cover settle
     const aim = () => p.evaluate(() => { clearInterval(window.__aimT); window.__aimT = setInterval(window.__aimF, 100); return window.__aimF(); });

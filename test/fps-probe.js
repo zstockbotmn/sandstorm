@@ -12,7 +12,7 @@ async function probe(pageUrl, label) {
     await p.goto(pageUrl);
     await p.waitForFunction(() => window.SS && document.querySelector('#play'), null, { timeout: 60000 });
     await p.waitForFunction(() => window.SS.art && window.SS.art.done, null, { timeout: 45000 }).catch(() => {});
-    await p.tap('#play');
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 });
     await p.waitForTimeout(2500);
     const fps = await p.evaluate(async () => {
       const samples = [];

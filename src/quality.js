@@ -3,6 +3,7 @@
 const KEY = 'ss.quality';
 function detect() {
   try { const m = /[?&]q=(low|high)\b/.exec(location.search); if (m) return m[1]; } catch (e) {}
+  try { const m = /[?&]start=(low|high)\b/.exec(location.search); if (m && !localStorage.getItem(KEY)) return m[1]; } catch (e) {} // tests: a fresh profile's starting tier (auto stays on)
   try { const v = localStorage.getItem(KEY); if (v === 'low' || v === 'high') return v; if (v === 'ultra-low') return 'low'; } catch (e) {}
   const ua = navigator.userAgent || '';
   const ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);

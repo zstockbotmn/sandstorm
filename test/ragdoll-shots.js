@@ -8,7 +8,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   const errs = [], res = {};
   try { const p = await (await b.newContext({ viewport: { width: 640, height: 360 }, isMobile: true, hasTouch: true })).newPage(); p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://127.0.0.1:8802/?seed=7' + (process.env.SS_QS || ''));  await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-    await p.tap('#play'); await p.waitForTimeout(1200); if (process.env.ROOF) await p.evaluate(() => { window.__ROOF = 1; });
+    await p.tap('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1200); if (process.env.ROOF) await p.evaluate(() => { window.__ROOF = 1; });
     // wait for an exposed enemy within 30 m, freeze the camera on it
     res.tgt = await p.evaluate(async () => { const t0 = performance.now(); while (performance.now() - t0 < 120000) {
       const c = SS.camera.position, e = (SS.enemies.list || []).filter((x) => x.alive && x.exposed && x.art && (window.__ROOF ? x.anchor && x.anchor.type === 'roof' : !(x.anchor && /roof|window/.test(x.anchor.type))) && x.group.position.distanceTo(c) < 30).sort((a, b) => a.group.position.distanceTo(c) - b.group.position.distanceTo(c))[0];

@@ -80,7 +80,7 @@ export function createHud() {
   // marker is never downgraded by a later plain hit while it is showing.
   let hideAt = 0, framesLeft = 0, hudRaf = 0, shownKind = '';
   const isKill = (k) => k === 'kill' || k === 'headkill';
-  function markerTick() { framesLeft -= 1; if (framesLeft <= 0 && performance.now() >= hideAt) { marker.classList.remove('show', 'kill', 'head', 'headkill'); shownKind = ''; hudRaf = 0; return; } hudRaf = requestAnimationFrame(markerTick); }
+  function markerTick() { if (window.SS && window.SS.hudFreeze) { hudRaf = requestAnimationFrame(markerTick); return; } framesLeft -= 1; if (framesLeft <= 0 && performance.now() >= hideAt) { marker.classList.remove('show', 'kill', 'head', 'headkill'); shownKind = ''; hudRaf = 0; return; } hudRaf = requestAnimationFrame(markerTick); }
   function hitMarker(kind) {
     kind = kind || 'hit'; const now = performance.now();
     if (isKill(shownKind) && !isKill(kind) && now < hideAt) { framesLeft = Math.max(framesLeft, 2); return; }
@@ -102,7 +102,7 @@ export function createHud() {
 
   // m1t: red arc (plus arrow) toward the shooter, held >= 700 ms real time AND >= 2 painted frames, then fades.
   let dirHideAt = 0, dirFrames = 0, dirRaf = 0;
-  function dirTick() { dirFrames -= 1; if (dirFrames <= 0 && performance.now() >= dirHideAt) { dir.classList.remove('show'); dirRaf = 0; return; } dirRaf = requestAnimationFrame(dirTick); }
+  function dirTick() { if (window.SS && window.SS.hudFreeze) { dirRaf = requestAnimationFrame(dirTick); return; } dirFrames -= 1; if (dirFrames <= 0 && performance.now() >= dirHideAt) { dir.classList.remove('show'); dirRaf = 0; return; } dirRaf = requestAnimationFrame(dirTick); }
   function damageDirection(angle) {
     dir.style.transform = 'rotate(' + angle + 'rad)'; dir.classList.add('show'); dir.style.opacity = '';
     dirHideAt = performance.now() + 900; dirFrames = 3; hud.dirCount = (hud.dirCount | 0) + 1; hud.dirAngle = angle;

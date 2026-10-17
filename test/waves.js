@@ -13,7 +13,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
       await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms) { const t0 = performance.now(); while (performance.now() - t0 < ms) {} } cb(t); }); });
       await p.goto('http://127.0.0.1:' + PORT + '/?seed=' + (process.env.SS_SEED || 1) + '&slow=' + (process.env.SS_SLOW || 60) + '&q=' + (mode === 'high' ? 'high' : 'low')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
       if (mode === 'ultra') await p.evaluate(() => SS.goUltra('test'));
-      await p.evaluate((c) => { window.__cone = c; }, process.env.SS_CONE !== '0'); await p.click('#play'); await p.waitForTimeout(1000);
+      await p.evaluate((c) => { window.__cone = c; }, process.env.SS_CONE !== '0'); await p.click('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1000);
       // m1t: every hit on the player must come from a fighter the player could see (eye ray against drawn meshes, in the haze)
       await p.evaluate((v) => { window.__wdbg = v; }, !!process.env.SS_WAVES_DBG);
       await p.evaluate(() => { if (window.__dmgHook) return; window.__dmgHook = 1; window.__uh = { hits: 0, unseen: 0, ex: [] }; const P = SS.player, d0 = P.damage.bind(P);
@@ -24,9 +24,10 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
             if (best) for (const hy of [1.25, 1.62]) { const w = best.group.position.clone(); w.y += hy; const dd = w.distanceTo(c); if (dens && dd > 1.05 / dens) continue;
               R.set(c, w.clone().sub(c).normalize()); R.far = dd - 0.35; if (!R.intersectObjects(roots, true).some((x) => x.object.isMesh && shown(x.object))) { seen = true; break; } }
             if (!seen) { U.unseen++; if (U.ex.length < 5 && best) U.ex.push(best.group.position.toArray().map((v) => +v.toFixed(1)).concat([+best.group.position.distanceTo(c).toFixed(1)])); } } catch (e) {}
-          return d0(amount, from); }; });
+          const r = d0(amount, from); if (window.__passiveUntil && P.health < 40) { P.health = 100; SS.health = 100; } return r; }; });
+      if (process.env.SS_WAVES_PASSIVE) await p.evaluate((ms) => { window.__passiveUntil = performance.now() + ms; SS.testAccuracy = 8; setTimeout(() => { SS.testAccuracy = 0; }, ms); }, +process.env.SS_WAVES_PASSIVE * 1000);
       if (process.env.SS_WAVES_RESTART) { // restart from the end screen first (tester m1r: Restart left run state behind)
-        await p.waitForTimeout(6000); await p.evaluate(() => SS.onDeath()); await p.waitForTimeout(1200); await p.click('#restart'); await p.waitForTimeout(1000); r.restarted = true; } await p.evaluate(() => { window.__slowMs = +(new URLSearchParams(location.search).get("slow") || 110); });
+        await p.waitForTimeout(6000); await p.evaluate(() => SS.onDeath()); await p.waitForTimeout(1200); await p.click('#restart'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 90000 }); r.restarted = true; } await p.evaluate(() => { window.__slowMs = +(new URLSearchParams(location.search).get("slow") || 110); });
       const t0 = Date.now(); let last = '';
       while (Date.now() - t0 < LIMIT) {
         const s = await p.evaluate(() => { const v = SS.camera.position.clone(), c = SS.camera.position;
@@ -49,7 +50,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
             // human-ish: turn at most ~1.5 rad/s, fire only once the crosshair is within ~2 deg
             const wy = Math.atan2(v.x, -v.z), wp = -Math.atan2(v.y, Math.hypot(v.x, v.z)), now = performance.now(), st = Math.min(0.6, ((now - (window.__lt || now)) / 1000) * 1.5);
             let dy = Math.atan2(Math.sin(wy - SS.input.yaw), Math.cos(wy - SS.input.yaw)); SS.input.yaw += Math.max(-st, Math.min(st, dy)); SS.input.pitch += Math.max(-st, Math.min(st, wp - SS.input.pitch));
-            SS.input.fire = Math.abs(dy) < 0.035 && Math.abs(wp - SS.input.pitch) < 0.035; } else SS.input.fire = false; window.__lt = performance.now();
+            SS.input.fire = Math.abs(dy) < 0.035 && Math.abs(wp - SS.input.pitch) < 0.035 && !(window.__passiveUntil && performance.now() < window.__passiveUntil); } else SS.input.fire = false; window.__lt = performance.now();
           const over = (() => { const o = document.getElementById('over'); return !!(o && o.offsetParent !== null && getComputedStyle(o).display !== 'none'); })();
           return { k: SS.scoreSys && SS.scoreSys.state ? SS.scoreSys.state.kills : 0, ws: window.__ws ? window.__ws.phantom + '/' + window.__ws.eye : '', over, hp: Math.round(SS.health), d: Math.round(SS.distance), w: SS.waveClears | 0, alive: (SS.enemies.list || []).filter((e) => e.alive).length, ammo: SS.weapon.ammo + '/' + SS.weapon.reserve, walking: SS.walking, see: Math.round(see), fps: SS.benchFps, q: SS.quality }; });
         r.last = s; if ((s.w | 0) >= 2 || (!process.env.SS_WAVES_RESTART && s.k >= 5 && s.d >= 40)) { r.passed = true; break; } if (s.d !== r.dmax) { r.dmax = s.d; r.dT = Date.now(); } if (Date.now() - (r.dT || t0) > 60000) { r.stalled = true; break; } if (s.over) { r.died = true; break; }
@@ -57,7 +58,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
         await p.waitForTimeout(300);
       }
       r.secs = Math.round((Date.now() - t0) / 1000); r.ws = await p.evaluate(() => window.__ws || null);
-      r.uh = await p.evaluate(() => window.__uh || null).catch(() => null);
+      r.uh = await p.evaluate(() => window.__uh ? Object.assign({ shots: SS.enemyShots | 0, blocked: SS.blindHitsBlocked | 0, silent: (SS.enemies.list || []).reduce((a, e) => a + (e.silentSkips | 0), 0) }, window.__uh) : null).catch(() => null);
       if (r.uh && r.uh.unseen > Math.max(1, r.uh.hits * 0.1)) fail.push(mode + ': ' + r.uh.unseen + '/' + r.uh.hits + ' hits on the player came from a fighter the player could not see ' + JSON.stringify(r.uh.ex));
       if (r.ws && r.ws.phantom > Math.max(1, r.ws.eye * 0.03)) fail.push(mode + ': ' + r.ws.phantom + '/' + r.ws.eye + ' looks at a visible fighter had the shot stopped by something not drawn ' + JSON.stringify(r.ws.ex));
       if (!r.passed) { fail.push(mode + ': ' + (r.stalled ? 'STALLED 60 s' : 'not 2 waves') + ' at ' + (r.last && r.last.d) + ' m, waves ' + (r.last && r.last.w) + ', kills ' + (r.last && r.last.k));
@@ -66,4 +67,5 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
       fs.mkdirSync('screenshots/waves', { recursive: true }); await p.screenshot({ path: 'screenshots/waves/' + mode + '.png' }); await ctx.close();
     } catch (e) { fail.push(mode + ' exception ' + e.message); }
   }
+  if (process.env.SS_WAVES_PASSIVE) { const tot = Object.values(res).reduce((a, r) => a + ((r && r.uh && r.uh.hits) | 0), 0); res.passiveHits = tot; if (tot < 4) fail.push('passive phases drew only ' + tot + ' hits in total (unseen-hit check not exercised)'); }
   res.fail = fail; console.log(JSON.stringify(res)); console.log(fail.length ? 'WAVES FAIL' : 'WAVES PASS'); await b.close(); srv.close(); process.exit(fail.length ? 1 : 0); })();

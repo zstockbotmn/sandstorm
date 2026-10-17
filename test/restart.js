@@ -10,7 +10,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   try { const p = await (await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true })).newPage();
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=5' + (process.env.SS_QS || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     for (let run = 0; run < 4; run++) {
-      if (run === 0) await p.click('#play'); else { await p.evaluate(() => SS.onDeath()); await p.waitForTimeout(1200); await p.click('#restart'); }
+      if (run === 0) await p.click('#play'); else { await p.evaluate(() => SS.onDeath()); await p.waitForTimeout(1200); await p.click('#restart'); } await p.waitForFunction(() => window.SS && SS.running && !document.body.classList.contains('starting'), null, { timeout: 90000 });
       await p.evaluate(() => { SS.player.health = 1e9; window.__fw = { max: 0, at: null }; });
       const t0 = Date.now(); let r = null;
       while (Date.now() - t0 < 40000) { r = await p.evaluate(() => { const alive = SS.enemies.list.filter((e) => e.alive).length, W = window.__fw; W.max = Math.max(W.max, alive);
