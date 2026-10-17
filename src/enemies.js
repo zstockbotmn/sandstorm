@@ -1557,7 +1557,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!hold) displayEngaged = 0;
     // Tester m1r: a wave is cleared once its fixed total has spawned and every member is dead, whether or not the
     // squad halted for it (fighters dropped before engaging used to leave the wave 'uncleared': no cue, no count).
-    const waveDone = waveOpen && waveSpawned >= burstCap && aliveCount() === 0 && truckPending === 0 && !hold;
+    const waveDone = (waveOpen && waveSpawned >= burstCap && aliveCount() === 0 && truckPending === 0 && !hold) || (prevHold && !hold);
     if (waveDone) waveOpen = false;
     if (running && waveDone && window.SS.hud && window.SS.hud.banner) {
       waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing'); try { squadCall('Clear! Moving up.'); } catch (_) {} // tester m1q: clear cue when the walk resumes
