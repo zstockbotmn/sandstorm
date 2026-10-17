@@ -187,6 +187,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const api = { list, update };
   // Test hook: pin an enemy at (x, z) facing the camera in a posture, AI frozen (stagger), for hit-registration tests.
   api.debugPose = (e, x, z, posture) => { e.pinned = true; e.group.position.set(x, 0, z); e.staggerT = 1e9; e.moving = false; e.exposed = true; e.posture = posture || 'idle'; e.phase = 'peek'; e.turned = false;
+  api.playerSees = (e) => playerSees(e);
     turnTo(e, camera.position.x, camera.position.z, 100); e.shootCd = 1e9; return e; };
 
   let phase = 'quiet';
@@ -911,6 +912,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     chance = Math.max(0.02, Math.min(0.85, chance));
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap;
+    // m1t: no hits from out of the player's sight (tester: 6 min of hits from a fighter hidden behind a far burned car).
+    if (hit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
     if (hit) lastPlayerHitS = nowS;
     _aim.copy(camera.position);
     if (!hit) {
@@ -1019,7 +1022,31 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Ground path into the opening, then a short climb. No underground hide point.
   // Bring a hidden/stuck/behind-the-player enemy to a visible ground cover spot 12-30 m ahead, already leaning out to fire.
   const _frM = new THREE.Matrix4(), _frF = new THREE.Frustum();
+  // m1t: what the player can actually see - the drawn geometry the player's shots use (world.shotList), inside the haze.
+  const _losR = new THREE.Raycaster(), _losP = new THREE.Vector3(), _losD = new THREE.Vector3();
+  function clearToEye(pt) { const c = camera.position; _losD.copy(pt).sub(c); const d = _losD.length(); if (d < 0.01) return true;
+    if (scene.fog && scene.fog.density && d > 1.05 / scene.fog.density) return false; _losD.divideScalar(d); _losR.set(c, _losD); _losR.far = d - 0.35;
+    return _losR.intersectObjects(world.shotList ? world.shotList() : world.colliders, false).length === 0; }
+  function playerSees(e) { e.group.getWorldPosition(_losP); const y0 = _losP.y; _losP.y = y0 + 1.25; if (clearToEye(_losP)) return true; _losP.y = y0 + 1.62; return clearToEye(_losP); }
   function inView(e) { _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM); return _frF.containsPoint(e.group.position); }
+  // m1t: the last fighter, unseen by the player for 10 s, is moved to a spot the player can really see (ground fighters;
+  // roof/window shooters are made to peek instead - no vertical pops). Candidates are checked with clearToEye.
+  function toSeenSpot(e) {
+    if ((e.anchor && isElevated(e.anchor.type)) || e.group.position.y > 0.05) { e.engaged = true; e.hiddenT = 6; try { beginFire(e); } catch (_) {} return false; }
+    const pz = camera.position.z, a0 = e.anchor, h0 = e.home; let best = null, bd = 1e9;
+    for (const seg of world.segments || []) for (const c of seg.coverPoints || []) {
+      if (!['car', 'barrel', 'wall', 'door'].includes(c.type)) continue; const ahead = pz - c.pos.z; if (ahead < 10 || ahead > 26 || Math.abs(c.pos.x) > 9 || occupiedBy(c.pos, e)) continue;
+      e.anchor = c; e.home = standPos(c); const fp = firePoint(e); _losP.set(fp.x, 1.25, fp.z); if (!clearToEye(_losP)) continue;
+      const d = Math.abs(ahead - 16) + Math.abs(c.pos.x) * 0.3; if (d < bd) { bd = d; best = c; } }
+    e.anchor = a0; e.home = h0;
+    e.behavior = 'shifter'; e.unseenT = 0; e.hiddenT = 0; e.engaged = true; e.afterHide = false; e.vanishSaved = 0;
+    if (best) { e.anchor = best; e.home = standPos(best); e.group.position.copy(firePoint(e)); }
+    else { let pt = null; for (const ah of [16, 13, 19, 10, 22]) { for (const x of [0, -1.5, 1.5, -3, 3]) { _losP.set(camera.position.x + x, 1.25, pz - ah); if (clearToEye(_losP)) { pt = new THREE.Vector3(_losP.x, 0, _losP.z); break; } } if (pt) break; }
+      if (!pt) pt = new THREE.Vector3(camera.position.x, 0, pz - 14);
+      e.anchor = { type: 'door', pos: new THREE.Vector3(pt.x, 1.2, pt.z) }; e.home = pt.clone(); e.group.position.copy(pt); }
+    e.group.position.y = 0; e.path = null; e.pathI = 0; e.seenForced = (e.seenForced | 0) + 1; if (window.SS) window.SS.seenForced = (window.SS.seenForced | 0) + 1;
+    beginFire(e); return true;
+  }
   function toVisibleCover(e) {
     const aheadE = camera.position.z - e.group.position.z, dE = e.group.position.distanceTo(camera.position);
     // (m1p stall) a roof/window shooter stays up only while it is ahead and close enough to see through the haze
@@ -1504,7 +1531,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
         e.seen = e.exposed && !(scene.fog && scene.fog.density && d > 1.05 / scene.fog.density) && losRay.intersectObjects(world.shotList ? world.shotList() : world.colliders, false).length === 0;
         e.unseenT = e.seen ? 0 : (e.unseenT || 0) + step;
         if (e.seen && d < HOLD_RANGE) { anySeen = true; e.engaged = true; }
-        if (e.unseenT > UNSEEN_LIMIT && e.engaged && !e.pinned) toVisibleCover(e); // hidden/stuck engaged enemy -> visible cover near the player
+        e.hiddenT = playerSees(e) ? 0 : (e.hiddenT || 0) + step;
+        if (e.hiddenT > 10 && e.engaged && !e.pinned && !e.dying && aliveCount() === 1 && truckPending === 0) toSeenSpot(e); // last fighter out of sight 10 s
+        else if (e.unseenT > UNSEEN_LIMIT && e.engaged && !e.pinned) toVisibleCover(e); // hidden/stuck engaged enemy -> visible cover near the player
       }
     }
 

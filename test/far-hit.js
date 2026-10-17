@@ -47,6 +47,14 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
     await p.waitForTimeout(16000);
     res.advance = await p.evaluate(() => { const e = window.__e; return { alive: e.alive, advanced: e.advanced | 0, d: +e.group.position.distanceTo(SS.camera.position).toFixed(1), phase: e.phase }; });
     if (!res.advance.advanced && !(res.advance.d < 35)) fail.push('lone fighter at 55 m never came nearer ' + JSON.stringify(res.advance));
+    // m1t: a last fighter hidden from the player (behind a facade) must not hit the player and must come into view within ~12 s
+    await p.evaluate(() => { const c = SS.camera.position, e = window.__e; SS.enemies.debugPose(e, c.x + 11.5, c.z - 18, 'idle'); e.pinned = false; e.debugVel = null; e.engaged = true; e.health = 1e9; e.hiddenT = 0; e.shootCd = 0; e.staggerT = 0;
+      window.__hp0 = SS.player.health; SS.player.health = 100; window.__sf0 = SS.seenForced | 0; window.__bb0 = SS.blindHitsBlocked | 0; });
+    const hid = { t: null };
+    for (let i = 0; i < 40; i++) { await p.waitForTimeout(500); const st = await p.evaluate(() => ({ sf: (SS.seenForced | 0) - window.__sf0, hp: SS.player.health, ht: +(window.__e.hiddenT || 0).toFixed(1), sees: SS.enemies.playerSees(window.__e), p: window.__e.group.position.toArray().map((v) => +v.toFixed(1)), cam: SS.camera.position.toArray().map((v) => +v.toFixed(1)), ph: window.__e.phase, n: SS.enemies.list.filter((q) => q.alive).length })); if (hid.prevHp != null && st.hp < hid.prevHp && !st.sees && !hid.prevSees) hid.unseenHit = (hid.unseenHit | 0) + 1; hid.prevHp = st.hp; hid.prevSees = st.sees; if (hid.t == null && (st.sf > 0 || st.sees)) { hid.t = (i + 1) * 0.5; hid.at = st; } hid.last = st; if (hid.t != null && i >= 30) break; }
+    hid.blocked = await p.evaluate(() => (SS.blindHitsBlocked | 0) - window.__bb0);
+    res.hidden = hid; if (hid.t == null) fail.push('hidden last fighter never brought into view ' + JSON.stringify(hid));
+    if (hid.t != null && hid.t > 12.5) fail.push('hidden last fighter took ' + hid.t + ' s to come into view'); if (hid.unseenHit) fail.push('hidden fighter hit the player from out of sight ' + JSON.stringify(hid));
     await p.screenshot({ path: path.resolve(__dirname, '../screenshots/far-hit.png') });
   } catch (e) { fail.push('exception ' + e.message); }
   res.fail = fail; console.log(JSON.stringify(res)); console.log(fail.length ? 'FARHIT FAIL' : 'FARHIT PASS'); await b.close(); srv.close(); process.exit(fail.length ? 1 : 0); })();

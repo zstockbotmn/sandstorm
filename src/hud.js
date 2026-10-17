@@ -48,7 +48,8 @@ export function createHud() {
   dir.id = 'dmg-dir';
   const arrow = document.createElement('div');
   arrow.className = 'arrow';
-  dir.appendChild(arrow);
+  const arc = document.createElement('div'); arc.className = 'arc'; // m1t: red arc toward the shooter
+  dir.append(arc, arrow);
 
   const hs = document.createElement('div');
   hs.id = 'hs-icon';
@@ -99,11 +100,13 @@ export function createHud() {
     });
   }
 
+  // m1t: red arc (plus arrow) toward the shooter, held >= 700 ms real time AND >= 2 painted frames, then fades.
+  let dirHideAt = 0, dirFrames = 0, dirRaf = 0;
+  function dirTick() { dirFrames -= 1; if (dirFrames <= 0 && performance.now() >= dirHideAt) { dir.classList.remove('show'); dirRaf = 0; return; } dirRaf = requestAnimationFrame(dirTick); }
   function damageDirection(angle) {
-    dir.style.transform = 'rotate(' + angle + 'rad)';
-    dir.style.opacity = '1';
-    clearTimeout(dirTimer);
-    dirTimer = setTimeout(() => { dir.style.opacity = '0'; }, 1500);
+    dir.style.transform = 'rotate(' + angle + 'rad)'; dir.classList.add('show'); dir.style.opacity = '';
+    dirHideAt = performance.now() + 900; dirFrames = 3; hud.dirCount = (hud.dirCount | 0) + 1; hud.dirAngle = angle;
+    if (!dirRaf) dirRaf = requestAnimationFrame(dirTick);
   }
 
   function setHealth(v) {

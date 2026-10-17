@@ -294,8 +294,11 @@ window.SS.onDeath = function onDeath() {
   showOver(result);
 };
 
+// m1t: Play acts on pointerdown (one press under lag), once per title; click remains the keyboard path + audio unlock.
+let playDone = false;
+{ const pb = document.getElementById('play'); pb.addEventListener('pointerdown', (ev) => { if (ev.cancelable) ev.preventDefault(); try { audio.unlock(); } catch (_) {} pb.click(); }); }
 document.getElementById('play').addEventListener('click', () => {
-  audio.unlock();
+  audio.unlock(); if (playDone) return; playDone = true;
   document.getElementById('start').style.display = 'none';
   restartRun(); // first start and Restart share one full reset (tester m1r: Restart left wave/spawner state behind)
   window.SS.walking = true;
@@ -347,7 +350,11 @@ document.getElementById('play').addEventListener('click', () => requestAnimation
   if (b) { const cur = () => (window.SS.quality === 'ultra-low' ? 'ultra-low' : QUALITY === 'low' || window.SS.quality === 'low' ? 'low' : 'high');
     const label = () => { const c = cur(); b.textContent = 'Quality: ' + (c === 'ultra-low' ? 'Ultra-low' : c === 'low' ? 'Low' : 'High') + (window.SS.autoLow && !PICKED ? ' (auto) - tap to change' : ' - tap to change'); };
     window.SS.qualityLabel = label; label();
-    b.addEventListener('click', (ev) => { ev.stopPropagation(); const c = cur(); setQuality(c === 'ultra-low' ? 'low' : c === 'low' ? 'high' : 'ultra-low'); }); }
+    // m1t: act on pointerdown (laggy clicks needed repeats) and exactly once: a second press while the reload is pending
+    // used to step the cycle again (High -> Ultra-low), which then looked like an auto fallback.
+    let picked = false; const pick = (ev) => { ev.stopPropagation(); if (ev.cancelable) ev.preventDefault(); if (picked) return; picked = true; const c = cur(); const next = c === 'ultra-low' ? 'low' : c === 'low' ? 'high' : 'ultra-low';
+      b.textContent = 'Quality: ' + (next === 'ultra-low' ? 'Ultra-low' : next === 'low' ? 'Low' : 'High') + ' - loading\u2026'; b.disabled = true; window.SS.qualityPicks = (window.SS.qualityPicks | 0) + 1; setQuality(next); };
+    b.addEventListener('pointerdown', pick); b.addEventListener('click', pick); }
   window.SS.quality = QUALITY; }
 
 // Prewarm (tester: 1-2 s hitches at first contact): compile every shader and upload every texture the fight will use
@@ -406,7 +413,7 @@ window.SS.THREE = THREE; window.SS.world = world; // tests
 window.SS.goUltra = (r) => { goLow(r || 'debug'); goUltra(r || 'debug'); }; // tests
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT && !PICKED) goLow('software-gl');
 // Remember the auto-chosen tier across reloads (tester): a saved ultra-low starts as ultra-low.
-try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { goLow('saved'); goUltra('saved'); } } catch (e) {}
+try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { const why = PICKED ? 'picked' : 'saved'; goLow(why); goUltra(why); if (PICKED) window.SS.autoLow = null; } } catch (e) {} // a picked Ultra-low is not 'auto'
 // Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.
 { let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => {
     // Ultra-low still too slow (tester box < 3.5 fps): step the render scale down 0.4 -> 0.3 -> 0.22 (ultra-low only).

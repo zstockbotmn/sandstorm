@@ -14,6 +14,16 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
       await p.goto('http://127.0.0.1:' + PORT + '/?seed=' + (process.env.SS_SEED || 1) + '&slow=' + (process.env.SS_SLOW || 60) + '&q=' + (mode === 'high' ? 'high' : 'low')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
       if (mode === 'ultra') await p.evaluate(() => SS.goUltra('test'));
       await p.evaluate((c) => { window.__cone = c; }, process.env.SS_CONE !== '0'); await p.click('#play'); await p.waitForTimeout(1000);
+      // m1t: every hit on the player must come from a fighter the player could see (eye ray against drawn meshes, in the haze)
+      await p.evaluate(() => { if (window.__dmgHook) return; window.__dmgHook = 1; window.__uh = { hits: 0, unseen: 0, ex: [] }; const P = SS.player, d0 = P.damage.bind(P);
+        P.damage = (amount, from) => { try { const c = SS.camera.position, dens = SS.scene.fog && SS.scene.fog.density || 0; const U = window.__uh; U.hits++;
+            let best = null, bd = 1e9; for (const e of SS.enemies.list || []) { if (!e.alive) continue; const q = e.group.position; const dd = from ? q.distanceTo(from) : 0; if (dd < bd) { bd = dd; best = e; } }
+            const R = window.__eyeR2 || (window.__eyeR2 = new SS.THREE.Raycaster()); const shown = (o) => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
+            const roots = (SS.world.segments || []).map((g) => g.group).filter(Boolean); let seen = false;
+            if (best) for (const hy of [1.25, 1.62]) { const w = best.group.position.clone(); w.y += hy; const dd = w.distanceTo(c); if (dens && dd > 1.05 / dens) continue;
+              R.set(c, w.clone().sub(c).normalize()); R.far = dd - 0.35; if (!R.intersectObjects(roots, true).some((x) => x.object.isMesh && shown(x.object))) { seen = true; break; } }
+            if (!seen) { U.unseen++; if (U.ex.length < 5 && best) U.ex.push(best.group.position.toArray().map((v) => +v.toFixed(1)).concat([+best.group.position.distanceTo(c).toFixed(1)])); } } catch (e) {}
+          return d0(amount, from); }; });
       if (process.env.SS_WAVES_RESTART) { // restart from the end screen first (tester m1r: Restart left run state behind)
         await p.waitForTimeout(6000); await p.evaluate(() => SS.onDeath()); await p.waitForTimeout(1200); await p.click('#restart'); await p.waitForTimeout(1000); r.restarted = true; } await p.evaluate(() => { window.__slowMs = +(new URLSearchParams(location.search).get("slow") || 110); });
       const t0 = Date.now(); let last = '';
@@ -45,6 +55,8 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
         await p.waitForTimeout(300);
       }
       r.secs = Math.round((Date.now() - t0) / 1000); r.ws = await p.evaluate(() => window.__ws || null);
+      r.uh = await p.evaluate(() => window.__uh || null).catch(() => null);
+      if (r.uh && r.uh.unseen > Math.max(1, r.uh.hits * 0.1)) fail.push(mode + ': ' + r.uh.unseen + '/' + r.uh.hits + ' hits on the player came from a fighter the player could not see ' + JSON.stringify(r.uh.ex));
       if (r.ws && r.ws.phantom > Math.max(1, r.ws.eye * 0.03)) fail.push(mode + ': ' + r.ws.phantom + '/' + r.ws.eye + ' looks at a visible fighter had the shot stopped by something not drawn ' + JSON.stringify(r.ws.ex));
       if (!r.passed) { fail.push(mode + ': ' + (r.stalled ? 'STALLED 60 s' : 'not 2 waves') + ' at ' + (r.last && r.last.d) + ' m, waves ' + (r.last && r.last.w) + ', kills ' + (r.last && r.last.k));
         r.enemies = await p.evaluate(() => (SS.enemies.list || []).filter((e) => e.alive).map((e) => ({ p: e.group.position.toArray().map((x) => +x.toFixed(1)), vis: e.group.visible, exposed: e.exposed, engaged: e.engaged, phase: e.phase, seen: e.seen, behav: e.behavior || e.kind, roof: !!e.roof, truck: !!e.fromTruck, pinned: !!e.pinned })));
