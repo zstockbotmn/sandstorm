@@ -1,0 +1,6 @@
+SMALL STEP of step-1 prompt 3 (only items 1 and 2 of tools/prompts/step1/3-cover.txt - read it; NOT the reload (3), fidgets (4) yet), src/enemies.js (+ src/locomotion.js if needed).
+Everything behind LOCO2 (import from src/locomotion.js); without ?loco=2 enemies.js must take exactly today's path.
+1) Cover entry/exit as in 3-cover.txt item 1 (decelerate, turn to cover facing in the last ~1 m, sink into crouch over ~0.35 s, rise over ~0.3 s on exit). Expose enemy.coverT (0..1).
+2) Crouch-behind-cover idle: while hidden behind cover the base is crouchIdle with a small breathing/weight bob (<= 1.5 cm pelvis, eased), facing the cover-facing; head/upper body keep the 2b threat tracking within its limits.
+3) Peek-out to fire as in item 2 (explicit smoothstep rise+lean ~0.25 s, hold while firing, duck ~0.2 s; side-step 0.25-0.4 m for wall/corner covers on high tier only). Expose enemy.peekT (0..1).
+HIT VOLUMES / m1x (must not regress): the peek pose that is DRAWN is the pose the hit volumes use. All new bends/offsets run after mixer.update and BEFORE syncArt in the same step (syncArt last). Do not change exposure/LOS/fire timing logic, fire only when the existing rules say exposed, do not touch src/weapon.js, src/main.js, src/input.js. Keep tier caps. Build with node tools/build.js. Print a 10-line summary with function names and line numbers.
