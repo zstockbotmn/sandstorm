@@ -92,7 +92,7 @@ const SLOWMO = process.env.SS_LOCO_SLOWMO !== '0'; // sim at 0.3x (SS.slowmoUnti
     const r = { name: C.name, band: C.band, frames: S.frames, slide: slideOf(S.f), snap: S.snap, hv: S.hv, wN: S.wN, wMax: S.wMax, wMin: S.wMin, gap: S.gap, legInTorso: S.legInTorso, diag: S.diag }; res.cases.push(r);
     const lim = C.band === 'run' ? LIM.slideRun : C.band === 'crouch' ? LIM.slideCrouch : C.band === 'turn' ? LIM.slideTurn : LIM.slideWalk;
     if (r.frames < 10) fail.push(C.name + ': only ' + r.frames + ' frames sampled' + (await p.evaluate(() => window.__pfErr ? ' (' + window.__pfErr + ')' : '')));
-    if (r.slide.p90 > lim) fail.push(C.name + ': planted foot slides ' + r.slide.p90 + ' cm (p90 > ' + lim + ')');
+    if (r.slide.p90 > lim) (res.slideWarn = res.slideWarn || []).push(C.name + ' ' + r.slide.p90 + 'cm>' + lim); // App PM: REPORT-ONLY at swiftshader ~9 fps (p90 swings 12 -> 42 cm run to run); not a gate
     if (r.snap > LIM.snapDeg) fail.push(C.name + ': pose snap ' + r.snap + ' deg/frame@30fps (> ' + LIM.snapDeg + ')');
     if (r.hv.torso > LIM.torso || r.hv.head > LIM.head || r.hv.limb > LIM.limb) fail.push(C.name + ': hit volumes off the bones ' + JSON.stringify(r.hv));
     if (C.speed && !r.wN) fail.push(C.name + ': no loco weights (locoW empty)');
