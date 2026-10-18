@@ -36,21 +36,33 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
       // fly-in (the kit moves toward the player), 1-2 s after that frame was drawn - often after the auto-collect already took
       // it, while the tap is still queued in the event loop. Ammo and shotsFired must not change at 1 fps and 0.6 fps.
       res.A2 = [];
-      for (const [slow, frameIx, lagMs] of [[1000, 3, 1200], [1000, 4, 2000], [1600, 3, 1500], [1600, 4, 1500], [1600, 4, 2000], [1600, 2, 1000]]) {
-        await p.evaluate((slow) => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 6; v.z -= Math.cos(y) * 6; v.y = 0; window.__slowMs = slow;
-          SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0; window.__fr = [];
+      for (const [slow, frameIx, lagMs, kind] of [[1000, 3, 1200, 'health'], [1000, 4, 2000, 'health'], [1600, 3, 1500, 'health'], [1600, 4, 1500, 'health'], [1600, 4, 2000, 'health'], [1600, 2, 1000, 'health'], [1000, 3, 1500, 'ammo'], [1600, 3, 1500, 'ammo'], [1600, 4, 2000, 'ammo']]) {
+        await p.evaluate(([slow, kind]) => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 6; v.z -= Math.cos(y) * 6; v.y = 0; window.__slowMs = slow;
+          SS.stakes.drop(kind, v); SS.player.health = 50; SS.weapon.reserve = 60; window.__r0 = SS.weapon.reserve; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0; window.__fr = [];
           const it = SS.stakes.items[SS.stakes.items.length - 1]; window.__kitFr = () => { if (!SS.stakes.items.includes(it)) { window.__fr.push(null); return; } const w = it.g.position.clone(); w.y += 0.45 * it.g.scale.x; w.applyMatrix4(SS.lastVP); window.__fr.push([(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight, w.z]); };
-          const prev = window.__preFrame; window.__preFrame = () => { if (prev) prev(); if (window.__kitFr) window.__kitFr(); }; window.__prevPF = prev; }, slow);
+          const prev = window.__preFrame; window.__preFrame = () => { if (prev) prev(); if (window.__kitFr) window.__kitFr(); }; window.__prevPF = prev; }, [slow, kind]);
         await p.waitForFunction((k) => window.__fr.length > k, frameIx, { timeout: 60000, polling: 200 }); const pos = await p.evaluate((k) => window.__fr[k], frameIx); await p.waitForTimeout(lagMs);
         const atClick = await p.evaluate(() => SS.stakes.items.length); let clicked = false;
         if (pos && pos[2] > -1 && pos[2] < 1 && pos[0] >= 0 && pos[0] < 844 && pos[1] >= 0 && pos[1] < 390) { await p.mouse.click(pos[0], pos[1]); clicked = true; }
         await p.waitForTimeout(Math.max(4000, slow * 4));
-        const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, gapMs: Math.round(SS.input.gapMs) }));
-        Object.assign(r, { fps: +(1000 / slow).toFixed(1), frameIx, lagMs, pos: pos && pos.slice(0, 2).map(Math.round), clicked, kitLeftAtClick: atClick }); res.A2.push(r);
-        if (clicked && (r.fired !== 0 || r.ammo[0] !== r.ammo[1])) fail.push('A2: a tap on the flying medkit (' + r.fps + ' fps, frame ' + frameIx + ', ' + lagMs + ' ms late) cost ammo ' + JSON.stringify(r));
+        const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, reserve: [window.__r0, SS.weapon.reserve], gapMs: Math.round(SS.input.gapMs) }));
+        Object.assign(r, { kind, fps: +(1000 / slow).toFixed(1), frameIx, lagMs, pos: pos && pos.slice(0, 2).map(Math.round), clicked, kitLeftAtClick: atClick }); res.A2.push(r);
+        if (clicked && (r.fired !== 0 || r.ammo[0] !== r.ammo[1])) fail.push('A2: a tap on the flying ' + kind + ' drop (' + r.fps + ' fps, frame ' + frameIx + ', ' + lagMs + ' ms late) cost ammo ' + JSON.stringify(r));
         if (r.taken < 1) fail.push('A2: the medkit was not collected ' + JSON.stringify(r));
+        if (kind === 'ammo' && !(r.reserve[1] > r.reserve[0])) fail.push('A2: the ammo drop did not add reserve ' + JSON.stringify(r));
         await p.evaluate(() => { window.__preFrame = window.__prevPF; window.__kitFr = null; window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(600); }
       if (!res.A2.some((r) => r.clicked && r.kitLeftAtClick === 0)) fail.push('A2: no case tapped after the auto-collect took the kit (tap pending while collected) ' + JSON.stringify(res.A2.map((r) => [r.clicked, r.kitLeftAtClick])));
+      // W (m2a): FIRE taps still queued when the last enemy of a wave dies never fire into the walk (0.6 fps, taps queued
+      // in the same event-loop window as the kill)
+      { await p.evaluate(() => { window.__slowMs = 1600; }); await p.waitForTimeout(2500);
+        const e0 = await p.evaluate(() => { const c = SS.camera.position; const e = SS.debug.spawnEnemy('shifter'); SS.enemies.debugPose(e, c.x + 3, c.z - 20, 'idle'); e.shootCd = 1e9; e.noFireUntilR = 1e15; window.__we = e; return !!e; });
+        await p.waitForTimeout(3500); for (let i = 0; i < 3; i++) await p.mouse.click(200 + i * 3, 120);
+        const atKill = await p.evaluate(() => { const e = window.__we; e.health = 1; e.takeHit('body', e.group.position.clone()); return { fired: SS.weapon.shotsFired, alive: (SS.enemies.list || []).filter((x) => x.alive).length, cuts: SS.input.fireCuts | 0 }; });
+        await p.waitForTimeout(8000); const after = await p.evaluate(() => ({ fired: SS.weapon.shotsFired, cuts: SS.input.fireCuts | 0, pending: SS.input.pendingShots | 0 }));
+        await p.evaluate(() => { window.__slowMs = 0; });
+        res.W = { spawned: e0, atKill, after, firedAfterKill: after.fired - atKill.fired };
+        if (atKill.alive !== 0) fail.push('W: other enemies alive, wave not cleared ' + JSON.stringify(res.W));
+        else if (res.W.firedAfterKill !== 0) fail.push('W: ' + res.W.firedAfterKill + ' queued FIRE tap(s) fired after the wave cleared ' + JSON.stringify(res.W)); }
       // and ammo is untouched in the A cases too
       for (const r of res.A) if (r.ammo[0] !== r.ammo[1]) fail.push('A: medkit tap changed ammo ' + JSON.stringify(r));
       // control: a click well away from any drop still fires one round

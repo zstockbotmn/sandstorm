@@ -108,6 +108,11 @@ export function createInput(canvas) {
   let lastUpT = 0;
   function endHold() { lastUpT = performance.now(); const o = openHold(); if (o && !o.end) o.end = evNow(); }
   input.startHold = startHold; input.endHold = endHold;
+  // m2a (tester: ammo 24->23 as the wave cleared and a drop was tapped): FIRE taps / holds still queued from the fight are
+  // dropped when the last enemy of a wave dies, and taps whose event time is before that moment never queue later.
+  input.fireCutT = 0;
+  input.dropQueuedFire = function dropQueuedFire() { const n = (input.pendingShots | 0) + (input.hold ? 1 : 0) + input.holdQ.length;
+    input.pendingShots = 0; input.tapT.length = 0; input.holdQ.length = 0; input.hold = null; input.fireCutT = performance.now(); input.fireCuts = (input.fireCuts | 0) + n; return n; };
   input.clearAim = function clearAim() { aimDX = aimDY = 0; };
   input.resetState = function resetState() { input.hold = null; input.holdQ.length = 0; aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; input.tapT.length = 0; fireBtn = fireKey = fireMouse = false; sync(); };
   function sync() {
@@ -192,7 +197,7 @@ export function createInput(canvas) {
     const p = pointers.get(e.pointerId);
     if (!p) return;
     pointers.delete(e.pointerId);
-    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) { input.pendingShots = (input.pendingShots || 0) + 1; input.tapT.push(e.timeStamp || performance.now()); } fireMouse = false; } // queue one shot per still-click; weapon drains when cooldown allows
+    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && !((p.t0 || 0) < input.fireCutT) && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) { input.pendingShots = (input.pendingShots || 0) + 1; input.tapT.push(e.timeStamp || performance.now()); } fireMouse = false; } // queue one shot per still-click; weapon drains when cooldown allows
     sync();
   }
   window.addEventListener('pointerup', endPointer);

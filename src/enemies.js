@@ -883,6 +883,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const hp = SSx.player ? SSx.player.health : (SSx.health ?? 100), hpNeed = (100 - hp) / 100, ammoNeed = 1 - Math.min(1, (w.reserve | 0) / 120);
         const kind = dry || hp >= 99.5 ? 'ammo' : hpNeed > ammoNeed ? 'health' : ammoNeed > hpNeed ? 'ammo' : (Math.random() < 0.5 ? 'ammo' : 'health');
         SSx.stakes.drop(kind, origin.clone()); } }
+    if (aliveCount() === 0 && !truckPending && SSx.input && SSx.input.dropQueuedFire) SSx.input.dropQueuedFire(); // m2a: the fight's queued FIRE taps never fire into the walk
     if (aliveCount() === 0) { SSx.slowmoUntil = performance.now() + 750; if (SSx.hud && SSx.hud.banner) setTimeout(() => {}, 0); }
   }
 
