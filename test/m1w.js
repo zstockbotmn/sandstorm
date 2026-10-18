@@ -83,6 +83,17 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1W ? process.env.SS_M
     if (!res.E.tracers) fail.push('E: the off-view shot drew no tracer ' + JSON.stringify(res.E)); else if (!res.E.framesWithTracer) fail.push('E: the off-view tracer was never on screen in a rendered frame ' + JSON.stringify(res.E));
     if (!res.E.cracks) fail.push('E: no crack played for the off-view shot ' + JSON.stringify(res.E));
     await p.context().close(); } catch (e) { fail.push('E exception ' + e.message); }
+  // F (item 7): a lone engaged fighter firing at the worst-case rate (every 150 ms, accuracy x8) at a player in the open needs
+  //   well over 20 s to kill (incoming damage-per-second cap)
+  if (want('F')) try { const { p } = await start(); res.F = {};
+    await p.evaluate(() => { SS.player.health = 100; SS.health = 100; SS.testAccuracy = 8; window.__e = SS.debug.spawnEnemy('shifter'); const e = window.__e; e.pinned = true; e.shootCd = 1e9; e.health = 1e6; e.engaged = true; SS.enemies.debugClearSpacing(); window.__t0 = performance.now(); window.__hp = [];
+      window.__iv = setInterval(() => { if (!SS.player.alive) return; const c = SS.camera.position, y = SS.input.yaw; e.group.position.set(c.x + Math.sin(y) * 13 + Math.cos(y) * 0.6, 0, c.z - Math.cos(y) * 13 + Math.sin(y) * 0.6); e.group.updateMatrixWorld(true); SS.enemies.debugShoot(e); }, 150);
+      window.__iv2 = setInterval(() => { window.__hp.push([Math.round((performance.now() - window.__t0) / 1000), Math.round(SS.player.health)]); if (!SS.player.alive && !window.__deadT) window.__deadT = (performance.now() - window.__t0) / 1000; }, 1000); });
+    await p.waitForFunction(() => !SS.player.alive || performance.now() - window.__t0 > 40000, null, { timeout: 60000, polling: 500 }).catch(() => {});
+    Object.assign(res.F, await p.evaluate(() => { clearInterval(window.__iv); clearInterval(window.__iv2); return { deadT: window.__deadT || (SS.player.alive ? null : (performance.now() - window.__t0) / 1000), hp20: (window.__hp.find((h) => h[0] >= 20) || [0, null])[1], capBlocked: SS.dmgCapBlocked | 0, cap: SS.enemies.DMG_CAP_HPS, hp: window.__hp.map((h) => h[1]).join(',') }; }));
+    if (res.F.hp20 == null || res.F.hp20 < 15) fail.push('F: lone fighter took the player to ' + res.F.hp20 + '% in 20 s ' + JSON.stringify(res.F)); if (res.F.deadT != null && res.F.deadT < 28) fail.push('F: lone fighter killed the player in ' + res.F.deadT.toFixed(1) + ' s');
+    if (!res.F.capBlocked) fail.push('F: damage cap never engaged (test not exercised) ' + JSON.stringify(res.F));
+    await p.context().close(); } catch (e) { fail.push('F exception ' + e.message); }
   if (res.pageErrors) fail.push('page errors: ' + res.pageErrors.join(' | '));
   console.log(JSON.stringify(res)); console.log(fail.length ? 'M1W FAIL ' + fail.join(' ; ').slice(0, 400) : 'M1W PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
 })().catch((e) => { console.log('M1W FAIL exception ' + e.message); process.exit(1); });
