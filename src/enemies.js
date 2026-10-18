@@ -1,7 +1,7 @@
 const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.search); // tests: no auto spawns
 import * as THREE from 'three';
 import { art, SPLIT_ANIMS } from './art.js';
-import { LOCO2, createLoco, updateLoco, aimBody, clipYawRate, turnPlayback, yawRateStep, wrapPi, MOVE_YAW_MAX, PLANT_YAW_MAX, TWIST_MAX, HEAD_YAW_MAX, PLANT_TWIST_MAX, TURN_ENTER, TURN_DONE } from './locomotion.js';
+import { LOCO2, createLoco, updateLoco, aimBody, clipYawRate, turnPlayback, yawRateStep, wrapPi, stepPhase, smooth01, MOVE_YAW_MAX, PLANT_YAW_MAX, TWIST_MAX, HEAD_YAW_MAX, PLANT_TWIST_MAX, TURN_ENTER, TURN_DONE } from './locomotion.js';
 import { createRagdollSystem } from './ragdoll.js';
 
 // m1v tunables: wave-1 enemy damage multiplier (tester died at the first cover every run) and the cover grace period
@@ -383,11 +383,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (LOCO2 && !enemy.pinned && !(enemy.staggerT > 0) && !enemy.hitPlaying) { leadHips(enemy, dt); aimPose(enemy, dt); }
     else if (LOCO2) { enemy.twist = 0; enemy._hipShown = 0; }
     headLook(enemy, dt);
-    const tgtRoll = name === 'lean' ? 1 : 0;
+    // ?loco=2 cover peek: leanW IS the smoothstep peek, not the old dt*6 chase.
+    const driven = !!(LOCO2 && enemy._coverDrive && !enemy.pinned);
+    const tgtRoll = driven ? (enemy.peekT || 0) : (name === 'lean' ? 1 : 0);
     const tgtHunch = (name === 'aim' || name === 'lean') ? 1 : 0;
     const k = Math.min(1, dt * 6);
-    enemy.leanW = (enemy.leanW || 0) + (tgtRoll - (enemy.leanW || 0)) * k;
-    enemy.hunchW = (enemy.hunchW || 0) + (tgtHunch - (enemy.hunchW || 0)) * k;
+    if (driven) { enemy.leanW = tgtRoll; enemy.hunchW = tgtRoll; }
+    else { enemy.leanW = (enemy.leanW || 0) + (tgtRoll - (enemy.leanW || 0)) * k; enemy.hunchW = (enemy.hunchW || 0) + (tgtHunch - (enemy.hunchW || 0)) * k; }
     if (enemy.leanW < 0.01 && enemy.hunchW < 0.01) return;
     const g = enemy.group;
     _fwdW.set(0, 0, 1).applyQuaternion(g.quaternion);
@@ -485,6 +487,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const sc = Math.max(1e-3, r.parent ? r.parent.getWorldScale(_ikA).y : 1);
       if (lo2 > gy0 + 0.04) { enemy.pelvisOff -= (lo2 - gy0 - 0.04) / sc; r.position.y = enemy.rootY0 + enemy.pelvisOff; r.updateMatrixWorld(true); }
       enemy.ikLo = lo2; enemy.ikGy = gy0; }
+    // Cover sink / breath sit on the root after the clip plant and before the two-bone, so the feet
+    // stay down and syncArt (later this step) reads the same hips the mesh draws.
+    if (LOCO2) {
+      const yOff = coverYOffset(enemy, dt);
+      if (yOff) { r.position.y += yOff; r.updateMatrixWorld(true); }
+    }
     // pelvis drop runs at every range/tier (cheap); the two-bone solve + locking only on High within 30 m
     if (art.tier !== 'high' || camera.position.distanceToSquared(enemy.group.position) > 900) { enemy.legs.forEach((l) => { l.lock = null; }); return; }
     const ground = enemy.group.position.y + enemy.ankleH, out = enemy.ikDbg || (enemy.ikDbg = []);
@@ -636,10 +644,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // Raw body-frame velocity (diagonals included). updateLoco eases speed; do not smooth again.
     // Turn clips come from steerFacing (last frame). A moving yaw is not a turn-in-place.
     const cmd = enemy._turnCmd;
+    const drive = !!enemy._coverDrive;
     updateLoco(enemy, dt, {
-      vel: m.vel, crouch: enemy.posture === 'crouch', base, turnRate: m.turnRate, tier: art.tier,
+      vel: m.vel, crouch: enemy.posture === 'crouch', base: drive ? coverBase(enemy) : base, turnRate: m.turnRate, tier: art.tier,
       turnExplicit: true, turnClip: (cmd && cmd.clip) || null,
       turnBlend: cmd && cmd.blend != null ? cmd.blend : 0, turnPlay: (cmd && cmd.play) || 0,
+      cover: drive ? (enemy.coverT || 0) : undefined,
+      peek: drive ? (enemy.peekT || 0) : undefined,
     });
     if (enemy.hitPlaying && enemy.hitReturning && enemy.actions.hit) {
       const hit = enemy.actions.hit;
@@ -651,9 +662,109 @@ export function createEnemies(scene, camera, world, weapon, player) {
     noteDominant(enemy);
     return true;
   }
+  function qName() {
+    let q = '';
+    try { q = (window.SS && window.SS.quality) || window.SS_QUALITY || ''; } catch (e) { q = ''; }
+    if (q === 'low' || q === 'ultra-low' || q === 'high') return q;
+    return 'high';
+  }
+  function coverDestDist(enemy) {
+    const path = enemy.path;
+    const dest = (path && path.length && path[path.length - 1]) || enemy.goal;
+    if (!dest) return 1e9;
+    const p = enemy.group.position;
+    return Math.hypot(dest.x - p.x, dest.z - p.z);
+  }
+  // Chest yaw in cover. Facade covers face the street; cars and barrels face +Z, the player side of the prop.
+  function coverYawOf(enemy) {
+    const a = enemy.anchor;
+    if (!a || !a.pos) return null;
+    if (a.type === 'car' || a.type === 'barrel') return 0;
+    const side = Math.sign(a.pos.x) || 1;
+    return side > 0 ? -Math.PI / 2 : Math.PI / 2;
+  }
+  // Standing clip the crouch blend rises toward. Hidden weight sits on crouchIdle via coverT, not this name.
+  function coverBase(enemy) {
+    const A = enemy.actions || {};
+    if ((enemy.peekT || 0) > 0 && A.lean) return 'lean';
+    if ((enemy.peekT || 0) > 0 && A.aim) return 'aim';
+    return A.idle ? 'idle' : locoBase(enemy);
+  }
+  // Entry 0.35 s, exit 0.30 s, peek rise 0.25 s, duck 0.20 s. Ultra-low: crouch only, and nothing past 30 m.
+  function tickCover(enemy, dt) {
+    if (enemy.pinned) { enemy._coverDrive = false; enemy._coverFace = false; enemy._sideStep = false; return; }
+    const ph = enemy.phase;
+    const q = qName();
+    const farOff = q === 'ultra-low' && camera.position.distanceToSquared(enemy.group.position) > 900;
+    const near = !farOff && (ph === 'approach' || ph === 'relocate' || ph === 'climb') && coverDestDist(enemy) <= 1;
+    const wantC = !farOff && (ph === 'takeCover' || ph === 'hide' || ph === 'peek' || ph === 'fire' || near);
+    const wantP = !farOff && q !== 'ultra-low' && (ph === 'peek' || ph === 'fire');
+    enemy._coverPh = stepPhase(enemy._coverPh, wantC ? 1 : 0, dt, wantC ? 0.35 : 0.30);
+    enemy._peekPh = stepPhase(enemy._peekPh, wantP ? 1 : 0, dt, wantP ? 0.25 : 0.20);
+    enemy.coverT = smooth01(enemy._coverPh);
+    enemy.peekT = smooth01(enemy._peekPh);
+    enemy._coverNear = !!near;
+    enemy._coverYaw = coverYawOf(enemy);
+    enemy._coverDrive = !!(wantC || wantP || enemy._coverPh > 0.001 || enemy._peekPh > 0.001);
+    const rising = (ph === 'peek' || ph === 'fire') && enemy.peekT < 0.92 && enemy.coverT > 0.45;
+    enemy._coverFace = !!(enemy._coverDrive && Number.isFinite(enemy._coverYaw) && !enemy.pinned && !(enemy.staggerT > 0) && (ph === 'takeCover' || ph === 'hide' || near || rising));
+    const type = enemy.anchor && enemy.anchor.type;
+    const sideOk = q === 'high' && !farOff && (type === 'wall' || type === 'door' || type === 'alley');
+    if (wantP && sideOk && !enemy._peekArm) {
+      enemy._peekArm = true;
+      enemy.peekSide = enemy.peekSide ? -enemy.peekSide : (Math.random() < 0.5 ? -1 : 1);
+      enemy._stepDist = 0.25 + Math.random() * 0.15;
+    }
+    if (!wantP && enemy._peekPh <= 0) enemy._peekArm = false;
+    enemy._sideStep = !!(sideOk && enemy._peekArm && enemy._stepDist > 0 && enemy._peekPh > 0.001 && !enemy.pinned);
+  }
+  // Take the peek step off the group before pathing, then put it back after. Otherwise the
+  // 0.25-0.4 m lateral never lets stepToward reach the fire point.
+  function parkCoverStep(enemy) {
+    const have = enemy._stepVec;
+    if (!have || (have.x === 0 && have.z === 0)) return;
+    enemy.group.position.x -= have.x;
+    enemy.group.position.z -= have.z;
+    have.x = 0;
+    have.z = 0;
+  }
+  // Lateral clear of a wall/corner edge. World offset follows peekT so the duck reverses it.
+  function applyCoverStep(enemy) {
+    const have = enemy._stepVec || (enemy._stepVec = { x: 0, z: 0 });
+    if (enemy.dying || enemy.pinned) return;
+    let tx = 0, tz = 0;
+    if (enemy._sideStep && enemy._stepDist > 0) {
+      const yaw = Number.isFinite(enemy._coverYaw) ? enemy._coverYaw : groupYaw(enemy.group);
+      const s = enemy.peekSide < 0 ? -1 : 1;
+      const mag = (enemy.peekT || 0) * enemy._stepDist;
+      tx = -Math.cos(yaw) * s * mag;
+      tz = Math.sin(yaw) * s * mag;
+    }
+    const dx = tx - have.x, dz = tz - have.z;
+    if (dx * dx + dz * dz < 1e-12) return;
+    enemy.group.position.x += dx;
+    enemy.group.position.z += dz;
+    have.x = tx;
+    have.z = tz;
+  }
+  // Eased pelvis drop (entry) and <= 1.2 cm breath. Only while the two-bone plant can keep the feet down.
+  function coverYOffset(enemy, dt) {
+    if (!enemy._coverDrive || enemy.dying || enemy.pinned || enemy.hitPlaying || enemy.staggerT > 0 || window.SS_NOPROC) return 0;
+    const c = enemy.coverT || 0, k = enemy.peekT || 0;
+    const hidden = c > 0.82 && k < 0.18 && !enemy.moving;
+    const goal = hidden ? 1 : 0;
+    const a = dt > 0 ? 1 - Math.exp(-dt / 0.22) : 0;
+    enemy._bobW = (enemy._bobW || 0) + (goal - (enemy._bobW || 0)) * a;
+    if (enemy._bobPh == null) enemy._bobPh = Math.random() * Math.PI * 2;
+    enemy._bobPh += dt * 1.6;
+    const d2 = camera.position.distanceToSquared(enemy.group.position);
+    if (art.tier !== 'high' || d2 > 900) return 0;
+    const bob = Math.sin(enemy._bobPh) * 0.012 * (enemy._bobW || 0);
+    return bob + (-0.04 * c * (1 - k));
+  }
   function stepArt(enemy, dt) {
     _turnDt = dt;
-    if (LOCO2) noteAim(enemy);
+    if (LOCO2) { tickCover(enemy, dt); noteAim(enemy); }
     const name = desiredAnim(enemy);
     enemy.animState = name;
     const loco = !!(LOCO2 && enemy.loco && enemy.art && enemy.bones);
@@ -888,7 +999,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       suppressT: 0,
       engaged: false,
     };
-    if (LOCO2) { enemy.bodyYaw = 0; enemy.turning = null; enemy.aimYaw = 0; enemy.twist = 0; }
+    if (LOCO2) { enemy.bodyYaw = 0; enemy.turning = null; enemy.aimYaw = 0; enemy.twist = 0; enemy.coverT = 0; enemy.peekT = 0; }
 
     const torso = new THREE.Mesh(geoTorso, matVest);
     torso.position.y = 1.15 * S;
@@ -1058,6 +1169,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return Math.atan2(dx, dz);
   }
   function wantBodyYaw(enemy, still) {
+    if (enemy._coverFace && Number.isFinite(enemy._coverYaw)) return enemy._coverYaw;
     if (!still) {
       const lateral = enemy.phase === 'peek' || enemy.phase === 'hide';
       if (!aimBody(aimEngaged(enemy), distToPlayer(enemy), remainPath(enemy), lateral)) {
@@ -2077,11 +2189,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
         continue;
       }
       if (e.art) stepArt(e, dt);
+      if (LOCO2) parkCoverStep(e);
       try { updateEnemy(e, dt * tempo, diff); }
       catch (err) { reportErr('enemy update', err); despawn(e); list.splice(i, 1); continue; } // a broken enemy is removed, never freezes the fight
       // Ground snap + gravity for street fighters (no floating, no hops): y eases down at up to 6 m/s, never below 0.
       if (!(e.anchor && isElevated(e.anchor.type)) && !e.pinned) { const gp = e.group.position; if (gp.y > 0) gp.y = Math.max(0, gp.y - 6 * dt); else gp.y = 0; }
-      if (e.art) { try { footIK(e, dt); } catch (err) { e.legs = []; reportErr('foot ik', err); } syncArt(e); } // IK after the body moved this frame
+      if (e.art) { if (LOCO2) applyCoverStep(e); try { footIK(e, dt); } catch (err) { e.legs = []; reportErr('foot ik', err); } syncArt(e); } // IK after the body moved this frame; cover step before IK so the plant matches the peek
       if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 7;
       const dx = e.group.position.x - camera.position.x;
       const dy = e.group.position.y - camera.position.y;

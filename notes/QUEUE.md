@@ -6,6 +6,9 @@ Order (App PM, Oct 17 12:03): m1u -> 1 movement -> 2 hit reactions -> 3 immersio
 Approved by App PM Oct 17 12:07. Per step: FIRST survey best free, no-login, open-source options for Three.js on iPhone Safari (three-mesh-bvh, Rapier, Quaternius/Kenney/CC0 mocap clips, CCDIK or similar IK, recast-navigation-js navmesh, interior-mapping shaders, meshoptimizer, KTX2/basis), pick best fit, write choice + why in notes/DECISIONS.md, send App PM a short tool-choice note as the step starts, then build with Grok Build. Paid/login tools need Zack OK.
 
 1. TOP: enemies move like real people. Smooth locomotion blending (walk/run/strafe/crouch, turn-in-place, accel/decel, foot planting, no sliding/snapping), realistic cover entry/exit and peeking, natural reloads and idle fidgets. Free CC0 anim (Quaternius etc, no login); root motion / foot-lock IK. Add tests for foot sliding (foot world-velocity while planted) and snapping (pose delta per frame).
+   - Step 1 / 3a follow-up (App PM, m2a, tester m1za "last-enemy grind"): after ~20-25 s pinned on one cover point, the LAST
+     enemy of a wave repositions to another cover or falls back (exposed while moving). No extra HP. Not rushed: do it with 3b
+     (cover AI), behind ?loco=2 first.
 2. Per-body-part hit reactions: arm jerk then clutch with free hand (IK), weaker aim; leg stumble then persistent limp/slower; torso stagger; head/kill ragdoll. Persistent wounded state. Test zone detection + reaction plays. Smooth on iPhone.
 3. Immersion pass (scale by tier, CC0 audio only):
    - Danger: edge damage arc (done m1u), near-miss whizz, dust/plaster puffs near player.

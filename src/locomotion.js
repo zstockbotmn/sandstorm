@@ -30,6 +30,29 @@ function smoothstep(e0, e1, x) {
   return t * t * (3 - 2 * t);
 }
 
+// Linear 0..1 phase. smooth01(phase) is the eased value. The phase step is capped so the
+// smoothstep slope (max 1.5) cannot move the eased value more than 0.32 in one frame.
+export function stepPhase(phase, to, dt, seconds) {
+  let p = Number.isFinite(phase) ? phase : 0;
+  if (p < 0) p = 0; else if (p > 1) p = 1;
+  const dest = to >= 0.5 ? 1 : 0;
+  if (!(dt > 0)) return p;
+  if (p === dest) return dest;
+  const dur = seconds > 0.05 ? seconds : 0.05;
+  const dir = dest > p ? 1 : -1;
+  let dp = dt / dur;
+  const maxDp = 0.32 / 1.5;
+  if (dp > maxDp) dp = maxDp;
+  p += dir * dp;
+  if ((dir > 0 && p > dest) || (dir < 0 && p < dest)) p = dest;
+  return p;
+}
+export function smooth01(t) {
+  if (!(t > 0)) return 0;
+  if (t >= 1) return 1;
+  return t * t * (3 - 2 * t);
+}
+
 // Facing vs travel (?loco=2). Rates are rad/s; meta turnRate is degrees (positive = left / CCW from above).
 const DEG = Math.PI / 180;
 export const MOVE_YAW_MAX = 220 * DEG;   // moving body yaw
@@ -236,6 +259,11 @@ function buildTargets(enemy, input) {
   const targets = {};
   const phased = {};
   const baseName = resolveBase(actions, input.base);
+  // cover/peek are optional (?loco=2 cover step). Without them the weights match the crouch boolean.
+  const hasCover = input.cover != null && Number.isFinite(+input.cover);
+  const rise = hasCover && input.peek != null && Number.isFinite(+input.peek) ? clamp(+input.peek, 0, 1) : 0;
+  const cAmt = hasCover ? clamp(+input.cover, 0, 1) : (input.crouch ? 1 : 0);
+  const crouchMove = input.crouchMove !== false;
   let turnBlend = 0, turnName = null;
   const turnRate = +input.turnRate || 0;
   // Explicit facing (steerFacing) owns the clip. Without it, a measured yaw rate still picks the turn.
@@ -254,14 +282,32 @@ function buildTargets(enemy, input) {
     if (turnBlend > 0 && actions[want]) turnName = want;
     else turnBlend = 0;
   }
-  if (baseName) targets[baseName] = idle * (1 - turnBlend);
+  if (baseName) {
+    const stand = hasCover ? (1 - cAmt * (1 - rise)) : 1;
+    targets[baseName] = idle * (1 - turnBlend) * stand;
+  }
+  // Stationary crouch (crouchIdle) shares the idle weight with the standing base. Peek rise hands it back.
+  if (hasCover && cAmt > 0) {
+    const cb = (actions.crouchIdle && 'crouchIdle') || (actions.crouch && 'crouch') || baseName;
+    const cw = idle * (1 - turnBlend) * cAmt * (1 - rise);
+    if (cb && cw > 0) {
+      if (cb === baseName) targets[cb] = idle * (1 - turnBlend);
+      else targets[cb] = (targets[cb] || 0) + cw;
+    }
+  }
   if (turnName) { targets[turnName] = idle * turnBlend; phased[turnName] = 1; }
 
   let wWalk = 0, wRun = 0, wCrouch = 0;
-  if (input.crouch) wCrouch = 1;
-  else if (speed >= 3.2) wRun = 1;
-  else if (speed <= 2.2) wWalk = 1;
-  else { wRun = (speed - 2.2) / (3.2 - 2.2); wWalk = 1 - wRun; }
+  const standGait = () => {
+    if (speed >= 3.2) wRun = 1;
+    else if (speed <= 2.2) wWalk = 1;
+    else { wRun = (speed - 2.2) / (3.2 - 2.2); wWalk = 1 - wRun; }
+  };
+  // Peek rise (0..1) hands the gait back to directional clips so a lateral clear reads as a strafe.
+  const gaitCrouch = crouchMove ? cAmt * (1 - rise) : 0;
+  if (gaitCrouch <= 0) standGait();
+  else if (gaitCrouch >= 1) wCrouch = 1;
+  else { standGait(); wWalk *= (1 - gaitCrouch); wRun *= (1 - gaitCrouch); wCrouch = gaitCrouch; }
 
   let miss = 0;
   const put = (pts, bw) => {
