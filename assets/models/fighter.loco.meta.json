@@ -80,11 +80,11 @@
     "velFit": "stance-foot LSQ"
   },
   "crouchWalk": {
-    "src": "KayKit Crouching",
-    "duration": 1.0667,
-    "fwd": 2.2048,
-    "right": 0.0005,
-    "speed": 2.2048,
+    "src": "KayKit Sneaking",
+    "duration": 2.1333,
+    "fwd": 2.0983,
+    "right": -0.0005,
+    "speed": 2.0983,
     "turnRate": 0,
     "loopErr": 0.019,
     "velFit": "stance-foot LSQ"

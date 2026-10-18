@@ -121,55 +121,62 @@ for (const clip of animGltf.animations) {
 
   const times = [];
   for (let i = 0; i < n; i++) times.push(dur * (i / Math.max(1, n - 1)));
-  const lY = lFoot.map((p) => p.y);
-  let minFY = Infinity, maxFY = -Infinity;
-  for (let i = 0; i < n; i++) { if (lY[i] < minFY) minFY = lY[i]; if (lY[i] > maxFY) maxFY = lY[i]; }
-  const fwd0 = m.fwd || 0, right0 = m.right || 0;
-  const yCut = minFY + Math.max(0.02, (maxFY - minFY) * 0.28);
-  const dt = dur / Math.max(1, n - 1);
-  const contacts = [];
-  for (let i = 2; i < n - 2; i++) {
-    if (lY[i] <= lY[i - 1] && lY[i] <= lY[i + 1] && lY[i] <= yCut) {
-      // ground-frame foot speed (clips are in place: add the body travel back, else a run's planted foot reads as moving)
-      const gx = (k) => lFoot[k].x - (m.right || 0) * times[k], gz = (k) => lFoot[k].z + (m.fwd || 0) * times[k]; // root frame: F = +Z, R = -X
-      // speed over +-2 samples: heel-to-toe roll moves the foot bone ~2 cm in one sample at run cadence (60 samples/0.8 s)
-      const sp = Math.hypot(gx(i + 2) - gx(i - 2), gz(i + 2) - gz(i - 2)) / (4 * dt || 1);
-      if (sp < Math.max(0.55, 0.2 * (m.speed || 0))) contacts.push(i); // planted = under 20% of the travel speed (runs: ~1 m/s)
+  // Drift of one contact point series (ankle or toe). A foot is planted if its heel OR its toe holds still: the ankle
+  // swings forward over a planted toe in back-steps and crouch steps, so the clip's drift is the better of the two.
+  const driftOf = (P, tag) => {
+    const lY = P.map((p) => p.y);
+    let minFY = Infinity, maxFY = -Infinity;
+    for (let i = 0; i < n; i++) { if (lY[i] < minFY) minFY = lY[i]; if (lY[i] > maxFY) maxFY = lY[i]; }
+    const fwd0 = m.fwd || 0, right0 = m.right || 0;
+    const yCut = minFY + Math.max(0.02, (maxFY - minFY) * 0.28);
+    const dt = dur / Math.max(1, n - 1);
+    const contacts = [];
+    for (let i = 2; i < n - 2; i++) {
+      if (lY[i] <= lY[i - 1] && lY[i] <= lY[i + 1] && lY[i] <= yCut) {
+        // ground-frame foot speed (clips are in place: add the body travel back, else a run's planted foot reads as moving)
+        const gx = (k) => P[k].x - (m.right || 0) * times[k], gz = (k) => P[k].z + (m.fwd || 0) * times[k]; // root frame: F = +Z, R = -X
+        // speed over +-2 samples: heel-to-toe roll moves the foot bone ~2 cm in one sample at run cadence (60 samples/0.8 s)
+        const sp = Math.hypot(gx(i + 2) - gx(i - 2), gz(i + 2) - gz(i - 2)) / (4 * dt || 1);
+        if (sp < Math.max(0.55, 0.2 * (m.speed || 0))) contacts.push(i); // planted = under 20% of the travel speed (runs: ~1 m/s)
+      }
     }
-  }
-  const kept = [];
-  for (const i of contacts) {
-    if (kept.length && times[i] - times[kept[kept.length - 1]] < 0.22) {
-      if (lY[i] < lY[kept[kept.length - 1]]) kept[kept.length - 1] = i;
-    } else kept.push(i);
-  }
+    const kept = [];
+    for (const i of contacts) {
+      if (kept.length && times[i] - times[kept[kept.length - 1]] < 0.22) {
+        if (lY[i] < lY[kept[kept.length - 1]]) kept[kept.length - 1] = i;
+      } else kept.push(i);
+    }
 
-  const fwd = m.fwd || 0, right = m.right || 0;
-  const uw = unwrap(yaws);
-  if (process.env.LOCO_DIAG === clip.name) { const k0 = lY.indexOf(minFY); for (let k = Math.max(0, k0 - 6); k <= Math.min(n - 1, k0 + 6); k++) console.log(' ', k, times[k].toFixed(3), 'y', lY[k].toFixed(3), 'gx', (lFoot[k].x - right0 * times[k]).toFixed(3), 'gz', (lFoot[k].z + fwd0 * times[k]).toFixed(3), 'mx', lFoot[k].x.toFixed(3), 'mz', lFoot[k].z.toFixed(3)); }
-  if (process.env.LOCO_DIAG) console.log(clip.name, 'contacts', contacts.length, 'kept', kept.length, 'lY', minFY.toFixed(3), maxFY.toFixed(3));
-  let drift = 0;
-  const plants = kept.length ? kept : [Math.floor(n * 0.2), Math.floor(n * 0.5), Math.floor(n * 0.8)];
-  for (const i of plants) {
-    // Body frame = the character root (+Z forward, -X right), the frame the game feeds updateLoco from the group's facing.
-    // (Was the Hips yaw with right = +X: strafes turn the pelvis toward the motion, so runStrafe read as forward travel,
-    // and every lateral clip had its side speed mirrored.)
-    const yaw = 0;
-    const s = Math.sin(yaw), c = Math.cos(yaw);
-    const y0 = lY[i];
-    let a = i, b = i;
-    while (a > 0 && lY[a] < y0 + 0.012 && times[i] - times[a] < 0.05) a -= 1;
-    while (b < n - 1 && lY[b] < y0 + 0.012 && times[b] - times[i] < 0.05) b += 1;
-    const world = (k) => {
-      const t = times[k];
-      return [lFoot[k].x + (fwd * s - right * c) * t, lFoot[k].z + (fwd * c + right * s) * t]; // + body travel fwd*F + right*R, R = (-cos, sin)
-    };
-    const p0 = world(i);
-    for (let k = a; k <= b; k++) {
-      const p = world(k);
-      drift = Math.max(drift, Math.hypot(p[0] - p0[0], p[1] - p0[1]));
+    const fwd = m.fwd || 0, right = m.right || 0;
+    const uw = unwrap(yaws);
+    if (process.env.LOCO_DIAG === clip.name + ':' + tag) { const k0 = lY.indexOf(minFY); for (let k = Math.max(0, k0 - 6); k <= Math.min(n - 1, k0 + 6); k++) console.log(' ', k, times[k].toFixed(3), 'y', lY[k].toFixed(3), 'gx', (P[k].x - right0 * times[k]).toFixed(3), 'gz', (P[k].z + fwd0 * times[k]).toFixed(3), 'mx', P[k].x.toFixed(3), 'mz', P[k].z.toFixed(3)); }
+    if (process.env.LOCO_DIAG) console.log(clip.name, tag, 'contacts', contacts.length, 'kept', kept.length, 'lY', minFY.toFixed(3), maxFY.toFixed(3));
+    let drift = 0;
+    const plants = kept.length ? kept : [Math.floor(n * 0.2), Math.floor(n * 0.5), Math.floor(n * 0.8)];
+    for (const i of plants) {
+      // Body frame = the character root (+Z forward, -X right), the frame the game feeds updateLoco from the group's facing.
+      // (Was the Hips yaw with right = +X: strafes turn the pelvis toward the motion, so runStrafe read as forward travel,
+      // and every lateral clip had its side speed mirrored.)
+      const yaw = 0;
+      const s = Math.sin(yaw), c = Math.cos(yaw);
+      const y0 = lY[i];
+      let a = i, b = i;
+      while (a > 0 && lY[a] < y0 + 0.012 && times[i] - times[a] < 0.05) a -= 1;
+      while (b < n - 1 && lY[b] < y0 + 0.012 && times[b] - times[i] < 0.05) b += 1;
+      const world = (k) => {
+        const t = times[k];
+        return [P[k].x + (fwd * s - right * c) * t, P[k].z + (fwd * c + right * s) * t]; // + body travel fwd*F + right*R, R = (-cos, sin)
+      };
+      const p0 = world(i);
+      for (let k = a; k <= b; k++) {
+        const p = world(k);
+        drift = Math.max(drift, Math.hypot(p[0] - p0[0], p[1] - p0[1]));
+      }
     }
-  }
+    return drift;
+  };
+  const dFoot = driftOf(lFoot, 'foot'), dToe = driftOf(lToe, 'toe');
+  const drift = Math.min(dFoot, dToe); const fwd = m.fwd || 0, right = m.right || 0;
   const driftCm = drift * 100;
   const minYcm = minY * 100;
   let wrap = 0; for (const name of BONES) wrap = Math.max(wrap, qAngle(qs[0][name], qs[qs.length - 1][name])); const wrapDeg = wrap; // qAngle is in degrees

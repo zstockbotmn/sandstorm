@@ -315,7 +315,7 @@ export function updateLoco(enemy, dt, input) {
     const manual = !!GAIT[name] && (name !== built.baseName || !!built.phased[name]);
     if (!manual) continue;
     const ms = Math.max(0.3, metaSpeed(enemy, name));
-    adv += w * clamp(speed / ms, 0.6, 1.7) / Math.max(1e-3, clipDur(action, enemy, name));
+    adv += w * clamp(speed / ms, 0.45, 1.7) / Math.max(1e-3, clipDur(action, enemy, name));
   }
   const phase = wrap01((enemy.animPhase || 0) + adv * dt);
   enemy.animPhase = phase;

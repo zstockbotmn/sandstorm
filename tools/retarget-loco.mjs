@@ -847,7 +847,9 @@ packed.push(retargetKay('Running_Strafe_Right', 'runStrafeR'));
 packed.push(retargetKay('Walking_Backwards', 'backRun'));
 const sneakY = meanHip('Sneaking');
 const crouchY = meanHip('Crouching');
-const crouchSrc = crouchY <= sneakY ? 'Crouching' : 'Sneaking';
+// Sneaking (~0.9 m/s) over Crouching (~2.2 m/s crouch-run whose planted foot rises ~7 cm on the Meshy legs): the game's
+// crouch walk is 1.1 m/s and Crouching slid 45 cm in loco-check. LOCO_CROUCH=Crouching restores the old lowest-hips pick.
+const crouchSrc = process.env.LOCO_CROUCH || 'Sneaking';
 console.log('crouchWalk pick', crouchSrc, 'hips Sneaking', sneakY.toFixed(3), 'Crouching', crouchY.toFixed(3));
 packed.push(retargetKay(crouchSrc, 'crouchWalk'));
 if (!packed.find((p) => p.name === 'backWalk')) {
@@ -903,3 +905,6 @@ for (const n of expect) {
     m.turnRate.toFixed(1).padStart(6), String(m.loopErr.toFixed(2)).padStart(7));
 }
 if (bytes > 600 * 1024) console.warn('output exceeds 600 KB:', bytes);
+// The lock fit above reads the KayKit clips at ~2x their planted-foot speed (backRun 2.26 vs 1.15 m/s) and mirrors
+// nothing else; the meta velocity the game scales playback by is refit from the baked clips' stance feet.
+{ const { spawnSync } = await import('child_process'); const r = spawnSync(process.execPath, [path.join(R, 'tools/loco-fitmeta.mjs'), '--write'], { stdio: 'inherit' }); if (r.status) console.warn('loco-fitmeta failed', r.status); }
