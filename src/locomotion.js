@@ -80,15 +80,16 @@ export function blendWeights(points, fwd, right) {
     return out;
   }
   if (scored.length === 1) { addW(out, A.name, 1); return out; }
-  let B = scored[1];
-  const d2 = B.d;
-  for (let i = 2; i < scored.length; i++) {
-    if (scored[i].d > d2 + 1e-4) break;
-    if (angDist(scored[i].a, A.a) < angDist(B.a, A.a)) B = scored[i];
-  }
-  const wB = A.d / (A.d + B.d);
-  addW(out, A.name, 1 - wB);
-  addW(out, B.name, wB);
+  // Bracket the query angle with the nearest sample on EACH side (signed angle), not the two nearest overall: with
+  // measured, off-axis directions (strafeL at -103 deg, backWalk at -152 deg) the two nearest can sit on the same side,
+  // and pure left would then mix in backWalk instead of walk. Weights are linear in angle between the two brackets.
+  const sd = (a) => { let d = a - q; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
+  let lo = null, hi = null; // lo: nearest with signed d < 0, hi: nearest with d > 0
+  for (let i = 0; i < scored.length; i++) { const d = sd(scored[i].a); if (d < 0 && (!lo || d > lo.d)) lo = { name: scored[i].name, d }; if (d > 0 && (!hi || d < hi.d)) hi = { name: scored[i].name, d }; }
+  if (!lo || !hi) { addW(out, A.name, 1); return out; } // all samples on one side (e.g. < 180 deg coverage): nearest only
+  const span = hi.d - lo.d, wHi = span > 1e-6 ? -lo.d / span : 0.5;
+  addW(out, lo.name, 1 - wHi);
+  addW(out, hi.name, wHi);
   return out;
 }
 
