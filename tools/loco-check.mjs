@@ -124,13 +124,17 @@ for (const clip of animGltf.animations) {
   const lY = lFoot.map((p) => p.y);
   let minFY = Infinity, maxFY = -Infinity;
   for (let i = 0; i < n; i++) { if (lY[i] < minFY) minFY = lY[i]; if (lY[i] > maxFY) maxFY = lY[i]; }
+  const fwd0 = m.fwd || 0, right0 = m.right || 0;
   const yCut = minFY + Math.max(0.02, (maxFY - minFY) * 0.28);
   const dt = dur / Math.max(1, n - 1);
   const contacts = [];
   for (let i = 2; i < n - 2; i++) {
     if (lY[i] <= lY[i - 1] && lY[i] <= lY[i + 1] && lY[i] <= yCut) {
-      const sp = Math.hypot(lFoot[i + 1].x - lFoot[i - 1].x, lFoot[i + 1].z - lFoot[i - 1].z) / (2 * dt || 1);
-      if (sp < 0.55) contacts.push(i);
+      // ground-frame foot speed (clips are in place: add the body travel back, else a run's planted foot reads as moving)
+      const gx = (k) => lFoot[k].x - (m.right || 0) * times[k], gz = (k) => lFoot[k].z + (m.fwd || 0) * times[k]; // root frame: F = +Z, R = -X
+      // speed over +-2 samples: heel-to-toe roll moves the foot bone ~2 cm in one sample at run cadence (60 samples/0.8 s)
+      const sp = Math.hypot(gx(i + 2) - gx(i - 2), gz(i + 2) - gz(i - 2)) / (4 * dt || 1);
+      if (sp < Math.max(0.55, 0.2 * (m.speed || 0))) contacts.push(i); // planted = under 20% of the travel speed (runs: ~1 m/s)
     }
   }
   const kept = [];
@@ -142,10 +146,15 @@ for (const clip of animGltf.animations) {
 
   const fwd = m.fwd || 0, right = m.right || 0;
   const uw = unwrap(yaws);
+  if (process.env.LOCO_DIAG === clip.name) { const k0 = lY.indexOf(minFY); for (let k = Math.max(0, k0 - 6); k <= Math.min(n - 1, k0 + 6); k++) console.log(' ', k, times[k].toFixed(3), 'y', lY[k].toFixed(3), 'gx', (lFoot[k].x - right0 * times[k]).toFixed(3), 'gz', (lFoot[k].z + fwd0 * times[k]).toFixed(3), 'mx', lFoot[k].x.toFixed(3), 'mz', lFoot[k].z.toFixed(3)); }
+  if (process.env.LOCO_DIAG) console.log(clip.name, 'contacts', contacts.length, 'kept', kept.length, 'lY', minFY.toFixed(3), maxFY.toFixed(3));
   let drift = 0;
   const plants = kept.length ? kept : [Math.floor(n * 0.2), Math.floor(n * 0.5), Math.floor(n * 0.8)];
   for (const i of plants) {
-    const yaw = uw[i] || 0;
+    // Body frame = the character root (+Z forward, -X right), the frame the game feeds updateLoco from the group's facing.
+    // (Was the Hips yaw with right = +X: strafes turn the pelvis toward the motion, so runStrafe read as forward travel,
+    // and every lateral clip had its side speed mirrored.)
+    const yaw = 0;
     const s = Math.sin(yaw), c = Math.cos(yaw);
     const y0 = lY[i];
     let a = i, b = i;
@@ -153,7 +162,7 @@ for (const clip of animGltf.animations) {
     while (b < n - 1 && lY[b] < y0 + 0.012 && times[b] - times[i] < 0.05) b += 1;
     const world = (k) => {
       const t = times[k];
-      return [lFoot[k].x + (right * c + fwd * s) * t, lFoot[k].z + (-right * s + fwd * c) * t];
+      return [lFoot[k].x + (fwd * s - right * c) * t, lFoot[k].z + (fwd * c + right * s) * t]; // + body travel fwd*F + right*R, R = (-cos, sin)
     };
     const p0 = world(i);
     for (let k = a; k <= b; k++) {

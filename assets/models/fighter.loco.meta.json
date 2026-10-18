@@ -2,29 +2,32 @@
   "strafeL": {
     "src": "69_42.bvh t=6.20-9.25",
     "duration": 3.0506,
-    "fwd": -0.1055,
-    "right": -0.3735,
-    "speed": 0.3881,
+    "fwd": -0.0791,
+    "right": -0.3447,
+    "speed": 0.3537,
     "turnRate": 0.663,
-    "loopErr": 10.366
+    "loopErr": 10.366,
+    "velFit": "stance-foot LSQ"
   },
   "strafeR": {
     "src": "69_58.bvh t=0.23-2.37",
     "duration": 2.1362,
-    "fwd": 0.0561,
-    "right": 0.5136,
-    "speed": 0.5166,
+    "fwd": -0.0025,
+    "right": 0.391,
+    "speed": 0.3911,
     "turnRate": -2.22,
-    "loopErr": 9.638
+    "loopErr": 9.638,
+    "velFit": "stance-foot LSQ"
   },
   "backWalk": {
     "src": "69_50.bvh t=0.60-1.85",
     "duration": 1.25,
-    "fwd": -0.5956,
-    "right": -0.281,
-    "speed": 0.6586,
+    "fwd": -0.4161,
+    "right": -0.2211,
+    "speed": 0.4712,
     "turnRate": -3.909,
-    "loopErr": 12.475
+    "loopErr": 12.475,
+    "velFit": "stance-foot LSQ"
   },
   "turnL": {
     "src": "69_17.bvh t=4.35-5.71",
@@ -33,7 +36,8 @@
     "right": 0,
     "speed": 0,
     "turnRate": 84.686,
-    "loopErr": 21.771
+    "loopErr": 21.771,
+    "velFit": "stance-foot LSQ"
   },
   "turnR": {
     "src": "69_18.bvh t=2.67-4.13",
@@ -42,42 +46,47 @@
     "right": 0,
     "speed": 0,
     "turnRate": -70.564,
-    "loopErr": 13.434
+    "loopErr": 13.434,
+    "velFit": "stance-foot LSQ"
   },
   "runStrafeL": {
     "src": "KayKit Running_Strafe_Left",
     "duration": 0.8,
-    "fwd": 2.4837,
-    "right": -4.3632,
-    "speed": 5.0206,
+    "fwd": 2.6433,
+    "right": -4.6624,
+    "speed": 5.3596,
     "turnRate": 0,
-    "loopErr": 0.095
+    "loopErr": 0.095,
+    "velFit": "stance-foot LSQ"
   },
   "runStrafeR": {
     "src": "KayKit Running_Strafe_Right",
     "duration": 0.8,
-    "fwd": 2.5178,
-    "right": 4.4174,
-    "speed": 5.0845,
+    "fwd": 2.6413,
+    "right": 4.649,
+    "speed": 5.347,
     "turnRate": 0,
-    "loopErr": 0.098
+    "loopErr": 0.098,
+    "velFit": "stance-foot LSQ"
   },
   "backRun": {
     "src": "KayKit Walking_Backwards",
     "duration": 1.0667,
-    "fwd": -2.2619,
-    "right": 0,
-    "speed": 2.2619,
+    "fwd": -1.1473,
+    "right": 0.0001,
+    "speed": 1.1473,
     "turnRate": 0,
-    "loopErr": 0.019
+    "loopErr": 0.019,
+    "velFit": "stance-foot LSQ"
   },
   "crouchWalk": {
     "src": "KayKit Crouching",
     "duration": 1.0667,
-    "fwd": 0.473,
-    "right": 0,
-    "speed": 0.473,
+    "fwd": 2.2048,
+    "right": 0.0005,
+    "speed": 2.2048,
     "turnRate": 0,
-    "loopErr": 0.019
+    "loopErr": 0.019,
+    "velFit": "stance-foot LSQ"
   }
 }
