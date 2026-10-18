@@ -1,0 +1,14 @@
+#!/bin/bash
+# Internal step-1 preview (NOT gh-pages). Rebuilds step1-movement, copies dist to /workspace/preview/step1,
+# forces ?loco=2&repos=1 by default, and serves it on http://localhost:8850/ (own origin = own service-worker scope).
+set -e
+cd /workspace/sandstorm-step1 && node tools/build.js >/dev/null
+rm -rf /workspace/preview/step1 && cp -r dist /workspace/preview/step1
+python3 - <<'PY'
+p='/workspace/preview/step1/index.html'; s=open(p).read()
+inj="<script>/* internal preview: step-1 flags on by default */(function(){var q=location.search;if(!/[?&]loco=/.test(q)){location.replace(location.pathname+(q?q+'&':'?')+'loco=2&repos=1'+location.hash);}})();</script>"
+s=s.replace('<head>','<head>'+inj,1); open(p,'w').write(s)
+PY
+pkill -f "http.server 8850" 2>/dev/null || true
+cd /workspace/preview/step1 && nohup python3 -m http.server 8850 --bind 127.0.0.1 > /workspace/preview/step1-server.log 2>&1 &
+sleep 1; echo "serving $(grep -o 'ss-[0-9a-f]*' /workspace/preview/step1/sw.js | head -1) at http://localhost:8850/"
