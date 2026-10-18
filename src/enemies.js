@@ -890,7 +890,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const name = desiredAnim(enemy);
     enemy.animState = name;
     const loco = !!(LOCO2 && enemy.loco && enemy.art && enemy.bones);
-    if (!(loco && applyLoco(enemy, dt))) {
+    const owned = !!(loco && applyLoco(enemy, dt)); enemy._locoOwned = owned; // test hook: did the blend layer own this step
+    if (!owned) {
       const ref = STRIDE[name];
       const cur = enemy.actions[name];
       if (cur && !enemy.hitPlaying) {

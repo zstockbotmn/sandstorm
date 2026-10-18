@@ -435,11 +435,23 @@ export function updateLoco(enemy, dt, input) {
   }
   const phase = wrap01((enemy.animPhase || 0) + adv * dt);
   enemy.animPhase = phase;
+  // Several names can share ONE AnimationAction (art.js: strafe = clips.strafe || clips.walk, crouch/lean = clips.idle when
+  // missing; mixer.clipAction returns the same action for the same clip). Applying per name let a later zero-weight alias
+  // stop the action the blend had just weighted (walk at w=1 killed by strafe at w=0 -> rest-pose legs gliding, idle killed
+  // by crouch/lean at w=0 -> bind pose standing). Apply each distinct action once: summed weight, driven by its
+  // heaviest name.
+  const per = new Map();
   for (let i = 0; i < MANAGED.length; i++) {
     const name = MANAGED[i];
     const action = actions[name];
     if (!action) continue;
     const w = enemy.locoW[name] || 0;
+    const q = per.get(action);
+    if (!q) per.set(action, { w, name, top: w });
+    else { q.w += w; if (w > q.top) { q.top = w; q.name = name; } }
+  }
+  for (const [action, q] of per) {
+    const name = q.name, w = Math.min(1, q.w);
     const manual = !!GAIT[name] && (name !== built.baseName || !!built.phased[name]);
     if (turnPlay && (name === 'turnL' || name === 'turnR')) {
       const dur = clipDur(action, enemy, name);

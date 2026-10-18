@@ -35,7 +35,8 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
   await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
   res.setup = await p.evaluate(() => { SS.walking = false; SS.player.health = 1e6; window.__freezeCam = true;
     const c = SS.camera.position; const e = SS.debug.spawnEnemy('shifter'); window.__e = e; SS.enemies.debugPose(e, c.x + 1.5, c.z - 12, 'idle'); e.health = 1e9; e.shootCd = 1e9; e.noFireUntilR = 1e15;
-    return { bones: !!e.bones, tier: SS.art && SS.art.tier, loco: !!(SS.art && SS.art.locoMeta), locoW: !!e.locoW }; });
+    return { bones: !!e.bones, tier: SS.art && SS.art.tier, loco: !!(SS.art && SS.art.locoMeta), locoW: !!e.locoW, failed: (SS.art && SS.art.failed) || [], loaded: ((SS.art && SS.art.loaded) || []).filter((n) => /loco/.test(n)), acts: Object.keys(e.actions || {}) }; });
+  if ((res.setup.failed || []).some((n) => /loco/.test(n))) fail.push('loco art failed to load: ' + res.setup.failed.join(','));
   if (!res.setup.bones) fail.push('fighter has no bones (art tier ' + res.setup.tier + ')');
   if (!res.setup.loco) fail.push('?loco=2 did not load fighter.loco meta (art.locoMeta missing)');
   // per-frame sampler: feet, leg/hip rotations, hit-volume offsets
@@ -69,7 +70,8 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
   for (const a of [0, 90, 180, 270]) cases.push({ name: 'crouch' + a, band: 'crouch', speed: 1.1, ang: a, crouch: true });
   cases.push({ name: 'turnL', band: 'turn', speed: 0, turn: 1.5 }, { name: 'turnR', band: 'turn', speed: 0, turn: -1.5 });
   cases.push({ name: 'startstop', band: 'walk', speed: 1.4, ang: 0, startStop: true }, { name: 'dirflip', band: 'run', speed: 4.2, ang: 90, flip: true });
-  for (const C of cases) {
+  const ONLY = process.env.SS_LOCO_CASES ? process.env.SS_LOCO_CASES.split(',') : null;
+  for (const C of cases.filter((c) => !ONLY || ONLY.includes(c.name))) {
     await p.evaluate((C) => { const THREE = SS.THREE, e = window.__e, c = SS.camera.position; SS.enemies.debugPose(e, c.x + 1.5, c.z - 12, C.crouch ? 'crouch' : 'idle'); e.health = 1e9; e.shootCd = 1e9;
       const yaw0 = e.group.rotation.y; const t0 = performance.now(); let lastT = t0;
       // body-frame direction ang (0 = forward, 90 = character's right) -> world velocity; facing from the group's +Z
@@ -84,6 +86,8 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
     await p.waitForTimeout(1000); await p.evaluate(() => { window.__S.f.length = 0; window.__S.snap = 0; window.__S.lastQ = null; }); // skip the first second (posture change)
     await p.waitForTimeout(C.startStop || C.flip ? 4800 : 3000);
     const S = await p.evaluate(() => { const S = window.__S; window.__S = null; window.__drive = null; window.__e.debugVel = null; return { f: S.f, snap: +S.snap.toFixed(1), hv: { torso: +S.hv.torso.toFixed(3), head: +S.hv.head.toFixed(3), limb: +S.hv.limb.toFixed(3) }, wN: S.wN, wMax: +S.wMax.toFixed(2), wMin: +S.wMin.toFixed(2), gap: +S.gap.toFixed(3), legInTorso: S.legInTorso, diag: S.diag, frames: S.f.length }; });
+    if (process.env.SS_LOCO_DUMP) console.log('ACTS ' + JSON.stringify(await p.evaluate(() => { const e = window.__e; const o = {}; for (const [k, a] of Object.entries(e.actions)) { const w = a.getEffectiveWeight(); if (w > 0.01 || a.isRunning()) o[k] = { w: +w.toFixed(2), t: +a.time.toFixed(2), ts: +a.getEffectiveTimeScale().toFixed(2), run: a.isRunning(), tracks: a.getClip().tracks.length, legT: a.getClip().tracks.filter((t) => /Leg|Foot/.test(t.name)).map((t) => t.name).slice(0, 3) }; } const wa = e.actions.walk; return { walkA: wa && { en: wa.enabled, w: wa.weight, ew: wa._effectiveWeight, wi: !!wa._weightInterpolant, mixOk: wa._mixer === e.mixer, sched: wa.isScheduled(), paused: wa.paused, t: +wa.time.toFixed(2), ts: wa.timeScale, ets: wa._effectiveTimeScale, clipOk: !!wa.getClip(), tracks: wa.getClip().tracks.length, bound: (wa._propertyBindings || []).filter((b) => b && b.binding && b.binding.node).length + '/' + (wa._propertyBindings || []).length }, owned: e._locoOwned, force: e.forceAnim || null, dying: !!e.dying, hitRet: !!e.hitReturning, locoW: e.locoW, acts: o, pinned: e.pinned, stagger: e.staggerT, moving: e.moving, hitPlaying: e.hitPlaying }; })));
+    if (process.env.SS_LOCO_DUMP) console.log('DUMP ' + C.name + ' ' + JSON.stringify(S.f.map((q) => [Math.round(q.t), q.reset ? 1 : 0, ...q.LeftFoot.map((v) => +v.toFixed(3)), ...q.RightFoot.map((v) => +v.toFixed(3))])));
     const r = { name: C.name, band: C.band, frames: S.frames, slide: slideOf(S.f), snap: S.snap, hv: S.hv, wN: S.wN, wMax: S.wMax, wMin: S.wMin, gap: S.gap, legInTorso: S.legInTorso, diag: S.diag }; res.cases.push(r);
     const lim = C.band === 'run' ? LIM.slideRun : C.band === 'crouch' ? LIM.slideCrouch : C.band === 'turn' ? LIM.slideTurn : LIM.slideWalk;
     if (r.frames < 10) fail.push(C.name + ': only ' + r.frames + ' frames sampled' + (await p.evaluate(() => window.__pfErr ? ' (' + window.__pfErr + ')' : '')));
