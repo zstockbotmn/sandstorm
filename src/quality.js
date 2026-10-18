@@ -35,6 +35,12 @@ export const EXPLICIT = (() => { try { return /[?&]q=(low|high)\b/.test(location
 const LOW = { res: 0.85, post: false, shadows: false, lodNear: 20, lodNearProp: 12, drawAhead: 95, fog: 0.022, far: 300 };
 const HIGH = { res: 1, post: true, shadows: true, lodNear: 38, lodNearProp: 22, drawAhead: 140, fog: 0.016, far: 420 };
 export const Q = Object.assign({}, LOWQ ? LOW : HIGH);
+// Test-only FAST mode (?test=fast, honoured only under automation (navigator.webdriver) or ?debug - players never get it):
+// strips RENDER cost only - ~0.1 render scale (~160x90), no shadows, no post; main.js adds flat override materials, no
+// HDRI and hidden backdrop rows. Everything logic reads stays the tier's own: fog (LOS haze cutoff), drawAhead/LOD/far
+// (what exists), the window/aspect (the visibility gate projects through the camera and sizes against CSS pixels).
+export const FAST = (() => { try { return /[?&]test=fast\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (e) { return false; } })();
+if (FAST) Object.assign(Q, { res: 0.1, post: false, shadows: false });
 // Live switch to Low (software GL at start, or sustained low fps mid-run). Saved so the next start is Low too.
 const lowHooks = [];
 export function onLow(fn) { lowHooks.push(fn); }

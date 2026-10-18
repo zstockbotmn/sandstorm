@@ -236,6 +236,7 @@ export function createWeapon(camera, world, scene) {
     return !t0 ? w0 : !w0 ? t0 : (t0.distance <= w0.distance + 0.05 ? t0 : w0);
   }
   weapon.firstHit = firstHit;
+  let lastGap = 0;
   weapon.debugShoot = (input) => { if (weapon.ammo <= 0) weapon.ammo = MAG; shoot(input); return weapon.lastShot; };
   // A drag after a shot means the player is controlling the muzzle: drop the pending recoil recovery (no drift back).
   weapon.cancelRecoil = function cancelRecoil() { recoil = 0; };
@@ -296,12 +297,11 @@ export function createWeapon(camera, world, scene) {
     { camera.updateMatrixWorld(); camera.getWorldDirection(_dir); camera.getWorldPosition(_origin); const h = firstHit(_origin, _dir);
       weapon.onTarget = !!(h && h.object.userData && h.object.userData.enemy); weapon.onTargetName = h ? (h.object.name || h.object.type) : null; }
     // Fire cadence runs on the real-time clock (sim dt is capped at low fps, which starved held FIRE).
-    { const now = performance.now(); const rdt = lastUpd ? Math.min(0.5, (now - lastUpd) / 1000) : dt; lastUpd = now; cooldown -= rdt; }
+    { const now = performance.now(); const rdt = lastUpd ? Math.min(0.5, (now - lastUpd) / 1000) : dt; lastGap = lastUpd ? (now - lastUpd) / 1000 : 0; lastUpd = now; cooldown -= rdt; }
     // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
-    if ((input.pendingShots | 0) > 0 && !weapon.reloading && weapon.ammo > 0 && cooldown <= 0) {
-      input.pendingShots -= 1;
-      shoot(input);
-    } else if ((input.pendingShots | 0) > 0 && weapon.ammo <= 0 && !weapon.reloading) {
+    // m1v: at low fps every queued click fires this frame (each was a separate real-time click; one per frame dropped/lagged them)
+    { const slowFrame = lastGap > SHOT_INTERVAL * 2; for (let n = 0; n < 8 && (input.pendingShots | 0) > 0 && !weapon.reloading && weapon.ammo > 0 && (cooldown <= 0 || (slowFrame && n > 0)); n++) { input.pendingShots -= 1; shoot(input); } }
+    if ((input.pendingShots | 0) > 0 && weapon.ammo <= 0 && !weapon.reloading) {
       input.pendingShots = 0; // empty mag: drop queue (reload will start)
     }
     if (input.pollFire) input.pollFire();
@@ -310,7 +310,9 @@ export function createWeapon(camera, world, scene) {
     // FIRE-button hold timeline (input.hold): fire every round the hold has earned at the rifle's rate since it began,
     // up to 6 per frame. While reloading/empty nothing is owed beyond one round, so firing resumes the moment the
     // reload ends with FIRE still held.
-    { const H = input.hold; const I = SHOT_INTERVAL * 1000;
+    // m1v: every queued tap is processed THIS frame (at ~1 fps several taps arrive between two frames; one tap per frame
+    // lagged them by seconds and the target had moved/ducked by then). Up to 8 rounds per frame.
+    for (let hq = 0, fired0 = weapon.shotsFired; hq < 8 && weapon.shotsFired - fired0 < 8; hq++) { const H = input.hold; const I = SHOT_INTERVAL * 1000; if (!H) { if (input.holdQ && input.holdQ.length) { input.hold = input.holdQ.shift(); continue; } break; }
       if (H) { if (H.id !== holdId) { holdId = H.id; holdFired = 0; holdBase = H.start; }
         const now = performance.now(), until = H.end || now, blocked = weapon.reloading || weapon.ammo <= 0;
         // Reloading/empty: owe nothing, and resume one interval after the reload ends (tester: a round fired as the
@@ -319,8 +321,9 @@ export function createWeapon(camera, world, scene) {
         if (input.hold) { const owed = 1 + Math.floor((until - holdBase) / I);
         for (let n = 0; n < 6 && holdFired < owed && !weapon.reloading && weapon.ammo > 0; n++) { shoot(input); holdFired++; }
         if (H.end && (holdFired >= owed || now - H.end > 3000)) input.hold = null; }
-        if (!input.hold && input.holdQ && input.holdQ.length) input.hold = input.holdQ.shift(); // next queued tap fires next frame
-        weapon.holdFired = holdFired; } }
+        weapon.holdFired = holdFired; }
+      if (input.hold) break; // a hold still running (FIRE held) continues next frame
+      if (input.holdQ && input.holdQ.length) input.hold = input.holdQ.shift(); else break; } // next queued tap: same frame
     for (let n = 0; n < 4; n++) { const wants = input.fire && !weapon.reloading && weapon.ammo > 0; if (!(wants && cooldown <= 0)) break; shoot(input); }
     if (!input.fire && (input.pendingShots | 0) <= 0 && cooldown < 0) cooldown = 0; // no stored burst while idle
   };

@@ -11,7 +11,10 @@ export function createAudio() {
   let distantT = 7;
   let wasBurst = false;
 
-  function ensure() {
+  // m1v: the gesture only creates/resumes the context (cheap); the graph (impulse + noise buffers, ~250k random
+  // samples) is built after the 'Starting...' frame painted - building it inside the Play press held that paint back.
+  let built = false, buildQueued = false;
+  function ensureCtx() {
     if (ctx) return true;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
@@ -19,6 +22,12 @@ export function createAudio() {
     master = ctx.createGain();
     master.gain.value = live ? 0.75 : 0; // m1u: silent until the first run frame is on screen (audio came before the picture)
     master.connect(ctx.destination);
+    return true;
+  }
+  function ensure() {
+    if (built) return true;
+    if (!ensureCtx()) return false;
+    built = true;
 
     const seconds = 0.85;
     const len = (ctx.sampleRate * seconds) | 0;
@@ -164,6 +173,13 @@ export function createAudio() {
     tone(68, 0.09, 0.12, 'sine', p);
   }
 
+  // m1v: supersonic crack for fire from outside the view (sharp high snap, panned to the shooter's side)
+  function crack(pos) {
+    if (!ctx) return;
+    const p = panNode(bearing(pos) * 1.2); const g = ctx.createGain(); g.gain.value = 0.5; p.connect(g); g.connect(master);
+    burst(0.035, 0.7, 4200, 1.2, 'highpass', p); burst(0.06, 0.25, 2400, 2, 'bandpass', p);
+  }
+
   function distantShot() {
     if (!ctx) return;
     const p = panNode((Math.random() * 2 - 1) * 0.85);
@@ -303,9 +319,10 @@ export function createAudio() {
   }
 
   function unlock() {
-    if (!ensure()) return;
+    if (!ensureCtx()) return;
     unlocked = true;
     if (ctx.state === 'suspended') ctx.resume();
+    if (!built && !buildQueued) { buildQueued = true; requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(ensure, 0))); }
   }
 
   function update(dt) {
@@ -333,5 +350,5 @@ export function createAudio() {
     }
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, hit, kill, headshot, reload, radio, pickup };
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup };
 }

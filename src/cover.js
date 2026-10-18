@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { pbrMaterial } from './texlib.js';
 import { LOWQ } from './quality.js';
+export const COVER_GRACE_S = 1.5; // m1v: seconds of no damage after first reaching cover in a run (tunable)
 function makeBags(W, H, D) {
   const parts = []; const rows = 3, rh = H / rows;
   for (let r = 0; r < rows; r++) {
@@ -73,7 +74,7 @@ export function createCover(scene, camera, world, input) {
     const dx = c.target.x - camera.position.x, dz = c.target.z - camera.position.z, d = Math.hypot(dx, dz);
     if (d > 0.05) { const s = Math.min(d, MOVE_SPEED * dt) / d; camera.position.x += dx * s; camera.position.z += dz * s;
       if (c.surface && camera.position.z < c.surface.max.z + PLAYER_R) camera.position.z = c.surface.max.z + PLAYER_R; } // never enter the cover
-    else c.state = 'in';
+    else { if (c.state !== 'in' && window.SS && !window.SS.firstCoverT) { window.SS.firstCoverT = performance.now(); window.SS.coverGraceUntil = performance.now() + COVER_GRACE_S * 1000; } c.state = 'in'; } // m1v: 1.5 s grace on first reaching cover (COVER_GRACE_S)
     if (c.reaim) reaim(dt);
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
     if (c.spawned && c.spawned.material) {

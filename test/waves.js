@@ -11,7 +11,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
   for (const mode of MODES) { const r = res[mode] = {};
     try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true }); const p = await ctx.newPage();
       await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms) { const t0 = performance.now(); while (performance.now() - t0 < ms) {} } cb(t); }); });
-      await p.goto('http://127.0.0.1:' + PORT + '/?seed=' + (process.env.SS_SEED || 1) + '&slow=' + (process.env.SS_SLOW || 60) + '&q=' + (mode === 'high' ? 'high' : 'low')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+      await p.goto('http://127.0.0.1:' + PORT + '/?seed=' + (process.env.SS_SEED || 1) + '&slow=' + (process.env.SS_SLOW || 60) + '&q=' + (mode === 'high' ? 'high' : 'low') + (process.env.SS_EXTRA || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
       if (mode === 'ultra') await p.evaluate(() => SS.goUltra('test'));
       await p.evaluate((c) => { window.__cone = c; }, process.env.SS_CONE !== '0'); await p.click('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1000);
       // m1t: every hit on the player must come from a fighter the player could see (eye ray against drawn meshes, in the haze)
@@ -21,7 +21,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
             let best = null, bd = 1e9; for (const e of SS.enemies.list || []) { if (!e.alive) continue; const q = e.group.position; const dd = from ? q.distanceTo(from) : 0; if (dd < bd) { bd = dd; best = e; } }
             const R = window.__eyeR2 || (window.__eyeR2 = new SS.THREE.Raycaster()); const shown = (o) => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
             const roots = (SS.world.segments || []).map((g) => g.group).filter(Boolean); let seen = false;
-            if (best) for (const hy of [1.25, 1.62]) { const w = best.group.position.clone(); w.y += hy; const dd = w.distanceTo(c); if (dens && dd > 1.05 / dens) continue;
+            if (best) for (const hy of [1.25, 1.62]) { const w = best.group.position.clone(); w.y += hy; const dd = w.distanceTo(c); if (dens && dd > 1.05 / dens) continue; SS.camera.updateMatrixWorld(); const ndc = w.clone().project(SS.camera); if (Math.abs(ndc.x) > 1 || Math.abs(ndc.y) > 1 || ndc.z > 1 || ndc.z < -1) continue; /* m1v: off screen = unseen (the harness only checked LOS) */
               R.set(c, w.clone().sub(c).normalize()); R.far = dd - 0.35; if (!R.intersectObjects(roots, true).some((x) => x.object.isMesh && shown(x.object))) { seen = true; break; } }
             if (!seen) { U.unseen++; if (U.ex.length < 5 && best) U.ex.push(best.group.position.toArray().map((v) => +v.toFixed(1)).concat([+best.group.position.distanceTo(c).toFixed(1)])); } } catch (e) {}
           const r = d0(amount, from); if (window.__passiveUntil && P.health < 40) { P.health = 100; SS.health = 100; } return r; }; });
@@ -67,5 +67,5 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
       fs.mkdirSync('screenshots/waves', { recursive: true }); await p.screenshot({ path: 'screenshots/waves/' + mode + '.png' }); await ctx.close();
     } catch (e) { fail.push(mode + ' exception ' + e.message); }
   }
-  if (process.env.SS_WAVES_PASSIVE) { const tot = Object.values(res).reduce((a, r) => a + ((r && r.uh && r.uh.hits) | 0), 0); res.passiveHits = tot; if (tot < 4) fail.push('passive phases drew only ' + tot + ' hits in total (unseen-hit check not exercised)'); }
+  if (process.env.SS_WAVES_PASSIVE) { const tot = Object.values(res).reduce((a, r) => a + ((r && r.uh && r.uh.hits) | 0), 0); res.passiveHits = tot; const gated = Object.values(res).reduce((a, r) => a + ((r && r.uh && r.uh.shots) | 0), 0); res.passiveShots = gated; /* m1v: hits are rarer by design now (game-time spacing, cover grace) - require the gate to be exercised: >=20 gated shots, >=2 landed */ if (tot < 2 || gated < 20) fail.push('passive phases drew only ' + tot + ' hits / ' + gated + ' gated shots in total (unseen-hit check not exercised)'); }
   res.fail = fail; console.log(JSON.stringify(res)); console.log(fail.length ? 'WAVES FAIL' : 'WAVES PASS'); await b.close(); srv.close(); process.exit(fail.length ? 1 : 0); })();

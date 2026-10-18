@@ -119,7 +119,7 @@ const res = {};
   await p.evaluate(() => SS.debug.damage(1000)); await p.waitForTimeout(500); { const f0 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); await p.waitForTimeout(1500); const f1 = await p.evaluate(() => [SS.distance, SS.camera.position.z]); res.deathFreeze = { f0, f1 }; } res.over = await p.evaluate(() => { const o = document.querySelector('#over'); return !!o && getComputedStyle(o).display !== 'none'; });
   res.endScore = await p.evaluate(() => ({ hud: document.getElementById('score').textContent, end: (document.getElementById('over-stats').textContent.match(/Score (\d+)/) || [])[1], ss: SS.score }));
   await p.evaluate(() => { SS.input.scope = true; }); await p.waitForTimeout(300);
-  res.restart = await p.evaluate(async () => { const b = document.querySelector('#over button, #restart'); if (b) b.click(); await new Promise(r => setTimeout(r, 600)); return { clicked: !!b, scope: SS.input.scope, overlay: document.getElementById('scope-overlay').classList.contains('on'), fov: SS.camera.fov }; });
+  res.restart = await p.evaluate(async () => { const b = document.querySelector('#over button, #restart'); if (b) b.click(); await new Promise(r => setTimeout(r, 600)); for (let i = 0; i < 100 && !(SS.running && !document.body.classList.contains('starting')); i++) await new Promise(r => setTimeout(r, 200)); return { clicked: !!b, scope: SS.input.scope, overlay: document.getElementById('scope-overlay').classList.contains('on'), fov: SS.camera.fov }; });
   res.highscores = await p.evaluate(() => localStorage.getItem('ss-highscores')); await p.screenshot({ path: OUT + '/6-gameover.png' });
   // natural death: fresh run, real spawns, no input, no debug calls; standing still must get you killed (target 60-90 s)
   // Pause the high-art page rAF first — soft-GL is process-wide and the live Meshy scene starves art=0 to death.
@@ -150,7 +150,7 @@ const res = {};
   assert.ok(res.haltAfterOne.walking === false && res.haltAfterOne.engaged > 0, 'halt stays until all engaged are dead'); assert.ok(!res.pop.ducked && res.pop.a1 < res.pop.a0 && res.pop.reDucked, 'scope pops out of cover and fires');
   assert.equal(res.enemyStop, false, 'stops for enemies'); assert.equal(res.resumed, true, 'resumes'); assert.ok(res.over, 'game over'); assert.ok(res.highscores, 'highscore saved');
   assert.ok(res.endScore.hud === res.endScore.end && String(res.endScore.ss) === res.endScore.end, 'end score matches HUD: ' + JSON.stringify(res.endScore));
-  assert.ok(res.restart.clicked && !res.restart.scope && !res.restart.overlay, 'scope reset on restart: ' + JSON.stringify(res.restart));
+  assert.ok(res.restart.clicked && !res.restart.scope && !res.restart.overlay && res.restart.fov > 50, 'scope reset on restart: ' + JSON.stringify(res.restart));
   assert.ok(res.distance > 30, 'distance > 30 m'); assert.ok(res.shoot.spawned && res.shoot.k1 > res.shoot.k0, 'shot a real enemy dead'); assert.ok(res.naturalDeath != null, 'standing still gets you killed');
   assert.equal(res.dragAmmo[0], res.dragAmmo[1], 'mouse drag never fires'); assert.equal(res.clickAmmo, res.dragAmmo[1] - 1, 'mouse click fires one shot');
   assert.ok(res.softlock.spawned && res.softlock.relocated, 'stuck enemy moved to visible cover (not despawned)');

@@ -197,13 +197,16 @@ export function createInput(canvas) {
   // pointercancel/lostpointercapture no longer end a hold; the mouse ':active' state is polled every frame as a backup.
   let firePid = null;
   buttons.fire.addEventListener('pointerdown', (e) => { try { buttons.fire.setPointerCapture(e.pointerId); } catch (_) {} firePid = e.pointerId; fireBtn = !kia(); if (fireBtn) startHold(); sync(); });
-  buttons.fire.addEventListener('mousedown', () => { if (!kia()) { fireBtn = true; startHold(); sync(); } });
+  let fireMouseDown = false; // m1v: the ':active' backup below only applies while a real mouse press on FIRE is down
+  buttons.fire.addEventListener('mousedown', () => { fireMouseDown = true; if (!kia()) { fireBtn = true; startHold(); sync(); } });
   const fireUp = (e) => { if (firePid != null && e.pointerId !== firePid) return; firePid = null; releaseFireBtn(); };
   window.addEventListener('pointerup', fireUp, true);
-  window.addEventListener('mouseup', () => { if (fireTouches === 0) { firePid = null; fireBtn = false; sync(); } }, true);
+  window.addEventListener('mouseup', () => { fireMouseDown = false; if (fireTouches === 0) { firePid = null; fireBtn = false; sync(); } }, true);
   window.addEventListener('blur', () => { firePid = null; fireTouches = 0; fireBtn = false; sync(); });
   input.pollFire = function pollFire() { let act = false; try { act = buttons.fire.matches(':active') && !kia(); } catch (_) {}
-    if (act && !fireBtn && performance.now() - lastUpT > 400) { fireBtn = true; startHold(); } if (fireKey || fireMouse) input.fire = true; input.fireHeld = !!(input.fire || (input.hold && !input.hold.end)); }; // only ever adds a hold (releases clear it via sync)
+    // m1v: at ~1 fps ':active' lingered after a tap and this backup opened a phantom hold that emptied the magazine
+    if (act && fireMouseDown && !fireBtn && performance.now() - lastUpT > 400) { fireBtn = true; startHold(); }
+    if (!fireBtn && firePid == null && !fireMouseDown && fireTouches === 0) { const o = openHold(); if (o && !o.end) o.end = Math.max(o.start, lastUpT || o.start); } /* nothing is down: an open hold is over */ if (fireKey || fireMouse) input.fire = true; input.fireHeld = !!(input.fire || (input.hold && !input.hold.end)); }; // only ever adds a hold (releases clear it via sync)
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
