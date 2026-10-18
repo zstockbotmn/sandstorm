@@ -26,7 +26,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
           window.__slowMs = slow; SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0;
           const it = SS.stakes.items[SS.stakes.items.length - 1]; const w = it.g.position.clone(); w.y = 0.45; w.applyMatrix4(SS.lastVP); /* the drop is clamped to the street */ return [(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight]; }, slow);
         await p.waitForTimeout(lateMs); const state = await p.evaluate((pos) => ({ items: SS.stakes.items.length, fly: SS.stakes.items.length ? +(SS.stakes.items[0].fly || 0).toFixed(2) : null, dry: SS.stakes.pickAt(pos[0], pos[1], true) }), pos);
-        await p.mouse.click(pos[0], pos[1]); await p.waitForTimeout(1800);
+        await p.mouse.click(pos[0], pos[1]); await p.waitForTimeout(1800); await p.waitForFunction(() => ((SS.pickupsTaken | 0) - window.__k0) >= 1, null, { timeout: 9000, polling: 250 }).catch(() => {}); // b1: the kit is no longer tap-taken; auto-collect at 1 fps needs a few frames
         const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, tapped: SS.pickupsTapped | 0, late: SS.pickupsLateTaps | 0 }));
         Object.assign(r, { fps: Math.round(1000 / slow), lateMs, pos: pos.map(Math.round), atClick: state }); res.A.push(r);
         // b1 (App PM): auto-pickup ON (default) -> pickups never take taps: the click is exactly one shot, and the kit still auto-collects

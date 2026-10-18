@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 const MAG = 30;
 const RESERVE_START = 120, RESERVE_MAX = 210; // finite reserve (Zack): 120 at start, ammo drops top up to 210
-const RECOVER_MS = [150, 250], RECOVER_DRIFT = 0.15 * Math.PI / 180; // b1: timed recoil recovery (smoothstep, real time) + small random drift
+const RECOVER_MS = [150, 250], RECOVER_DRIFT = 0.04 * Math.PI / 180; // b1: timed recoil recovery (smoothstep, real time) + small random drift (0.15 deg = 17 cm at 65 m threw an aim-reg head shot off; 0.04 deg = 4.5 cm)
 let reloadEnd = 0;
 const RELOAD_TIME = 2.0;
 const SHOT_INTERVAL = 60 / 600;
@@ -318,7 +318,7 @@ export function createWeapon(camera, world, scene) {
     if (window.SS && (window.SS.subStep | 0) > 0) { pushAmmo(); return; }
     // m1y: queued clicks expire by EVENT time: older than max(1.5 s, 3.5 frames) they no longer fire (a click held back by
     // a reload/cooldown or 1-2 s of input lag fired late, mid-drag). Only clicks queued by input.js carry times.
-    if (input.tapT && input.tapT.length) { const ttl = Math.max(1500, 3500 * lastGap), nowE = performance.now(); // a click waits up to ~1 frame for its handler and ~1 frame of busy frame before the sim sees it
+    if (input.tapT && input.tapT.length) { const ttl = Math.max(1500, 3500 * lastGap, 3.5 * ((input.gapMs) || 0)), nowE /* b1: update() runs per sim substep, so lastGap is ~0 after the first substep of a slow frame; at 0.6 fps that expired real taps (gapMs = real frame gap) */ = performance.now(); // a click waits up to ~1 frame for its handler and ~1 frame of busy frame before the sim sees it
       while (input.tapT.length && (input.pendingShots | 0) > 0 && nowE - input.tapT[0] > ttl) { input.tapT.shift(); input.pendingShots -= 1; input.tapsExpired = (input.tapsExpired | 0) + 1; }
       if ((input.pendingShots | 0) <= 0) input.tapT.length = 0; }
     // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
