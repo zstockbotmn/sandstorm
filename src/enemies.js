@@ -2,6 +2,8 @@ const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.searc
 import * as THREE from 'three';
 import { art, SPLIT_ANIMS } from './art.js';
 import { LOCO2, createLoco, updateLoco, aimBody, clipYawRate, turnPlayback, yawRateStep, wrapPi, stepPhase, smooth01, MOVE_YAW_MAX, PLANT_YAW_MAX, TWIST_MAX, HEAD_YAW_MAX, PLANT_TWIST_MAX, TURN_ENTER, TURN_DONE } from './locomotion.js';
+// Last fighter only: after ~20 s on one ground cover, run to another. Off unless ?loco=2 or ?repos=1.
+const REPOS = (() => { try { return !!(LOCO2 || /[?&]repos=1\b/.test(location.search)); } catch (_) { return !!LOCO2; } })();
 import { createRagdollSystem } from './ragdoll.js';
 
 // m1v tunables: wave-1 enemy damage multiplier (tester died at the first cover every run) and the cover grace period
@@ -1126,6 +1128,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       flankTo: anchor.pos.clone(),
       suppressT: 0,
       engaged: false,
+      coverHoldT: 0,
+      repositions: 0,
     };
     if (LOCO2) {
       enemy.bodyYaw = 0; enemy.turning = null; enemy.aimYaw = 0; enemy.twist = 0; enemy.coverT = 0; enemy.peekT = 0;
@@ -1993,6 +1997,50 @@ export function createEnemies(scene, camera, world, weapon, player) {
     try { squadCall('He\'s moving up!'); } catch (_) {}
   }
 
+  // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.
+  function pickRepositionCover(e) {
+    if (!e.anchor || !e.anchor.pos) return null;
+    const pool = coverPool(['wall', 'barrel', 'car', 'door']);
+    const pz = camera.position.z, a0 = e.anchor, h0 = e.home;
+    let best = null, bestS = 1e9;
+    try {
+      for (let i = 0; i < pool.length; i++) {
+        const c = pool[i];
+        if (c === a0 || !c.pos) continue;
+        if (occupiedBy(c.pos, e)) continue;
+        const d2 = c.pos.distanceToSquared(a0.pos);
+        if (d2 < 36 || d2 > 400) continue;
+        const ahead = pz - c.pos.z;
+        if (ahead < 12 || ahead > 30) continue;
+        e.anchor = c; e.home = standPos(c);
+        const fp = firePoint(e); _losP.set(fp.x, 1.25, fp.z);
+        if (!clearToEye(_losP)) continue;
+        const dist = Math.sqrt(d2);
+        const score = Math.abs(dist - 12) + 0.3 * Math.abs(c.pos.x);
+        if (score < bestS) { bestS = score; best = c; }
+      }
+    } finally { e.anchor = a0; e.home = h0; }
+    return best;
+  }
+
+  // Stub: hand the run to the existing relocate path. No teleport.
+  function startReposition(e, c) {
+    e.anchor = c;
+    e.home = standPos(c);
+    e.path = pathOnto(e, c);
+    e.pathI = 0;
+    e.phase = 'relocate';
+    e.posture = 'idle';
+    e.exposed = true;
+    e.moveKind = 'run';
+    e.goal = e.path[0];
+    e.repositions = (e.repositions | 0) + 1;
+    if (window.SS) window.SS.lastRepos = (window.SS.lastRepos | 0) + 1;
+    e._lastReposS = window.SS ? (window.SS.simTime || 0) : 0;
+    e.coverHoldT = 0;
+    e._holdAnchor = null;
+  }
+
   // Horizontal run/walk, or a short climb when the waypoint is up the facade. No Y pop.
   function stepToward(enemy, dest, speed, dt) {
     const p = enemy.group.position;
@@ -2353,6 +2401,22 @@ export function createEnemies(scene, camera, world, weapon, player) {
       { const dP = e.group.position.distanceTo(camera.position); // lone far last fighter -> advances (8 s beyond 35 m)
         if (e.engaged && !e.pinned && !e.dying && dP > 35 && e.phase !== 'relocate' && e.group.position.y < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && aliveCount() === 1 && truckPending === 0) { e.farT = (e.farT || 0) + dt;
           if (e.farT > 8) { e.farT = 0; advanceNearer(e); } } else e.farT = 0; } // ground fighters only: they run up (no vertical pop)
+      if (REPOS) { // last fighter pinned on one ground cover (sim time). Off: this block never runs.
+        const simS = window.SS ? (window.SS.simTime || 0) : 0;
+        const pinned = aliveCount() === 1 && truckPending === 0 && e.alive && !e.dying && !e.pinned && e.anchor && !isElevated(e.anchor.type) && ['takeCover', 'hide', 'peek', 'fire'].includes(e.phase);
+        if (pinned) {
+          if (e._holdAnchor !== e.anchor) { e._holdAnchor = e.anchor; e.coverHoldT = 0; e._reposAt = (typeof window.SS_REPOS_S === 'number' ? window.SS_REPOS_S : 20 + Math.random() * 5); }
+          else e.coverHoldT += dt;
+          if (e.coverHoldT >= e._reposAt && simS - (e._lastReposS != null ? e._lastReposS : -1e9) >= 15) {
+            const spot = pickRepositionCover(e);
+            if (spot) startReposition(e, spot);
+            else {
+              // TODO fallback (3c-iii)
+              e.coverHoldT = 0;
+            }
+          }
+        } else { e.coverHoldT = 0; e._holdAnchor = null; }
+      }
       if (e.pinned) { if (e.debugVel) { e.group.position.addScaledVector(e.debugVel, dt); e.moving = true; e.moveKind = 'run'; e.moveSpeed = e.debugVel.length(); } }
       // Tester m1r / waves (Ultra-low): a fighter that flanked behind the player and stays out of view kept ENEMIES at 1 and the
       // walk halted for good. Engaged fighters behind the player (and off-screen) for 6 s are brought to visible cover ahead.
