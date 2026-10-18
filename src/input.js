@@ -111,8 +111,8 @@ export function createInput(canvas) {
   // m2a (tester: ammo 24->23 as the wave cleared and a drop was tapped): FIRE taps / holds still queued from the fight are
   // dropped when the last enemy of a wave dies, and taps whose event time is before that moment never queue later.
   input.fireCutT = 0;
-  input.dropQueuedFire = function dropQueuedFire() { const n = (input.pendingShots | 0) + (input.hold ? 1 : 0) + input.holdQ.length;
-    input.pendingShots = 0; input.tapT.length = 0; input.holdQ.length = 0; input.hold = null; input.fireCutT = performance.now(); input.fireCuts = (input.fireCuts | 0) + n; return n; };
+  input.dropQueuedFire = function dropQueuedFire() { const n = (input.pendingShots | 0) + (input.hold && input.hold.end ? 1 : 0) + input.holdQ.length;
+    input.pendingShots = 0; input.tapT.length = 0; input.holdQ.length = 0; if (input.hold && input.hold.end) input.hold = null; /* a trigger still held down keeps firing; only released/queued fire is dropped */ input.fireCutT = performance.now(); input.fireCuts = (input.fireCuts | 0) + n; return n; };
   input.clearAim = function clearAim() { aimDX = aimDY = 0; };
   input.resetState = function resetState() { input.hold = null; input.holdQ.length = 0; aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; input.tapT.length = 0; fireBtn = fireKey = fireMouse = false; sync(); };
   function sync() {
