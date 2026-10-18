@@ -32,7 +32,10 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
       for (const y of [0.16, 0.45, 0.75]) { _pp.set(q.x, q.y + y * q.s, q.z); if (q.vp) _pp.applyMatrix4(_vpm.fromArray(q.vp)); else if (VP) _pp.applyMatrix4(VP); else _pp.project(camera); if (_pp.z <= -1 || _pp.z >= 1) continue;
         best = Math.min(best, Math.hypot((_pp.x + 1) / 2 * W - cx, (1 - _pp.y) / 2 * H - cy)); } }
     return best; }
-  function pickAt(cx, cy, dry) { const W = window.innerWidth || 844, H = window.innerHeight || 390, R = Math.max(56, Math.min(W, H) * 0.09); camera.updateMatrixWorld(); const VP = window.SS && window.SS.lastVP; // the camera of the last RENDERED frame
+  // b1 (App PM): with auto-pickup ON (the real game) pickups never take taps: a world tap is ALWAYS a shot. Tap-to-pickup
+  // (60 px radius on the drawn spot or the recent trail) exists only under the debug ?autopickup=0.
+  st.tapPick = !AUTO_PICK;
+  function pickAt(cx, cy, dry) { if (AUTO_PICK) return false; const W = window.innerWidth || 844, H = window.innerHeight || 390, R = Math.max(60, Math.min(W, H) * 0.09); camera.updateMatrixWorld(); const VP = window.SS && window.SS.lastVP; // the camera of the last RENDERED frame
     const now = performance.now(); let bestAll = 1e9;
     for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; let best = 1e9;
       for (const y of [0.16, 0.45, 0.75]) { _pp.set(0, y, 0); it.g.localToWorld(_pp); if (VP) _pp.applyMatrix4(VP); else _pp.project(camera); if (_pp.z <= -1 || _pp.z >= 1) continue;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 const MAG = 30;
 const RESERVE_START = 120, RESERVE_MAX = 210; // finite reserve (Zack): 120 at start, ammo drops top up to 210
-const RECOIL_RECOVER = 6; // 1/s, recoil pitch recovery
+const RECOVER_MS = [150, 250], RECOVER_DRIFT = 0.04 * Math.PI / 180; // b1: timed recoil recovery (smoothstep, real time) + small random drift (0.15 deg = 17 cm at 65 m threw an aim-reg head shot off; 0.04 deg = 4.5 cm)
 let reloadEnd = 0;
 const RELOAD_TIME = 2.0;
 const SHOT_INTERVAL = 60 / 600;
@@ -145,7 +145,7 @@ export function createWeapon(camera, world, scene) {
     slot.sprite.scale.setScalar(0.12);
   }
 
-  let recoil = 0;
+  let recoil = 0, recT0 = 0, recDur = 200, recTot = 0, recDone = 0, drP = 0, drY = 0, drDone = 0;
   function startReload() {
     if (weapon.reloading || weapon.ammo >= MAG || weapon.reserve <= 0) return;
     weapon.reloading = true;
@@ -165,6 +165,9 @@ export function createWeapon(camera, world, scene) {
     const p0 = input.pitch; const kickAmt0 = (input.scope ? 0.003 : 0.02) * (frameShots++ < 1 ? 1 : 0.25); // m1s: at ~6 fps several rounds land per frame; full kick for each threw the view metres over a far target
     input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch - kickAmt0)); const kickAmt = p0 - input.pitch;
     if (recoil > 0.07) { input.pitch += kickAmt; } else recoil += kickAmt; // cap recoil climb at ~4 deg (long holds / many rounds per frame) // only what was actually applied is recovered (clamped kicks drifted the view down) // recovered over time in update()
+    // b1: each shot restarts a 150-250 ms smoothstep return of everything still kicked, ending on a tiny random drift
+    recTot = recoil; recDone = 0; recT0 = performance.now(); recDur = RECOVER_MS[0] + Math.random() * (RECOVER_MS[1] - RECOVER_MS[0]);
+    { const a = Math.random() * Math.PI * 2, m = Math.random() * RECOVER_DRIFT * (input.scope ? 0.3 : 1); drP = Math.sin(a) * m; drY = Math.cos(a) * m; drDone = 0; }
     kick = input.scope ? 0.03 : 0.07;
     if (weapon.onShot) weapon.onShot();
 
@@ -236,14 +239,18 @@ export function createWeapon(camera, world, scene) {
     // Same enemy, overlapping boxes: prefer head > body > limb within 0.35 m (an aiming arm in front of the face, or the
     // torso capsule top, must not turn a crosshair-on-head shot into a body/limb hit).
     if (t0) { const rank = (o) => (o.object.userData.part === 'head' ? 2 : o.object.userData.part === 'body' ? 1 : 0);
-      for (let i = 1; i < th.length; i++) { const o = th[i]; if (o.object.userData.enemy !== t0.object.userData.enemy || o.distance - th[0].distance > 0.35) break; if (rank(o) > rank(t0)) t0 = o; } }
+      // b1 (App PM): an arm (upper arm/forearm) volume in front of the torso counts as a body hit when the same ray goes on into that
+      // fighter's torso within 0.6 m (the extended aiming forearm sits ~0.4-0.5 m in front of the chest: chest kills took 3 rounds).
+      const armFirst = th[0].object.userData.part === 'limb' && /Arm/.test(((th[0].object.userData.seg || [])[0]) || '');
+      for (let i = 1; i < th.length; i++) { const o = th[i]; if (o.object.userData.enemy !== t0.object.userData.enemy) break; const gap = o.distance - th[0].distance;
+        if (gap > (armFirst && o.object.userData.part === 'body' ? 0.6 : 0.35)) { if (armFirst && gap <= 0.6) continue; break; } if (rank(o) > rank(t0)) t0 = o; } }
     return !t0 ? w0 : !w0 ? t0 : (t0.distance <= w0.distance + 0.05 ? t0 : w0);
   }
   weapon.firstHit = firstHit;
   let lastGap = 0;
   weapon.debugShoot = (input) => { if (weapon.ammo <= 0) weapon.ammo = MAG; seenShot = false; try { shoot(input); } finally { seenShot = true; } return weapon.lastShot; };
   // A drag after a shot means the player is controlling the muzzle: drop the pending recoil recovery (no drift back).
-  weapon.cancelRecoil = function cancelRecoil() { recoil = 0; };
+  weapon.cancelRecoil = function cancelRecoil() { recoil = 0; recTot = 0; drP = drY = 0; weapon.recoverT = 1; drDone = 1; };
   function pushAmmo() { const h = window.SS && window.SS.hud; if (h && h.setAmmo) h.setAmmo(weapon.ammo, weapon.reserve); }
   weapon.update = function update(dt, input) {
     frameShots = 0;
@@ -295,7 +302,10 @@ export function createWeapon(camera, world, scene) {
     }
 
     // Recoil recovery: return the kicked pitch toward where the player aimed (no upward creep).
-    if (recoil > 0) { const r = Math.min(recoil, recoil * (1 - Math.exp(-RECOIL_RECOVER * dt)) + 0.002 * dt * 60); recoil -= r; input.pitch = Math.min(PITCH_LIMIT, input.pitch + r); }
+    // b1: timed in real time (at a 1.6 s frame gap it simply lands at the end); a drag cancels it (cancelRecoil from input).
+    if (recoil > 0 || drDone < 1) { const u = Math.min(1, (performance.now() - recT0) / recDur), k = u * u * (3 - 2 * u); weapon.recoverT = k;
+      if (recoil > 0) { const r = Math.min(recoil, Math.max(0, recTot * k - recDone)); recDone += r; recoil -= r; if (u >= 1) { recDone += recoil; input.pitch += recoil; recoil = 0; } input.pitch = Math.min(PITCH_LIMIT, input.pitch + r); }
+      const dk = k - drDone; if (dk > 0) { input.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, input.pitch + drP * dk)); input.yaw += drY * dk; drDone = k; } }
     // On-target check for the crosshair (same cone as the aim assist).
     // Red crosshair = the actual hit ray (same firstHit the shot uses) is on an enemy; was an angle cone around part
     // origins, which turned red over cover/doorways the shot could not pass (tester: red crosshair, 110 rounds, no kill).
@@ -308,7 +318,7 @@ export function createWeapon(camera, world, scene) {
     if (window.SS && (window.SS.subStep | 0) > 0) { pushAmmo(); return; }
     // m1y: queued clicks expire by EVENT time: older than max(1.5 s, 3.5 frames) they no longer fire (a click held back by
     // a reload/cooldown or 1-2 s of input lag fired late, mid-drag). Only clicks queued by input.js carry times.
-    if (input.tapT && input.tapT.length) { const ttl = Math.max(1500, 3500 * lastGap), nowE = performance.now(); // a click waits up to ~1 frame for its handler and ~1 frame of busy frame before the sim sees it
+    if (input.tapT && input.tapT.length) { const ttl = Math.max(1500, 3500 * lastGap, 3.5 * ((input.gapMs) || 0)), nowE /* b1: update() runs per sim substep, so lastGap is ~0 after the first substep of a slow frame; at 0.6 fps that expired real taps (gapMs = real frame gap) */ = performance.now(); // a click waits up to ~1 frame for its handler and ~1 frame of busy frame before the sim sees it
       while (input.tapT.length && (input.pendingShots | 0) > 0 && nowE - input.tapT[0] > ttl) { input.tapT.shift(); input.pendingShots -= 1; input.tapsExpired = (input.tapsExpired | 0) + 1; }
       if ((input.pendingShots | 0) <= 0) input.tapT.length = 0; }
     // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
