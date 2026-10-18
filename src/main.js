@@ -214,6 +214,7 @@ function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
   });
   const tr = performance.now(); const simMs = tr - tFrame;
   if (Q.post && !post.low) post.render(); else renderer.render(scene, camera);
+  window.SS.lastVP = (window.SS.lastVP || new THREE.Matrix4()).multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); // m1w: taps hit-test what was ON SCREEN
   if (window.SS.running && window.SS.firstRunFrame) window.SS.firstRunFrame(); // drop 'Starting...' + unmute with the first run frame
   window.SS.lastRI = [renderer.info.render.calls, renderer.info.render.triangles];
   { const rm = performance.now() - tr; { const P = renderer.info.programs || []; if (P.length !== (window.SS.progN | 0)) { window.SS.progN = P.length; const seen = window.SS.progSeen = window.SS.progSeen || new Set(); const fresh = P.filter(x => !seen.has(x.cacheKey)); fresh.forEach(x => seen.add(x.cacheKey)); (window.SS.progLog = window.SS.progLog || []).push([Math.round(tr), Math.round(performance.now() - tr), fresh.map(x => x.name + '|' + String(x.cacheKey).replace(/,false/g, ',f').slice(0, 400))]); } }

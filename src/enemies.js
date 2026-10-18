@@ -1766,6 +1766,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   api.debugTruck = () => startTruck();
   api.debugGrenade = () => { const th = list.find((e) => e.alive); if (th) throwGrenade(th); return !!th; };
   api.debugRoof = () => spawnOne('roof');
+  api.tracerState = () => tracers.map((t) => ({ vis: !!t.line.visible, life: t.life, a: t.line.geometry.attributes.position.array.slice(0, 6) })); // tests (m1w)
   api.debugShoot = (e) => enemyShoot(e); // tests: one real enemy shot (all gates apply)
   api.debugClearSpacing = () => { lastPlayerHitS = 0; lastPlayerHitSim = -99; }; // tests (fast-parity): back-to-back sample shots
   api.spawnEnemy = function spawnEnemy(behavior) {
