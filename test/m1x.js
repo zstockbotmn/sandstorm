@@ -71,6 +71,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
       // W (m2a): FIRE taps still queued when the last enemy of a wave dies never fire into the walk (0.6 fps, taps queued
       // in the same event-loop window as the kill)
       { await p.evaluate(() => { window.__slowMs = 1600; }); await p.waitForTimeout(2500);
+        await p.evaluate(() => { try { SS.enemies.killAll(); } catch (_) {} }); await p.waitForTimeout(2500); /* b1: start W from an empty street */
         const e0 = await p.evaluate(() => { const c = SS.camera.position; const e = SS.debug.spawnEnemy('shifter'); SS.enemies.debugPose(e, c.x + 3, c.z - 20, 'idle'); e.shootCd = 1e9; e.noFireUntilR = 1e15; window.__we = e; return !!e; });
         await p.waitForTimeout(3500); for (let i = 0; i < 3; i++) await p.mouse.click(200 + i * 3, 120);
         const atKill = await p.evaluate(() => { const e = window.__we; e.health = 1; e.takeHit('body', e.group.position.clone()); return { fired: SS.weapon.shotsFired, alive: (SS.enemies.list || []).filter((x) => x.alive).length, cuts: SS.input.fireCuts | 0 }; });
@@ -80,7 +81,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
         if (atKill.alive !== 0) fail.push('W: other enemies alive, wave not cleared ' + JSON.stringify(res.W));
         else if (res.W.firedAfterKill !== 0) fail.push('W: ' + res.W.firedAfterKill + ' queued FIRE tap(s) fired after the wave cleared ' + JSON.stringify(res.W)); }
       // and ammo is untouched in the A cases too
-      for (const r of res.A) if (r.ammo[0] !== r.ammo[1]) fail.push('A: medkit tap changed ammo ' + JSON.stringify(r));
+      // (b1: the A cases now expect exactly one shot each - checked above)
       // control: a click well away from any drop still fires one round
       const f0 = await shots(p); await p.mouse.click(200, 120); await p.waitForTimeout(1500); res.A_ctrl = (await shots(p)) - f0;
       if (res.A_ctrl !== 1) fail.push('A: a plain canvas click fired ' + res.A_ctrl + ' rounds (want 1)'); }
@@ -100,7 +101,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
         const fired = (await shots(p)) - f0; res.C.push({ pause, fired }); if (fired) fail.push('C: a scoped drag (pause ' + pause + ' ms) at 5 fps fired ' + fired); }
       await p.evaluate(() => { window.__slowMs = 0; SS.input.scope = false; }); }
     // D: a still hold at 5 fps still auto-fires (feel)
-    if (want('D')) { await p.evaluate(() => { window.__slowMs = 200; SS.weapon.ammo = 30; }); await p.waitForTimeout(600); const f0 = await shots(p); await p.mouse.move(420, 200); await p.mouse.down(); await p.waitForTimeout(1600); await p.mouse.up(); await p.waitForTimeout(800);
+    if (want('D')) { await p.waitForFunction(() => !SS.weapon.reloading, null, { timeout: 10000 }).catch(() => {}); await p.evaluate(() => { window.__slowMs = 200; SS.weapon.ammo = 30; SS.weapon.reserve = 200; }); await p.waitForTimeout(600); /* b1: A taps now spend rounds: never start D mid-reload */ const f0 = await shots(p); await p.mouse.move(420, 200); await p.mouse.down(); await p.waitForTimeout(1600); await p.mouse.up(); await p.waitForTimeout(800);
       res.D = { fired: (await shots(p)) - f0 }; await p.evaluate(() => { window.__slowMs = 0; }); if (res.D.fired < 3) fail.push('D: a 1.6 s still hold at 5 fps fired only ' + res.D.fired); }
     // H (m1y: a full-screen HUD SVG swallowed canvas clicks): with the damage arc, edge warning, low-HP glow, radio and
     // banners all showing, every point of the play area hit-tests to the canvas or a real control
