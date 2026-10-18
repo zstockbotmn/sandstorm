@@ -115,6 +115,37 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
       if (R.visFrames < 5) fail.push('R: radio warning visible on only ' + R.visFrames + ' frames at 0.6 fps (want >= 5)'); if (R.gone != null && R.gone < 6000) fail.push('R: radio warning removed after ' + R.gone + ' ms (want >= 6 s)');
       if (R.shownT > (14 - 5) * 1000 * 1.6) fail.push('R: radio warning at ' + R.shownT + ' ms wall (contact=14: want ~9 s; frame-count based?)'); }
     await ctx.close(); }
+  // I (first-run hint): 'DRAG TO AIM · TAP FIRE' shows on the first run only, never takes a tap, holds >= 4 s and >= 3
+  // frames, fades after a real drag / a shot / 12 s; at 0.6 fps it is still on screen for >= 3 frames.
+  if (want('I')) { const { p, ctx } = await start(true, '&hint=1'); const vis = () => p.evaluate(() => { const el = document.getElementById('first-hint'); return el ? +getComputedStyle(el).opacity : -1; });
+    res.I = { atStart: await vis() }; if (!(res.I.atStart > 0.9)) fail.push('I: first-run hint not shown at start (opacity ' + res.I.atStart + ')');
+    const box = await p.evaluate(() => { const r = document.getElementById('first-hint').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    res.I.under = await p.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); return el ? el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') : null; }, box);
+    if (res.I.under !== 'canvas') fail.push('I: the hint takes taps (elementFromPoint ' + res.I.under + ')');
+    // an early 200 px drag: the hint stays until its 4 s minimum, then fades with reason 'drag'
+    await p.mouse.move(300, 200); await p.mouse.down(); for (let i = 1; i <= 8; i++) { await p.mouse.move(300 + i * 25, 200); await p.waitForTimeout(30); } await p.mouse.up();
+    await p.waitForTimeout(500); res.I.afterDrag = await vis(); await p.waitForTimeout(5000); res.I.later = await vis(); res.I.fh = await p.evaluate(() => ({ ...SS.hud.firstHint, ms: Math.round(SS.hud.firstHint.goneAt - SS.hud.firstHint.shownAt), seen: localStorage.getItem('ss.firstHint') }));
+    if (!(res.I.afterDrag > 0.9)) fail.push('I: hint faded before its 4 s minimum ' + JSON.stringify(res.I));
+    if (res.I.later > 0.1 || res.I.fh.reason !== 'drag') fail.push('I: hint did not fade after the drag ' + JSON.stringify(res.I));
+    if (res.I.fh.seen !== '1') fail.push('I: hint not stored as seen');
+    // second run in the same profile: not shown again (hint=keep keeps storage)
+    const p2 = await ctx.newPage(); await p2.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&hint=keep' + QS); await p2.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+    await p2.click('#play'); await p2.waitForFunction(() => SS.running, null, { timeout: 120000 }); await p2.waitForTimeout(1500);
+    res.I.second = await p2.evaluate(() => ({ op: +getComputedStyle(document.getElementById('first-hint')).opacity, state: SS.hud.firstHint.state }));
+    if (res.I.second.op > 0.1 || res.I.second.state === 'shown') fail.push('I: hint shown again on the second run ' + JSON.stringify(res.I.second));
+    await ctx.close();
+    // 0.6 fps, no input: on screen for >= 3 rendered frames, gone by ~12 s (timeout); a tap on it fires (passes through)
+    { const { p, ctx } = await start(true, '&hint=1'); await p.evaluate(() => { window.__slowMs = 1600; window.__hf = { vis: 0 }; window.__preFrame = () => { const el = document.getElementById('first-hint'); if (el && +getComputedStyle(el).opacity > 0.9) window.__hf.vis++; }; });
+      const r0 = await p.evaluate(() => SS.weapon.shotsFired); await p.waitForTimeout(16000);
+      res.I.slow = await p.evaluate(() => ({ vis: window.__hf.vis, reason: SS.hud.firstHint.reason, ms: Math.round(SS.hud.firstHint.goneAt - SS.hud.firstHint.shownAt), fired: SS.weapon.shotsFired }));
+      res.I.slow.fired -= r0; await p.evaluate(() => { window.__slowMs = 0; window.__preFrame = null; });
+      if (res.I.slow.vis < 3) fail.push('I: at 0.6 fps the hint was visible on only ' + res.I.slow.vis + ' frames');
+      if (res.I.slow.reason !== 'timeout' || res.I.slow.ms < 12000 || res.I.slow.ms > 15000) fail.push('I: 0.6 fps hint did not time out at ~12 s ' + JSON.stringify(res.I.slow));
+      await ctx.close(); }
+    // a tap on the hint's spot at normal fps fires one round and dismisses it (after the minimum)
+    { const { p, ctx } = await start(true, '&hint=1'); const f0 = await shots(p); await p.mouse.click(box[0], box[1]); await p.waitForTimeout(1500); res.I.tapFired = (await shots(p)) - f0;
+      if (res.I.tapFired !== 1) fail.push('I: a tap on the hint fired ' + res.I.tapFired + ' (want 1: taps pass through)');
+      await p.waitForTimeout(4000); res.I.tapReason = await p.evaluate(() => SS.hud.firstHint.reason); if (res.I.tapReason !== 'fire') fail.push('I: hint did not fade after a shot (' + res.I.tapReason + ')'); await ctx.close(); } }
   if (want('E')) { const { p, ctx } = await start(false);
     await p.evaluate(() => { SS.player.health = 1e6; window.__E = { warnT: 0, firstShotT: 0, firstEnemyT: 0, maxApproach: 0 }; const t0 = SS.startedAt || performance.now(); window.__Et0 = t0;
       setInterval(() => { const E = window.__E, now = performance.now() - t0; if (!E.warnT && SS.radioWarnAt) E.warnT = SS.radioWarnAt - t0; if (!E.firstShotT && (SS.enemyShots | 0) > 0) E.firstShotT = now;

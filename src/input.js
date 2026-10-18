@@ -184,6 +184,7 @@ export function createInput(canvas) {
     // larger single jumps are lag bursts or pointer teleports (spun the view into the ground). Clamp, don't drop.
     const mx = Math.max(160, (window.innerWidth || 844) * 0.75), my = Math.max(70, (window.innerHeight || 390) * 0.75); // m1y: was 60% / 35% (cut fast low-fps drags)
     aimDX += Math.max(-mx, Math.min(mx, dx)) * sens; aimDY += Math.max(-my, Math.min(my, dy)) * sens;
+    input.dragPx = (input.dragPx || 0) + Math.min(mx, Math.hypot(dx, dy)); // m1z+: first-run hint dismisses on a real aim drag
     input.aimMovedT = performance.now(); if (window.SS && window.SS.weapon && window.SS.weapon.cancelRecoil) window.SS.weapon.cancelRecoil();
   }, { passive: false });
 

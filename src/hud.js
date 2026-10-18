@@ -212,7 +212,23 @@ export function createHud() {
   applyHealth();
 
   function setAmmo(a, r) { const t = a + ' / ' + (r != null ? r : '\u221E'); if (ammoEl.textContent !== t) ammoEl.textContent = t; }
-  const hud = {
+  // First-run hint (App PM): 'DRAG TO AIM · TAP FIRE' on the very first run only (localStorage 'ss.firstHint'; ?hint=1
+  // shows it again; automated browsers only with ?hint=1 / ?hint=keep). Fades after the first real aim drag (>= 60 px) or a shot, else after 12 s real time - but never
+  // before 4 s AND 3 rendered frames (readable under 1 fps). pointer-events: none, so it never eats a tap.
+  const FH_KEY = 'ss.firstHint', FH_MIN_MS = 4000, FH_MIN_FRAMES = 3, FH_MAX_MS = 12000, FH_DRAG_PX = 60;
+  const fhEl = document.createElement('div'); fhEl.id = 'first-hint'; fhEl.innerHTML = '<b>DRAG</b> TO AIM &nbsp;·&nbsp; TAP <b>FIRE</b> TO SHOOT'; root.appendChild(fhEl);
+  const fh = { state: 'idle', shownAt: 0, f0: 0, drag0: 0, shots0: 0, reason: '' };
+  try { if (/[?&]hint=1\b/.test(location.search)) localStorage.removeItem(FH_KEY); } catch (_) { /* storage blocked */ }
+  const fhOff = (() => { try { return !!navigator.webdriver && !/[?&]hint=(1|keep)\b/.test(location.search); /* hint=keep: harness, storage kept */ } catch (_) { return false; } })(); // harness runs: only with ?hint=1
+  const fhSeen = () => { if (fhOff) return true; try { return localStorage.getItem(FH_KEY) === '1'; } catch (_) { return fh.state !== 'idle'; } };
+  setInterval(() => { const SS = window.SS; if (!SS) return; const now = performance.now();
+    if (fh.state === 'idle') { if (SS.running && !fhSeen()) { fh.state = 'shown'; fh.shownAt = now; fh.f0 = SS.frameN | 0; fh.drag0 = (SS.input && SS.input.dragPx) || 0; fh.shots0 = (SS.weapon && SS.weapon.shotsFired) || 0; fhEl.classList.add('show'); try { localStorage.setItem(FH_KEY, '1'); } catch (_) {} } else if (SS.running) fh.state = 'skip'; return; }
+    if (fh.state !== 'shown') return;
+    const drag = ((SS.input && SS.input.dragPx) || 0) - fh.drag0 >= FH_DRAG_PX, shot = ((SS.weapon && SS.weapon.shotsFired) || 0) > fh.shots0, age = now - fh.shownAt;
+    const minOk = age >= FH_MIN_MS && ((SS.frameN | 0) - fh.f0) >= FH_MIN_FRAMES;
+    if (!SS.running || (minOk && (drag || shot || age >= FH_MAX_MS))) { fh.state = 'done'; fh.reason = !SS.running ? 'ended' : drag ? 'drag' : shot ? 'fire' : 'timeout'; fh.goneAt = now; fhEl.classList.remove('show'); } }, 200);
+    const hud = {
+    firstHint: fh,
     setAmmo,
     update(info) {
       if (!info) return;

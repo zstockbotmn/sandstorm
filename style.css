@@ -479,3 +479,11 @@ body.starting #starting { display: flex; }
 #edge-warn { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 4; transition: opacity 0.35s linear; }
 #edge-warn.show { opacity: 1; transition: none; }
 #edge-warn path { fill: none; stroke: rgba(255, 236, 170, 0.95); stroke-width: 8; stroke-linecap: round; filter: drop-shadow(0 0 8px rgba(255, 210, 90, 0.95)); }
+
+/* first-run hint (m1z+): HUD-styled, never takes input */
+#first-hint { position: fixed; left: 50%; bottom: calc(26% + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 6; pointer-events: none;
+  padding: 7px 16px; border-radius: 4px; background: rgba(20, 16, 10, 0.62); border: 1px solid rgba(244, 239, 228, 0.25);
+  font: 600 16px/1.3 system-ui, sans-serif; letter-spacing: 0.08em; color: #f4efe4; text-shadow: 0 1px 3px #000; white-space: nowrap;
+  opacity: 0; transition: opacity 0.6s ease; }
+#first-hint b { color: #ffd23a; font-weight: 800; }
+#first-hint.show { opacity: 1; transition: none; }
