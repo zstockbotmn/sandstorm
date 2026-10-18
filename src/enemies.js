@@ -2164,6 +2164,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (LOCO2) { enemy.turning = null; enemy._turnCmd = null; enemy.footPlant = false; enemy._turnBig = false; exposeYaw(enemy); }
       return;
     } // hit stagger: frozen, exposed
+    if (enemy.debugHold) { enemy.moving = false; if (LOCO2) steerFacing(enemy, dt); return; } // test hook (loco-facing): AI frozen in place, facing still steered
     if (enemy.behavior === 'flanker') updateFlanker(enemy, dt, diff);
     else updateCover(enemy, dt, diff);
     if (LOCO2) steerFacing(enemy, dt);

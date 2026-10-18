@@ -1,0 +1,5 @@
+TINY STEP 3c-ii in src/enemies.js ONLY (3c-i added startReposition / pickRepositionCover; use rg to find them and beginCoverExit, coverGaitSpeed, enterCover, squadCall). Make the reposition move look right:
+- In startReposition: if LOCO2 call beginCoverExit(e) first (rise overlaps the first steps), keep e.exposed = true for the whole run (make sure nothing in the relocate/approach code sets exposed=false for a fighter with e._repositioning = true; set that flag in startReposition and clear it when the fighter reaches the new cover / enterCover), and squadCall('Moving!') once per reposition.
+- Distances under 6 m use moveKind 'crouchRun' if that kind exists in the blendspace/locomotion mapping (rg crouch in src/locomotion.js and desiredAnim); otherwise 'run'.
+- On arrival the normal enterCover path plays (3a decelerating approach + sink). Do not change fire/LOS rules.
+Build once with node tools/build.js. Print a 5-line summary with line numbers.

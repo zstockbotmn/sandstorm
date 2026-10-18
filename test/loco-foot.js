@@ -39,19 +39,19 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
   if (!res.setup.bones) fail.push('fighter has no bones (art tier ' + res.setup.tier + ')');
   if (!res.setup.loco) fail.push('?loco=2 did not load fighter.loco meta (art.locoMeta missing)');
   // per-frame sampler: feet, leg/hip rotations, hit-volume offsets
-  await p.evaluate((LIM) => { const THREE = SS.THREE, e = window.__e, R0 = e.group; const B = Object.assign({}, e.bones); for (const n of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) B[n] = B[n] || R0.getObjectByName(n); /* art.js BONE_NAMES has no feet: look them up (harness threw silently -> 0 frames) */
+  await p.evaluate((LIM) => { const THREE = SS.THREE, e = window.__e, R0 = e.group; const B = Object.assign({}, e.bones); for (const n of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) B[n] = B[n] || e.bones.Hips.getObjectByName(n); /* from the animated skeleton (group may hold other rigs) */ /* art.js BONE_NAMES has no feet: look them up (harness threw silently -> 0 frames) */
     const legs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'].filter((n) => B[n]);
     const segDist = (p, a, b) => { const ab = b.clone().sub(a), t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()))); return p.distanceTo(a.addScaledVector(ab, t)); };
     window.__S = null; window.__start = (name, setup) => { window.__S = { name, f: [], snap: 0, hv: { torso: 0, head: 0, limb: 0 }, lastQ: null, lastT: 0, wMax: 0, wMin: 9, wN: 0, diag: 0, gap: 9, legInTorso: 0 }; };
     window.__preFrame = () => { const S = window.__S; if (!S) return; if (window.__drive) window.__drive(); e.group.updateMatrixWorld(true); const now = performance.now();
-      const fr = { t: now }; for (const n of ['LeftFoot', 'RightFoot']) { const v = B[n].getWorldPosition(new THREE.Vector3()); fr[n] = [v.x, v.y, v.z]; } S.f.push(fr);
+      const fr = { t: now, reset: (window.__reset | 0) > 0 }; if (window.__reset > 0) window.__reset--; /* the jump back to x0 breaks every span (it is not foot travel) */ for (const n of ['LeftFoot', 'RightFoot']) { const v = B[n].getWorldPosition(new THREE.Vector3()); fr[n] = [v.x, v.y, v.z]; } S.f.push(fr);
       const qs = legs.map((n) => B[n].getWorldQuaternion(new THREE.Quaternion()));
       if (S.lastQ && now > S.lastT) { const k = (1000 / 30) / (now - S.lastT); for (let i = 0; i < qs.length; i++) S.snap = Math.max(S.snap, qs[i].angleTo(S.lastQ[i]) * 180 / Math.PI * Math.min(1, k)); }
       S.lastQ = qs; S.lastT = now;
       // hit volumes vs bones (same pose the shot test uses this frame)
       for (const m of SS.weapon.targets) { if (m.userData.enemy !== e) continue; const ctr = m.getWorldPosition(new THREE.Vector3()); const part = m.userData.part;
         if (part === 'body') { const a = B.Hips.getWorldPosition(new THREE.Vector3()), top = (e.spineTop || B.Spine).getWorldPosition(new THREE.Vector3()); S.hv.torso = Math.max(S.hv.torso, segDist(ctr, a, top)); }
-        else if (part === 'head') { const h = B.Head.getWorldPosition(new THREE.Vector3()); S.hv.head = Math.max(S.hv.head, ctr.distanceTo(h)); }
+        else if (part === 'head') { const l = B.Head.worldToLocal(ctr.clone()).multiplyScalar(B.Head.getWorldScale(new THREE.Vector3()).x); if (!S.h0) S.h0 = l.clone(); S.hv.head = Math.max(S.hv.head, l.distanceTo(S.h0)); } /* drift in the head bone frame (centre ~16 cm off the joint by design) */
         else if (part === 'limb' && m.userData.seg) { const [n0, n1] = m.userData.seg; if (B[n0] && B[n1]) S.hv.limb = Math.max(S.hv.limb, segDist(ctr, B[n0].getWorldPosition(new THREE.Vector3()), B[n1].getWorldPosition(new THREE.Vector3()))); } }
       const W = e.locoW || {}; const on = Object.values(W).filter((w) => w > 0.02); S.wN = Math.max(S.wN, on.length); const sum = on.reduce((a, w) => a + w, 0); S.wMax = Math.max(S.wMax, sum); if (on.length) S.wMin = Math.min(S.wMin, sum); if (on.length >= 2) S.diag++;
       // overlap: feet crossing (horizontal gap between the two feet) and knees inside the torso capsule (pose interpenetration)
@@ -61,7 +61,7 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
   }, LIM);
   // planted-foot slide: spans where a foot sits within 3 cm of its lowest height; horizontal world travel inside the span
   const slideOf = (f) => { const spans = []; for (const n of ['LeftFoot', 'RightFoot']) { const ys = f.map((q) => q[n][1]); const lo = Math.min(...ys); let s = null;
-      for (const q of f) { const [x, y, z] = q[n]; if (y < lo + 0.03) { if (!s) s = { x0: x, z0: z, d: 0, px: x, pz: z, n: 0 }; s.d += Math.hypot(x - s.px, z - s.pz); s.px = x; s.pz = z; s.n++; } else if (s) { if (s.n >= 3) spans.push(s.d * 100); s = null; } }
+      for (const q of f) { const [x, y, z] = q[n]; if (q.reset) { if (s && s.n >= 3) spans.push(s.d * 100); s = null; continue; } if (y < lo + 0.03) { if (!s) s = { x0: x, z0: z, d: 0, px: x, pz: z, n: 0 }; s.d += Math.hypot(x - s.px, z - s.pz); s.px = x; s.pz = z; s.n++; } else if (s) { if (s.n >= 3) spans.push(s.d * 100); s = null; } }
       if (s && s.n >= 3) spans.push(s.d * 100); }
     spans.sort((a, b) => a - b); return { n: spans.length, p50: +(spans[Math.floor(spans.length * 0.5)] || 0).toFixed(1), p90: +(spans[Math.floor(spans.length * 0.9)] || 0).toFixed(1) }; };
   const cases = [];
@@ -79,7 +79,7 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
         if (C.turn) e.group.rotation.y += C.turn * dt;
         if (C.startStop) e.debugVel = (Math.floor(T / 1.2) % 2 === 0) ? vel(0) : null;
         if (C.flip && Math.floor(T / 1.0) !== window.__fl) { window.__fl = Math.floor(T / 1.0); e.debugVel = vel(window.__fl % 2 ? 270 : 90); }
-        if (e.group.position.distanceTo(window.__x0) > 4 && e.debugVel) { e.group.position.copy(window.__x0); } }; // stay in front of the camera (the reset frame is not a contact: spans need >= 3 frames)
+        if (e.group.position.distanceTo(window.__x0) > 4 && e.debugVel) { e.group.position.copy(window.__x0); window.__reset = 2; } }; // stay in front of the camera (the reset frame is not a contact: spans need >= 3 frames)
       window.__start(C.name); }, C);
     await p.waitForTimeout(1000); await p.evaluate(() => { window.__S.f.length = 0; window.__S.snap = 0; window.__S.lastQ = null; }); // skip the first second (posture change)
     await p.waitForTimeout(C.startStop || C.flip ? 4800 : 3000);
