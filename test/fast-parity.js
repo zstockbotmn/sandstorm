@@ -23,7 +23,7 @@ const QS = (process.env.SS_QS || '&q=low').replace(/&test=fast|&norender/g, '');
         cam.position.copy(c0); cam.rotation.set(0, -yaw, 0, 'YXZ'); cam.updateMatrixWorld(true); SS.input.yaw = yaw; SS.input.pitch = 0; SS.input.cover = false; E.debugPose(e, c0.x + dx, c0.z - dz, 'idle');
         await frames(3); await new Promise((ok) => setTimeout(ok, 120)); await frames(1); const R = Math.random;
         try { Math.random = () => 0; cam.position.copy(c0); cam.rotation.set(0, -yaw, 0, 'YXZ'); cam.updateMatrixWorld(true); E.debugPose(e, c0.x + dx, c0.z - dz, 'idle'); e.group.updateMatrixWorld(true);
-          const v = e.group.position.clone(); v.y += 1.25; const lv = []; SS.scene.traverse((o) => { if (o.isLOD) lv.push(o.getCurrentLevel()); });
+          const v = e.group.position.clone(); v.y += 1.25; const lv = []; SS.scene.traverse((o) => { if (o.isLOD) { let v = true; for (let q = o; q; q = q.parent) if (!q.visible) v = false; lv.push(v ? o.getCurrentLevel() : '-'); } }); // '-': not drawn (fast mode trims backdrop rows), no level pick
           rows.push([yaw, dz, dx, E.onScreen(v.clone()) ? 1 : 0, E.playerSees(e) ? 1 : 0, lv.join('')]); } finally { Math.random = R; } }
       window.__freezeCam = false; e.pinned = false; e.health = 1; e.takeHit('body', e.group.position.clone()); return rows; });
     const out = await p.evaluate(() => { const E = SS.enemies, cam = SS.camera, R = Math.random; const rows = [];
@@ -48,7 +48,7 @@ const QS = (process.env.SS_QS || '&q=low').replace(/&test=fast|&norender/g, '');
   res.normal = await sample(''); res.fast = await sample('&test=fast'); res.norender = await sample('&test=fast&norender');
   const diff = []; res.normal.rows.forEach((r, i) => { const f = res.fast.rows[i]; if (JSON.stringify(r) !== JSON.stringify(f)) diff.push({ normal: r, fast: f }); });
   const diffN = []; res.normal.rows.forEach((r, i) => { const f = res.norender.rows[i]; if (JSON.stringify(r) !== JSON.stringify(f)) diffN.push({ normal: r, norender: f }); });
-  const diffF = []; res.normal.fd.forEach((r, i) => { for (const k of ['fast', 'norender']) { const f = res[k].fd[i]; if (JSON.stringify(r) !== JSON.stringify(f)) diffF.push({ mode: k, normal: r, other: f }); } });
+  const diffF = []; res.normal.fd.forEach((r, i) => { for (const k of ['fast', 'norender']) { const f = res[k].fd[i]; const lodBad = [...r[5]].some((c, j) => c !== '-' && f[5][j] !== '-' && c !== f[5][j]); if (JSON.stringify(r.slice(0, 5)) !== JSON.stringify(f.slice(0, 5)) || lodBad || r[5].length !== f[5].length) diffF.push({ mode: k, normal: r.slice(0, 5), other: f.slice(0, 5), lodBad }); } });
   if (diffN.length) fail.push('norender changed ' + diffN.length + ' of ' + res.normal.rows.length + ' outcomes: ' + JSON.stringify(diffN.slice(0, 4)));
   if (diffF.length) fail.push('frame-driven poses differ (' + diffF.length + '): ' + JSON.stringify(diffF.slice(0, 4)));
   if (!res.norender.norender || res.norender.drawsPerS > 0) fail.push('norender not active (flag ' + res.norender.norender + ', ' + res.norender.drawsPerS + ' draws/s)'); if (res.fast.norender || res.normal.norender) fail.push('norender on without ?norender');
