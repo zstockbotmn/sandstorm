@@ -369,6 +369,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     const ty = Math.max(-HEAD_YAW_MAX, Math.min(HEAD_YAW_MAX, yaw)), tp = Math.max(-0.44, Math.min(0.44, pitch));
     let extra = ty - (enemy.twist || 0) - (enemy._hipShown || 0);
+    if (LOCO2 && enemy.fidget === 'glance') extra += (enemy._fidYaw || 0) * (enemy._fidEase || 0);
     if (extra > HEAD_YAW_MAX) extra = HEAD_YAW_MAX; else if (extra < -HEAD_YAW_MAX) extra = -HEAD_YAW_MAX;
     const k = Math.min(1, dt * 6);
     enemy.lookY = (enemy.lookY || 0) + (extra - (enemy.lookY || 0)) * k;
@@ -491,7 +492,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // stay down and syncArt (later this step) reads the same hips the mesh draws.
     if (LOCO2) {
       const yOff = coverYOffset(enemy, dt);
-      if (yOff) { r.position.y += yOff; r.updateMatrixWorld(true); }
+      const shifted = applyFidgetShift(enemy, r);
+      if (yOff) r.position.y += yOff;
+      if (yOff || shifted) r.updateMatrixWorld(true);
     }
     // pelvis drop runs at every range/tier (cheap); the two-bone solve + locking only on High within 30 m
     if (art.tier !== 'high' || camera.position.distanceToSquared(enemy.group.position) > 900) { enemy.legs.forEach((l) => { l.lock = null; }); return; }
@@ -698,11 +701,22 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const farOff = q === 'ultra-low' && camera.position.distanceToSquared(enemy.group.position) > 900;
     const near = !farOff && (ph === 'approach' || ph === 'relocate' || ph === 'climb') && coverDestDist(enemy) <= 1;
     const wantC = !farOff && (ph === 'takeCover' || ph === 'hide' || ph === 'peek' || ph === 'fire' || near);
-    const wantP = !farOff && q !== 'ultra-low' && (ph === 'peek' || ph === 'fire');
+    const ducking = (enemy.duckT || 0) > 0;
+    const wantP = !farOff && q !== 'ultra-low' && (ph === 'peek' || ph === 'fire') && !ducking;
     enemy._coverPh = stepPhase(enemy._coverPh, wantC ? 1 : 0, dt, wantC ? 0.35 : 0.30);
-    enemy._peekPh = stepPhase(enemy._peekPh, wantP ? 1 : 0, dt, wantP ? 0.25 : 0.20);
+    enemy._peekPh = stepPhase(enemy._peekPh, wantP ? 1 : 0, dt, wantP ? 0.25 : (ducking ? 0.17 : 0.20));
     enemy.coverT = smooth01(enemy._coverPh);
     enemy.peekT = smooth01(enemy._peekPh);
+    if (ducking) enemy.duckT = Math.max(0, enemy.duckT - dt);
+    if (ph === 'approach' || ph === 'relocate' || ph === 'takeCover') {
+      const remain = coverDestDist(enemy);
+      enemy.approachK = remain >= 1.5 ? 0 : remain <= 0 ? 1 : smooth01((1.5 - remain) / 1.5);
+    } else enemy.approachK = 0;
+    const leaving = (ph === 'approach' || ph === 'relocate') && !wantC;
+    if (leaving && ((enemy._coverPh || 0) > 0.02 || ((enemy._exitPh || 0) > 0 && (enemy._exitPh || 0) < 1))) {
+      enemy._exitPh = Math.min(1, (enemy._exitPh || 0) + dt / 0.4);
+      enemy.exitK = smooth01(enemy._exitPh);
+    } else { enemy._exitPh = 0; enemy.exitK = 0; }
     enemy._coverNear = !!near;
     enemy._coverYaw = coverYawOf(enemy);
     enemy._coverDrive = !!(wantC || wantP || enemy._coverPh > 0.001 || enemy._peekPh > 0.001);
@@ -717,6 +731,114 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     if (!wantP && enemy._peekPh <= 0) enemy._peekArm = false;
     enemy._sideStep = !!(sideOk && enemy._peekArm && enemy._stepDist > 0 && enemy._peekPh > 0.001 && !enemy.pinned);
+    tickFidget(enemy, dt);
+  }
+  // 1 = full braking over the last 1.5 m into cover. Exit: 0 at the first step (~1 m/s) → 1 at run speed.
+  function coverGaitSpeed(enemy, speed) {
+    const ph = enemy.phase;
+    if (ph === 'approach' || ph === 'relocate' || ph === 'takeCover') {
+      const k = enemy.approachK || 0;
+      if (k > 0) speed = Math.max(0.5, speed + (0.6 - speed) * k);
+    }
+    if ((ph === 'approach' || ph === 'relocate') && ((enemy._exitPh || 0) > 0 || (enemy.coverT || 0) > 0.05)) {
+      const e = enemy.exitK || 0;
+      speed = 1 + (Math.max(speed, 1) - 1) * e;
+      if ((enemy.curSpeed || 0) < 1) enemy.curSpeed = 1;
+    }
+    if (speed < 2.2 && enemy.moveKind === 'run') enemy.moveKind = 'walk';
+    return speed;
+  }
+  function beginCoverExit(enemy) {
+    if ((enemy.coverT || 0) > 0.05 || (enemy._coverPh || 0) > 0.05) {
+      if (!(enemy._exitPh > 0)) { enemy._exitPh = 0.001; enemy.exitK = 0; }
+    }
+  }
+  function fidEase(enemy) {
+    if (!enemy.fidget) return 0;
+    const dur = enemy._fidDur || 1;
+    const left = Math.max(0, enemy._fidT || 0);
+    const u = dur > 0 ? 1 - left / dur : 1;
+    if (!(u > 0) || u >= 1) return 0;
+    return Math.sin(u * Math.PI);
+  }
+  function tickFidget(enemy, dt) {
+    const q = qName();
+    const hidden = (enemy.coverT || 0) > 0.82 && (enemy.peekT || 0) < 0.18 && !enemy.moving
+      && !enemy.hitPlaying && !enemy.dying && !(enemy.staggerT > 0);
+    const allow = hidden && q !== 'ultra-low';
+    if (!allow) {
+      if (enemy.fidget) enemy._fidWait = 3 + Math.random() * 5;
+      enemy.fidget = null; enemy._fidEase = 0; enemy._fidT = 0;
+      return;
+    }
+    if (enemy.fidget) {
+      enemy._fidT = (enemy._fidT || 0) - dt;
+      enemy._fidEase = fidEase(enemy);
+      if (enemy._fidT <= 0) {
+        enemy.fidget = null; enemy._fidEase = 0;
+        enemy._fidWait = 3 + Math.random() * 5;
+      }
+      return;
+    }
+    enemy._fidEase = 0;
+    if (enemy._fidWait == null) enemy._fidWait = 3 + Math.random() * 5;
+    enemy._fidWait -= dt;
+    if (enemy._fidWait > 0) return;
+    const d2 = camera.position.distanceToSquared(enemy.group.position);
+    const kinds = ['shift', 'regrip'];
+    if (!(q === 'low' && d2 > 625)) kinds.push('glance');
+    const name = kinds[(Math.random() * kinds.length) | 0];
+    enemy.fidget = name;
+    enemy.fidgets = (enemy.fidgets | 0) + 1;
+    enemy._fidDur = 0.8 + Math.random() * 0.8;
+    enemy._fidT = enemy._fidDur;
+    enemy._fidSide = Math.random() < 0.5 ? -1 : 1;
+    enemy._fidMag = 0.03 + Math.random() * 0.02;
+    enemy._fidEase = fidEase(enemy);
+    if (name === 'glance') {
+      const body = groupYaw(enemy.group);
+      const aim = Number.isFinite(enemy.aimYaw) ? enemy.aimYaw : body;
+      const rel = wrapPi(aim - body);
+      const away = Math.abs(rel) > 0.1 ? (rel >= 0 ? -1 : 1) : enemy._fidSide;
+      enemy._fidYaw = away * (20 + Math.random() * 15) * (Math.PI / 180);
+    }
+  }
+  // Pelvis sideways 3-5 cm on the art root (reset each frame). FootIK then plants on High.
+  function applyFidgetShift(enemy, r) {
+    if (enemy._rootX0 == null) { enemy._rootX0 = r.position.x; enemy._rootZ0 = r.position.z; }
+    let ox = 0, oz = 0;
+    if (enemy.fidget === 'shift' && (enemy._fidEase || 0) > 0.001) {
+      const mag = (enemy._fidMag || 0.04) * enemy._fidEase;
+      const s = enemy._fidSide || 1;
+      _rightW.set(1, 0, 0).applyQuaternion(enemy.group.quaternion);
+      ox = _rightW.x * mag * s;
+      oz = _rightW.z * mag * s;
+    }
+    const need = !!(ox || oz) || !!enemy._fidShiftOn;
+    if (need) { r.position.x = enemy._rootX0 + ox; r.position.z = enemy._rootZ0 + oz; }
+    enemy._fidShiftOn = !!(ox || oz);
+    return need;
+  }
+  // Spine counter-tilt / shoulder-roll / hand offset. After mixer + supportArm, before syncArt.
+  function applyFidget(enemy) {
+    if (!enemy.fidget || !((enemy._fidEase || 0) > 0.001) || window.SS_NOPROC || enemy.dying || enemy.pinned) return;
+    const b = enemy.bones; if (!b) return;
+    const ease = enemy._fidEase;
+    const g = enemy.group;
+    g.updateMatrixWorld(true);
+    _fwdW.set(0, 0, 1).applyQuaternion(g.quaternion);
+    _rightW.set(1, 0, 0).applyQuaternion(g.quaternion);
+    if (enemy.fidget === 'shift') {
+      const ang = -(enemy._fidSide || 1) * 0.16 * ease;
+      bendBone(b.Spine01 || b.Spine, _fwdW, ang);
+      if (b.Spine && b.Spine01) { b.Spine01.updateMatrixWorld(true); bendBone(b.Spine, _fwdW, ang); }
+    } else if (enemy.fidget === 'regrip') {
+      const root = enemy.art && enemy.art.root;
+      const sh = (root && (root.getObjectByName('RightShoulder') || root.getObjectByName('Right_Shoulder'))) || b.RightArm;
+      bendBone(sh, _fwdW, 0.2 * ease);
+      if (b.RightArm && sh !== b.RightArm) bendBone(b.RightArm, _rightW, 0.08 * ease);
+      bendBone(b.RightForeArm, _up, 0.12 * ease);
+    }
   }
   // Take the peek step off the group before pathing, then put it back after. Otherwise the
   // 0.25-0.4 m lateral never lets stepToward reach the fire point.
@@ -799,6 +921,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.mixer.update(dt);
     proceduralLean(enemy, name, dt);
     try { supportArm(enemy, name, dt); } catch (err) { reportErr('support arm', err); }
+    if (LOCO2) applyFidget(enemy);
     if (enemy.hitPlaying && !enemy.actions.hit.enabled) {
       enemy.hitPlaying = false;
       enemy.hitReturning = false;
@@ -1003,7 +1126,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       suppressT: 0,
       engaged: false,
     };
-    if (LOCO2) { enemy.bodyYaw = 0; enemy.turning = null; enemy.aimYaw = 0; enemy.twist = 0; enemy.coverT = 0; enemy.peekT = 0; }
+    if (LOCO2) {
+      enemy.bodyYaw = 0; enemy.turning = null; enemy.aimYaw = 0; enemy.twist = 0; enemy.coverT = 0; enemy.peekT = 0;
+      enemy.approachK = 0; enemy.exitK = 0; enemy._exitPh = 0; enemy.fidget = null; enemy.fidgets = 0; enemy.duckT = 0; enemy.ducks = 0;
+    }
 
     const torso = new THREE.Mesh(geoTorso, matVest);
     torso.position.y = 1.15 * S;
@@ -1387,6 +1513,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // or with the kill marker in kill()); nothing else spawns blood on a live enemy.
     if (enemy.health <= 0) kill(enemy, point, part);
     else {
+      if (LOCO2) forceDuck(enemy, weapon.lastShot);
       if (enemy.art) playHit(enemy, part === 'head');
       // Bigger hit reaction: shove back ~0.3 m from the shooter (ground enemies) + a brief exposed stagger.
       // Never shove into a building: a fighter pushed inside a wall collider became unhittable (false misses).
@@ -1404,6 +1531,37 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const dirPoint = info.point;
     info.enemy.takeHit(info.part, dirPoint);
   };
+  // Read-only: player rounds already land in weapon.lastShot / onHit. Do not edit weapon.js.
+  let _seenShot = null;
+  function forceDuck(enemy, shot) {
+    if (!enemy || !enemy.alive || enemy.dying || enemy.pinned) return;
+    const peeking = enemy.phase === 'peek' || enemy.phase === 'fire' || (enemy.peekT || 0) > 0.18 || (enemy._peekPh || 0) > 0.18;
+    if (!peeking) return;
+    if (shot && enemy._duckShot === shot) { enemy.duckT = Math.max(enemy.duckT || 0, 0.8); return; }
+    if (shot) enemy._duckShot = shot;
+    enemy.ducks = (enemy.ducks | 0) + 1;
+    enemy.duckT = Math.max(enemy.duckT || 0, 0.8);
+  }
+  function notePlayerRound() {
+    const shot = weapon.lastShot;
+    if (!shot || shot === _seenShot) return;
+    _seenShot = shot;
+    const o = shot.origin, d = shot.dir;
+    if (!o || !d) return;
+    const hitP = shot.hit && shot.hit.point;
+    const maxD = hitP ? o.distanceTo(hitP) : 80;
+    const dx = d.x, dy = d.y, dz = d.z;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (!e.alive || e.dying || e.pinned) continue;
+      const p = e.group.position;
+      const cx = p.x - o.x, cy = (p.y + 1.0) - o.y, cz = p.z - o.z;
+      let t = cx * dx + cy * dy + cz * dz;
+      if (t < 0) t = 0; else if (t > maxD) t = maxD;
+      const px = o.x + dx * t - p.x, py = o.y + dy * t - (p.y + 1.0), pz = o.z + dz * t - p.z;
+      if (px * px + py * py + pz * pz <= 2.25) forceDuck(e, shot);
+    }
+  }
 
   function muzzleFlash(pos) {
     let slot = flashes[0];
@@ -1747,6 +1905,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function startPeek(enemy) {
+    if (LOCO2 && (enemy.duckT || 0) > 0) {
+      if (enemy.phase !== 'takeCover') enterCover(enemy, Math.max(0.08, enemy.duckT));
+      return;
+    }
     enemy.phase = 'peek';
     enemy.posture = 'lean';
     enemy.path = [firePoint(enemy)];
@@ -1813,6 +1975,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.exposed = false;
     enemy.moveKind = 'run';
     enemy.goal = enemy.path[0];
+    if (LOCO2) beginCoverExit(enemy);
   }
 
   // Tester m1s: a lone last fighter far down the street (>35 m) dragged the fight out. It runs up to ground cover
@@ -1825,6 +1988,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!best) return; // no cover in range: stay put (the unseen/behind rules still apply)
     enemy.anchor = best; enemy.home = standPos(best); enemy.path = pathOnto(enemy, best); enemy.pathI = 0;
     enemy.phase = 'relocate'; enemy.posture = 'idle'; enemy.exposed = true; enemy.moveKind = 'run'; enemy.goal = enemy.path[0]; enemy.advanced = (enemy.advanced | 0) + 1;
+    if (LOCO2) beginCoverExit(enemy);
     try { squadCall('He\'s moving up!'); } catch (_) {}
   }
 
@@ -1844,10 +2008,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.moveKind = lateral ? 'strafe' : climb ? 'walk' : 'run';
     if (!lateral && !climb && dist < 1.5) enemy.moveKind = 'walk';
     enemy.moving = true;
+    if (LOCO2) speed = coverGaitSpeed(enemy, speed);
     // Human locomotion: accelerate ~7 m/s², brake into the last metre, no instant starts/stops (no sliding).
     const prevV = enemy.curSpeed || 0;
     const brake = Math.sqrt(2 * 6 * Math.max(0, dist - 0.05)) + 0.3;
-    const want = Math.min(speed, brake);
+    let want = Math.min(speed, brake);
+    if (LOCO2 && (enemy.approachK || 0) > 0 && dist > 0.07) want = Math.max(0.5, want);
     enemy.curSpeed = want > prevV ? Math.min(want, prevV + 7 * dt) : Math.max(want, prevV - 9 * dt);
     const step = Math.min(dist, enemy.curSpeed * dt);
     const dy = _fwd.y; _fwd.y = 0; const hd = Math.max(1e-4, horiz);
@@ -1962,6 +2128,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const phase = enemy.phase;
     if (phase === 'approach' || phase === 'climb' || phase === 'relocate' || phase === 'peek' || phase === 'hide') {
       if (phase !== 'peek') enemy.exposed = false;
+      if (LOCO2 && phase === 'hide' && ((enemy.peekT || 0) > 0.05 || (enemy._peekPh || 0) > 0.05)) {
+        enemy.moving = false; enemy.curSpeed = 0;
+        return;
+      }
       if (followPath(enemy, dt, diff)) {
         if (phase === 'peek') beginFire(enemy);
         else if (phase === 'hide') {
@@ -1977,6 +2147,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.exposed = false;
       enemy.phaseT -= dt;
       if (enemy.phaseT <= 0) {
+        if (LOCO2 && (enemy.duckT || 0) > 0) return;
         if (enemy.afterHide && Math.random() < 0.45) startRelocate(enemy);
         else startPeek(enemy);
         enemy.afterHide = false;
@@ -2169,6 +2340,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const tempo = 1 + PRESSURE_TEMPO * pressure;
     const pz = camera.position.z;
     let hold = false, engagedN = 0;
+    if (LOCO2) notePlayerRound();
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];
       if (!e.alive) {
@@ -2194,6 +2366,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         continue;
       }
       if (e.art) stepArt(e, dt);
+      else if (LOCO2) tickCover(e, dt);
       if (LOCO2) parkCoverStep(e);
       try { updateEnemy(e, dt * tempo, diff); }
       catch (err) { reportErr('enemy update', err); despawn(e); list.splice(i, 1); continue; } // a broken enemy is removed, never freezes the fight
