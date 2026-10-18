@@ -41,6 +41,10 @@ export const Q = Object.assign({}, LOWQ ? LOW : HIGH);
 // (what exists), the window/aspect (the visibility gate projects through the camera and sizes against CSS pixels).
 export const FAST = (() => { try { return /[?&]test=fast\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (e) { return false; } })();
 if (FAST) Object.assign(Q, { res: 0.1, post: false, shadows: false });
+// Test-only NO-RENDER logic mode (?test=fast&norender, FAST only): frames skip the GPU draw but keep everything the
+// logic reads up to date - world matrices, per-camera LOD level selection (line of sight depends on the drawn level),
+// skeleton bone matrices (skinned raycasts), colliders and the view-projection matrix. Validated by test/fast-parity.js.
+export const NORENDER = FAST && (() => { try { return /[?&]norender\b/.test(location.search); } catch (e) { return false; } })();
 // Live switch to Low (software GL at start, or sustained low fps mid-run). Saved so the next start is Low too.
 const lowHooks = [];
 export function onLow(fn) { lowHooks.push(fn); }

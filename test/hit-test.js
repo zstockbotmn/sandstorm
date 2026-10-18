@@ -60,15 +60,17 @@ const res = {};
           const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
           SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len);
           SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
-        let shot;
+        let shot; const atShot = []; SS.weapon.onShotDebug = () => atShot.push(e.group.position.clone()); // fighter position AT the shot (a 4.5 m/s mover keeps walking after it)
         if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; SS.input.pendingShots = 1; for (let k = 0; k < 10 && SS.weapon.shotsFired === n0; k++) { // keep tracking the moving hitbox until the shot leaves (Low tier frames are long)
             if (k) { const tp = tgt.getWorldPosition(new SS.THREE.Vector3()), cp = SS.camera.getWorldPosition(new SS.THREE.Vector3()); const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
               SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len); SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
             await frames(1); } shot = SS.weapon.lastShot; }
         else shot = SS.weapon.debugShoot(SS.input);
-        const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(e.group.position.clone().setY(shot.hit.point.y)) < 1.2);
+        SS.weapon.onShotDebug = null; const gp = (atShot[atShot.length - 1] || e.group.position).clone(); const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(gp.setY(shot.hit.point.y)) < 1.2);
         // a moving target that walked behind a prop between aim and the fire frame is occluded, not a false miss
         const occl = c.moving && !ok && shot && shot.hit && !shot.hit.enemy && shot.hit.point.distanceTo(SS.camera.position) < e.group.position.distanceTo(SS.camera.position) - 0.6;
+        // aim point pressed into geometry (hitbox centre < 0.4 m behind a surface the visibility ray stops short of): occluded, not a false miss
+        if (!ok && shot && shot.hit && !shot.hit.enemy && shot.hit.point.distanceTo(tp2) < 0.4) { out.push({ part, skip: true, why: 'aim point inside ' + shot.hit.name }); continue; }
         if (occl) { out.push({ part, skip: true, why: 'moved behind ' + shot.hit.name }); continue; }
         out.push({ part, ok, hit: shot && shot.hit ? (shot.hit.enemy ? 'enemy:' + shot.hit.part : 'world:' + shot.hit.name) : 'none', cover: SS.input.cover });
       }

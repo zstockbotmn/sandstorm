@@ -35,6 +35,10 @@ export function createInput(canvas) {
     let ax = aimDX * f, ay = aimDY * f;
     if (Math.abs(aimDX - ax) < 1e-4) ax = aimDX;
     if (Math.abs(aimDY - ay) < 1e-4) ay = aimDY;
+    // m1w: per-frame cap on the applied look, by REAL time (hip 12 rad/s yaw, 5 rad/s pitch: a safety net, fast real flicks at 60 fps stay unthrottled; scoped scaled by the zoom), so a
+    // late burst of queued deltas at 2-5 fps turns the view at most that fast; the rest stays queued (nothing dropped).
+    { const z = input.scope ? 28 / 70 : 1, capX = Math.max(0.02, 12 * z * rdt), capY = Math.max(0.012, 5 * z * rdt);
+      ax = Math.max(-capX, Math.min(capX, ax)); ay = Math.max(-capY, Math.min(capY, ay)); if (Math.abs(ax) + Math.abs(ay) > 0) input.aimCapped = (Math.abs(ax) >= capX || Math.abs(ay) >= capY) ? (input.aimCapped | 0) + 1 : input.aimCapped; }
     aimDX -= ax; aimDY -= ay;
     // Touch-only aim assist (App PM: subtle, no snapping): view-only. Near a visible live enemy the drag slows (friction)
     // and gains a light pull toward the enemy's chest, proportional to the drag itself (no drag = no motion). Shots are
@@ -126,6 +130,8 @@ export function createInput(canvas) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     input.touch = e.pointerType !== 'mouse';
+    // m1w: a press on a pickup collects it and never fires (tester: tapping a medkit fired a round)
+    if (window.SS.stakes && window.SS.stakes.pickAt && window.SS.stakes.pickAt(e.clientX, e.clientY)) { input.pickTaps = (input.pickTaps | 0) + 1; return; }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, mouse: e.pointerType === 'mouse', shots0: window.SS.weapon ? window.SS.weapon.shotsFired : 0 });
     // Mouse: never fire on press. A click (released <=4 px from press) fires one shot; holding still 100 ms starts auto-fire.
     if (e.pointerType === 'mouse') { const id = e.pointerId; pressTimer = setTimeout(() => { const q = pointers.get(id); if (q && !q.moved) { fireMouse = true; q.held = true; sync(); } }, 100); }
@@ -137,10 +143,13 @@ export function createInput(canvas) {
     const p = pointers.get(e.pointerId);
     if (!p) return;
     e.preventDefault();
-    const dx = e.clientX - p.x;
-    const dy = e.clientY - p.y;
-    p.x = e.clientX;
-    p.y = e.clientY;
+    // m1w: at low fps Chrome coalesces a whole frame of moves into one event; clamp each real sample (coalesced events),
+    // so a teleport/stale jump is capped while a genuine fast swipe (many small samples) passes in full.
+    const subs = (e.getCoalescedEvents && e.getCoalescedEvents()) || []; const list = subs.length ? subs : [e];
+    const cap = Math.max(24, (window.innerHeight || 390) * 0.12); let dx = 0, dy = 0;
+    for (const q of list) { const sx = q.clientX - p.x, sy = q.clientY - p.y; p.x = q.clientX; p.y = q.clientY;
+      const m = Math.hypot(sx, sy), k = m > cap ? cap / m : 1; if (k < 1) input.aimSpikes = (input.aimSpikes | 0) + 1; dx += sx * k; dy += sy * k; }
+    p.x = e.clientX; p.y = e.clientY;
     // A drag is aiming, never shooting: cancel the mouse shot once it moves past 6 px.
     if (p.mouse && Math.hypot(p.x - p.sx, p.y - p.sy) > 4) { p.moved = true; clearTimeout(pressTimer); if (fireMouse) { fireMouse = false; sync(); } }
     // Proportional drag aim with light smoothing: deltas queue and are applied over ~35 ms in applyAim(dt).

@@ -26,6 +26,7 @@ const _wA = new THREE.Vector3();
 const _wB = new THREE.Vector3();
 
 const ENEMY_SCALE = 1.2; // ~20% larger; adult silhouette ~1.85–2.1 m
+const HB_TORSO_W = 1.12, HB_HEAD = 1.2, HB_Q_LIMB = 0.65, HB_Q_TORSO = 0.65, HB_Q_HEAD = 0.75; // fit percentiles: below the max so hip/shoulder vertices skinned to limb bones do not inflate the boxes (aim-reg: 92% silhouette cover, <= 36% spill) // m1w item 6: hit volumes fitted to the visible skinned body (test/aim-reg.js coverage)
 
 function shemaghTexture() {
   const c = document.createElement('canvas');
@@ -486,10 +487,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     group.updateMatrixWorld(true);
     const headB = bones.Head;
     if (headB) {
-      headB.getWorldPosition(_wA);
-      _wA.y += 0.1;
+      if (enemy.hbFit) headB.localToWorld(_wA.copy(enemy.hbFit.headOff)); // m1w: centre of the head's skinned vertices, in the head bone's frame
+      else { headB.getWorldPosition(_wA); _wA.y += 0.09; }
       group.worldToLocal(_wA);
-      enemy.parts.head.position.copy(_wA);
+      enemy.parts.head.position.copy(_wA); enemy.parts.head.scale.setScalar(enemy.hbFit ? enemy.hbFit.head : HB_HEAD);
     }
     if (bones.Spine && bones.Hips) {
       // Torso capsule spans hips -> upper spine and tilts with crouch / lean / procedural spine roll.
@@ -501,7 +502,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       _hD.subVectors(_wB, _wA); const len = _hD.length();
       if (len > 0.05) t.quaternion.setFromUnitVectors(_hY, _hD.multiplyScalar(1 / len));
       // capsule spans hips..neck only (the fixed 0.91 m capsule poked into the head zone and stole headshots)
-      t.scale.set(0.9, Math.max(0.4, (len + 0.18) / (0.76 * S)), 0.9);
+      { const tw = enemy.hbFit ? enemy.hbFit.torso : HB_TORSO_W; t.scale.set(tw, Math.max(0.4, (len + 0.18) / (0.76 * S)), tw); } // m1w: 0.9 was narrower than the shoulders/chest
     }
     if (enemy.limbBoxes) for (let i = 0; i < enemy.limbBoxes.length; i++) {
       const L = enemy.limbBoxes[i]; L.ba.getWorldPosition(_pA); L.bb.getWorldPosition(_pB);
@@ -549,11 +550,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // Limb hitboxes that follow the animated skeleton (thighs, shins, upper arms, forearms). Without them shots at
     // legs/arms - and at anything the vertical torso capsule didn't cover in a crouch or lean - were false misses.
     enemy.limbBoxes = [];
-    const LIMBS = [['LeftUpLeg', 'LeftLeg', 0.17], ['LeftLeg', 'LeftFoot', 0.14], ['RightUpLeg', 'RightLeg', 0.17], ['RightLeg', 'RightFoot', 0.14],
-      ['LeftArm', 'LeftForeArm', 0.12], ['LeftForeArm', 'LeftHand', 0.1], ['RightArm', 'RightForeArm', 0.12], ['RightForeArm', 'RightHand', 0.1]];
+    // m1w item 6: widths fitted to the skinned body (aim-reg silhouette rays: the thinner set left ~35% of the visible
+    // body - shins, feet, shoulders, head top - outside every volume: 'shots miss low'); feet added.
+    const LIMBS = [['LeftUpLeg', 'LeftLeg', 0.23], ['LeftLeg', 'LeftFoot', 0.2], ['RightUpLeg', 'RightLeg', 0.23], ['RightLeg', 'RightFoot', 0.2],
+      ['LeftFoot', 'LeftToeBase', 0.16], ['RightFoot', 'RightToeBase', 0.16],
+      ['LeftArm', 'LeftForeArm', 0.17], ['LeftForeArm', 'LeftHand', 0.14], ['RightArm', 'RightForeArm', 0.17], ['RightForeArm', 'RightHand', 0.14]];
     for (const [a, b, w] of LIMBS) {
       const ba = inst.root.getObjectByName(a), bb = inst.root.getObjectByName(b); if (!ba || !bb) continue;
-      const m = new THREE.Mesh(hitBoxGeo, ghostMat); m.castShadow = m.receiveShadow = false; m.userData.w = w; group.add(m);
+      const m = new THREE.Mesh(hitBoxGeo, ghostMat); m.castShadow = m.receiveShadow = false; m.userData.w = w; m.userData.seg = [a, b]; group.add(m);
       register(m, enemy, 'limb'); enemy.limbBoxes.push({ m, ba, bb });
     }
     enemy.spineTop = inst.root.getObjectByName('neck') || inst.root.getObjectByName('Neck') || inst.root.getObjectByName('Spine02') || inst.root.getObjectByName('Spine01') || null;
@@ -574,6 +578,40 @@ export function createEnemies(scene, camera, world, weapon, player) {
     inst.restQ = []; inst.root.traverse((o) => { if (o.isBone) inst.restQ.push(o, o.quaternion.clone()); }); // bind pose, before any clip
     inst.mixer.update(0);
     plantFeet(inst.root);
+    try { fitHitVolumes(enemy, inst); } catch (err) { reportErr('hit fit', err); }
+  }
+
+  // m1w item 6: fit the hit volumes to THIS model's skinned body (idle pose): every vertex goes to its dominant bone;
+  // limb box width = 2.1 x the 65th-percentile vertex distance from the bone segment (<= 0.3 m), torso capsule radius from the hips/
+  // spine/neck/shoulder vertices, head sphere centred on the head vertices (kept in the head bone's frame) with their
+  // 75th-percentile radius. Cached per model geometry. The fixed sizes left ~25-35% of the visible body unhittable.
+  const hbFitCache = new Map();
+  function fitHitVolumes(enemy, inst) {
+    const sk = []; inst.root.traverse((o) => { if (o.isSkinnedMesh) sk.push(o); }); if (!sk.length || !enemy.bones || !enemy.bones.Head) return;
+    const key = sk.map((m) => m.geometry.uuid).join('|'); let fit = hbFitCache.get(key);
+    if (!fit) {
+      enemy.group.updateMatrixWorld(true); const gs = enemy.group.getWorldScale(new THREE.Vector3()).x || 1;
+      const byBone = new Map(), v = new THREE.Vector3();
+      for (const m of sk) { m.skeleton.update(); const g = m.geometry, pos = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight; if (!si || !sw) continue; const step = Math.max(1, Math.floor(pos.count / 8000));
+        for (let i = 0; i < pos.count; i += step) { let bi = 0, bw = -1; for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (w > bw) { bw = w; bi = si.getComponent(i, k); } }
+          const bone = m.skeleton.bones[bi]; if (!bone) continue; m.getVertexPosition(i, v); v.applyMatrix4(m.matrixWorld); let arr = byBone.get(bone.name); if (!arr) byBone.set(bone.name, (arr = [])); arr.push(v.clone()); } }
+      const pct = (a, q) => { if (!a.length) return 0; a.sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * q))]; };
+      const wp = (o) => o.getWorldPosition(new THREE.Vector3());
+      const segD = (names, A, B) => { const d = [], ab = B.clone().sub(A), L2 = Math.max(1e-6, ab.lengthSq()), q = new THREE.Vector3();
+        for (const n of names) for (const p of byBone.get(n) || []) { const t = Math.max(0, Math.min(1, q.copy(p).sub(A).dot(ab) / L2)); d.push(p.distanceTo(q.copy(A).addScaledVector(ab, t))); } return d; };
+      fit = { limbs: {} }; const R = inst.root;
+      for (const L of enemy.limbBoxes || []) { const [a, b] = L.m.userData.seg; const names = [...byBone.keys()].filter((n) => n === a || (/Foot$/.test(a) && n.startsWith(a.replace('Foot', 'ToeBase')))); const d = segD(names, wp(L.ba), wp(L.bb));
+        if (d.length >= 12) fit.limbs[a + '>' + b] = Math.max(0.1, Math.min(0.3, 2.1 * pct(d, HB_Q_LIMB))); } // world width (boxBetween divides by the group scale)
+      const B = enemy.bones, top = enemy.spineTop || B.Spine; if (B.Hips && top) { const names = [...byBone.keys()].filter((n) => /hips|spine|chest|neck|shoulder|clavicle/i.test(n)); const d = segD(names, wp(B.Hips), wp(top));
+        if (d.length >= 12) fit.torso = Math.max(0.9, Math.min(1.5, pct(d, HB_Q_TORSO) / gs / (0.17 * S))); }
+      const hv = [...byBone.keys()].filter((n) => /^head|headtop|head_end/i.test(n)).flatMap((n) => byBone.get(n)); if (hv.length >= 12) { const c = new THREE.Vector3(); hv.forEach((p) => c.add(p)); c.multiplyScalar(1 / hv.length);
+        fit.head = Math.max(1, Math.min(1.6, pct(hv.map((p) => p.distanceTo(c)), HB_Q_HEAD) / gs / (0.135 * S))); fit.headOff = B.Head.worldToLocal(c.clone()); }
+      void R; hbFitCache.set(key, fit); if (window.SS) (window.SS.hbFit = window.SS.hbFit || {})[key.slice(0, 8)] = { limbs: fit.limbs, torso: fit.torso, head: fit.head };
+    }
+    for (const L of enemy.limbBoxes || []) { const w = fit.limbs[L.m.userData.seg.join('>')]; if (w) L.m.userData.w = w; }
+    enemy.hbFit = { torso: fit.torso || HB_TORSO_W, head: fit.head || HB_HEAD, headOff: fit.headOff || new THREE.Vector3(0, 0.09, 0) };
+    if (!fit.headOff) enemy.hbFit = null;
+    else if (!fit.head) enemy.hbFit.head = HB_HEAD;
   }
 
   function buildEnemy(behavior, anchor) {
@@ -876,12 +914,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     slot.sprite.position.copy(pos);
   }
 
-  function tracer(a, b) {
+  function tracer(a, b, long) {
     let slot = tracers[0];
     for (let i = 0; i < tracers.length; i++) {
       if (tracers[i].life <= 0) { slot = tracers[i]; break; }
     }
-    slot.life = 0.07;
+    // m1w: real-time life + at least 2 rendered frames (0.07 s of sim time expired inside one low-fps frame: never drawn)
+    slot.life = 0.07; slot.untilR = performance.now() + (long ? 260 : 120); slot.frame0 = (window.SS && window.SS.frameN) | 0;
     const attr = slot.line.geometry.attributes.position;
     attr.setXYZ(0, a.x, a.y, a.z);
     attr.setXYZ(1, b.x, b.y, b.z);
@@ -892,6 +931,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   let lastPlayerHitS = 0, lastPlayerHitSim = -99;
+  // m1w item 7: engaged fights were too lethal (a lone fighter took the player 100% -> ~5% in ~20 s). Incoming gunfire
+  // is capped at DMG_CAP_HPS hp per second (token bucket, accrues on the slower of real and game time, holds one full
+  // hit). A hit the bucket cannot pay for becomes a near miss (tracer/crack still), so the lone-enemy kill takes >= ~30 s.
+  const DMG_CAP_HPS = 2.8, DMG_CAP_BURST = 22; let dmgBucket = DMG_CAP_BURST, dmgBucketR = 0, dmgBucketSim = 0;
+  function dmgBudget(nowS, simS) { if (dmgBucketR) dmgBucket = Math.min(DMG_CAP_BURST, dmgBucket + DMG_CAP_HPS * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
   // m1v: warning for fire from outside the view - edge flash on the shooter's side + a supersonic crack
   function warnFrom(pos) { const SSx = window.SS; if (!SSx) return; const c = camera.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = pos.x - c.x, dz = pos.z - c.z;
     const fwd = dx * Math.sin(yaw) + dz * -Math.cos(yaw), right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
@@ -943,6 +987,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const needSeen = nowS - (enemy.movedR || -99) < 3 ? SEEN_BEFORE_HIT_S : SEEN_PEEK_S; // full hold right after a relocation, a short one for peeks from known cover
     if (hit && needSeen > 0 && !(enemy.seenSinceR && nowS - enemy.seenSinceR >= needSeen && simS - (enemy.seenSinceSim || 0) >= needSeen)) { hit = false; enemy.freshBlocked = (enemy.freshBlocked | 0) + 1; if (window.SS) window.SS.freshBlocked = (window.SS.freshBlocked | 0) + 1; }
     if (hit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
+    const dmgAmt = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1) * (window.SS && window.SS.input && window.SS.input.cover ? 0.6 : 1);
+    if (dmgBudget(nowS, simS) < dmgAmt - 1e-6 && hit) { hit = false; if (window.SS) window.SS.dmgCapBlocked = (window.SS.dmgCapBlocked | 0) + 1; } // m1w: incoming damage-per-second cap
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
     if (!hit) {
@@ -950,18 +996,22 @@ export function createEnemies(scene, camera, world, weapon, player) {
       _aim.y += (Math.random() - 0.5) * 1.2;
       _aim.z += (Math.random() - 0.5) * 2.4;
     }
+    // m1w: an off-view shot's tracer ends in front of the player on the shooter's side, so it streaks in from that edge
+    if (offView) { const yw = window.SS && window.SS.input ? window.SS.input.yaw : 0, fx = Math.sin(yw), fz = -Math.cos(yw), sx = Math.cos(yw), sz = Math.sin(yw);
+      const side = Math.sign((_muzzle.x - camera.position.x) * sx + (_muzzle.z - camera.position.z) * sz) || 1;
+      _aim.set(camera.position.x + fx * 3.2 + sx * side * 0.9, camera.position.y - 0.15, camera.position.z + fz * 3.2 + sz * side * 0.9); if (window.SS) window.SS.offViewTracers = (window.SS.offViewTracers | 0) + 1; }
     muzzleFlash(_muzzle);
-    tracer(_muzzle, _aim);
+    tracer(_muzzle, _aim, offView);
     if (window.SS && window.SS.audio) window.SS.audio.enemyShot(_muzzle);
     enemy.rounds = (enemy.rounds || 0) + 1;
     if (enemy.rounds >= 6) {
       enemy.rounds = 0;
     }
     if (hit) {
-      const amount = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1); // m1v: softer first wave (opening only)
+      const amount = dmgAmt; // m1v: softer first wave (opening only); cover softening (x0.6) included
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
-      player.damage(window.SS && window.SS.input && window.SS.input.cover ? amount * 0.6 : amount, _muzzle); // cover also softens hits
+      dmgBucket -= amount; player.damage(amount, _muzzle); // cover also softens hits (x0.6, in dmgAmt)
     }
   }
 
@@ -1681,9 +1731,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (let i = 0; i < tracers.length; i++) {
       const t = tracers[i];
       if (t.life <= 0) continue;
-      t.life -= dt;
-      t.line.material.opacity = Math.max(0, t.life / 0.07);
-      if (t.life <= 0) t.line.visible = false;
+      { const nowR = performance.now(), fN = (window.SS && window.SS.frameN) | 0, left = Math.max(0, (t.untilR || 0) - nowR);
+        t.line.material.opacity = 0.35 + 0.55 * Math.min(1, left / 120);
+        if (left <= 0 && fN >= (t.frame0 | 0) + 2) { t.life = 0; t.line.visible = false; } }
     }
     for (let i = 0; i < blood.length; i++) {
       const b = blood[i];
@@ -1740,7 +1790,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;
-    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
+    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
     if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
     if (window.SS) window.SS.bursting = false;
   }
@@ -1761,8 +1811,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
   api.debugTruck = () => startTruck();
   api.debugGrenade = () => { const th = list.find((e) => e.alive); if (th) throwGrenade(th); return !!th; };
   api.debugRoof = () => spawnOne('roof');
+  api.tracerState = () => tracers.map((t) => ({ vis: !!t.line.visible, life: t.life, a: t.line.geometry.attributes.position.array.slice(0, 6) })); // tests (m1w)
   api.debugShoot = (e) => enemyShoot(e); // tests: one real enemy shot (all gates apply)
-  api.debugClearSpacing = () => { lastPlayerHitS = 0; lastPlayerHitSim = -99; }; // tests (fast-parity): back-to-back sample shots
+  api.debugClearSpacing = () => { lastPlayerHitS = 0; lastPlayerHitSim = -99; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; }; api.DMG_CAP_HPS = DMG_CAP_HPS; // tests (fast-parity): back-to-back sample shots
   api.spawnEnemy = function spawnEnemy(behavior) {
     return spawnOne(behavior || undefined);
   };

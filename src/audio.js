@@ -176,8 +176,11 @@ export function createAudio() {
   // m1v: supersonic crack for fire from outside the view (sharp high snap, panned to the shooter's side)
   function crack(pos) {
     if (!ctx) return;
-    const p = panNode(bearing(pos) * 1.2); const g = ctx.createGain(); g.gain.value = 0.5; p.connect(g); g.connect(master);
-    burst(0.035, 0.7, 4200, 1.2, 'highpass', p); burst(0.06, 0.25, 2400, 2, 'bandpass', p);
+    // m1w: tester heard no crack (a 35 ms >4.2 kHz burst under the enemy report): longer, louder, lower snap + a whizz sweep
+    const p = panNode(bearing(pos) * 1.2); const g = ctx.createGain(); g.gain.value = 0.95; p.connect(g); g.connect(master);
+    burst(0.06, 0.9, 3000, 1.0, 'highpass', p); burst(0.11, 0.45, 1700, 1.6, 'bandpass', p);
+    try { const o = ctx.createOscillator(), og = envGain(0.12, 0.16, p); o.type = 'sawtooth'; o.frequency.setValueAtTime(2600, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(700, ctx.currentTime + 0.16); o.connect(og); o.start(); o.stop(ctx.currentTime + 0.2); } catch (_) {}
+    if (window.SS) window.SS.cracks = (window.SS.cracks | 0) + 1;
   }
 
   function distantShot() {
@@ -194,6 +197,7 @@ export function createAudio() {
   function hit() {
     if (!ctx) return;
     tone(1800, 0.04, 0.12, 'square');
+    tone(95, 0.11, 0.32, 'sine'); burst(0.05, 0.3, 380, 0.8, 'lowpass'); // m1w: body-hit thud under the tick
   }
 
   function kill() { // kill confirm: low thump + bright ding
