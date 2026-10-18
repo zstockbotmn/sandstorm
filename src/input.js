@@ -164,8 +164,8 @@ export function createInput(canvas) {
       const qt = q.timeStamp || 0, sdt = p.t && qt > p.t ? (qt - p.t) / 1000 : 0; if (qt > (p.t || 0)) p.t = qt;
       // m1y (tester at ~1 fps: a fast 300 px drag turned ~20 px): the m1x speed cap (5000 px/s, >= 24 px/sample) and the 12%
       // per-sample cap ate the big samples a fast drag delivers at low fps. Only a TRUE teleport is clamped now: a sample of
-      // more than 1/3 of the short screen side that arrived within 16 ms of the previous one (or without a timestamp).
-      const m = Math.hypot(sx, sy), tele = m > shortSide / 3 && !(sdt >= 0.016), k = tele ? cap / m : 1; if (k < 1) input.aimSpikes = (input.aimSpikes | 0) + 1; dx += sx * k; dy += sy * k; }
+      // more than 1/3 of the short screen side at > 8000 px/s (e.g. 130 px in < 16 ms) or without a timestamp.
+      const m = Math.hypot(sx, sy), tele = p.nMoves > 0 && m > shortSide / 3 && !(sdt > 0 && m / sdt < 8000), k = tele ? cap / m : 1; p.nMoves = (p.nMoves | 0) + 1; /* the first sample after the press is measured from the fresh press point: never stale */ if (k < 1) input.aimSpikes = (input.aimSpikes | 0) + 1; dx += sx * k; dy += sy * k; }
     p.x = e.clientX; p.y = e.clientY;
     // A drag is aiming, never shooting: cancel the mouse shot once it moves past 6 px.
     // m1y: a drag starting > 300 ms (event time) after an earlier still-click drops that click if it has not fired yet

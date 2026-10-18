@@ -61,10 +61,12 @@ const res = {};
           SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len);
           SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
         let shot; const atShot = []; SS.weapon.onShotDebug = () => atShot.push(e.group.position.clone()); // fighter position AT the shot (a 4.5 m/s mover keeps walking after it)
-        if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; SS.input.pendingShots = 1; for (let k = 0; k < 10 && SS.weapon.shotsFired === n0; k++) { // keep tracking the moving hitbox until the shot leaves (Low tier frames are long)
-            if (k) { const tp = tgt.getWorldPosition(new SS.THREE.Vector3()), cp = SS.camera.getWorldPosition(new SS.THREE.Vector3()); const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
+        if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; for (let k = 0; k < 12 && SS.weapon.shotsFired === n0; k++) { if (k === 2) SS.input.pendingShots = 1; // fire once a led view has been drawn // keep tracking the moving hitbox until the shot leaves (Low tier frames are long)
+            // m1x/m1y: shots fly along the view that was ON SCREEN; the view set now is drawn with the fighter's NEW position,
+            // so lead by this frame's motion (v * frame dt), as a tracking player does
+            if (k) { const nowL = performance.now(), gapL = Math.min(0.2, (nowL - (window.__lt || nowL)) / 1000); window.__lt = nowL; const tp = tgt.getWorldPosition(new SS.THREE.Vector3()).addScaledVector(e.debugVel || new SS.THREE.Vector3(), gapL), cp = SS.camera.getWorldPosition(new SS.THREE.Vector3()); const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
               SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len); SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
-            await frames(1); } shot = SS.weapon.lastShot; }
+            window.__lt = performance.now(); await frames(1); } shot = SS.weapon.lastShot; }
         else shot = SS.weapon.debugShoot(SS.input);
         SS.weapon.onShotDebug = null; const gp = (atShot[atShot.length - 1] || e.group.position).clone(); const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(gp.setY(shot.hit.point.y)) < 1.2);
         // a moving target that walked behind a prop between aim and the fire frame is occluded, not a false miss

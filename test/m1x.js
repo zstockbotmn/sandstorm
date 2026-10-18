@@ -18,7 +18,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
     if (calm) await p.evaluate(() => { SS.walking = false; SS.player.health = 1e6; }); await p.waitForTimeout(1500); return { p, ctx }; }
   const shots = (p) => p.evaluate(() => SS.weapon.shotsFired);
-  if (want('A') || want('B') || want('C') || want('D') || want('F')) { const { p, ctx } = await start(true);
+  if (want('A') || want('B') || want('C') || want('D') || want('F') || want('G')) { const { p, ctx } = await start(true);
     await p.evaluate(() => { window.__freezeCam = true; SS.weapon.ammo = 30; SS.weapon.reserve = 200; });
     // A: drop a kit 7 m ahead, take its screen spot as drawn, click there ~1 s later (fly-in started at 0.6 s)
     if (want('A')) { res.A = [];
@@ -53,8 +53,17 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     // D: a still hold at 5 fps still auto-fires (feel)
     if (want('D')) { await p.evaluate(() => { window.__slowMs = 200; SS.weapon.ammo = 30; }); await p.waitForTimeout(600); const f0 = await shots(p); await p.mouse.move(420, 200); await p.mouse.down(); await p.waitForTimeout(1600); await p.mouse.up(); await p.waitForTimeout(800);
       res.D = { fired: (await shots(p)) - f0 }; await p.evaluate(() => { window.__slowMs = 0; }); if (res.D.fired < 3) fail.push('D: a 1.6 s still hold at 5 fps fired only ' + res.D.fired); }
+    // G (m1y, tester at ~1 fps: a fast 300 px drag turned ~20 px): a fast drag (one 300 px jump / three 100 px moves) at 1 fps turns ~1:1
+    if (want('G')) { res.G = []; const cdp = await ctx.newCDPSession(p);
+      for (const steps of [1, 3]) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; }); await p.waitForTimeout(2200); const y0 = await p.evaluate(() => SS.input.yaw);
+        const x = 250, y = 200; await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+        for (let i = 1; i <= steps; i++) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + Math.round(300 * i / steps), y, button: 'left', buttons: 1 });
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 300, y, button: 'left', clickCount: 1 }); await p.waitForTimeout(5000);
+        const r = await p.evaluate((y0) => ({ dyawPx: +(Math.abs(SS.input.yaw - y0) / ((70 * Math.PI / 180) / Math.max(200, innerHeight))).toFixed(0) }), y0); r.steps = steps; res.G.push(r);
+        if (r.dyawPx < 300 * 0.7 || r.dyawPx > 300 * 1.3) fail.push('G: a fast 300 px drag (' + steps + ' move' + (steps > 1 ? 's' : '') + ') at 1 fps turned ' + r.dyawPx + ' px'); }
+      await p.evaluate(() => { window.__slowMs = 0; }); }
     // F (m1y): a click held back by a reload at ~1 fps expires by event time instead of firing seconds later (mid-drag)
-    if (want('F')) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; SS.weapon.ammo = 10; SS.input.reloadPressed = true; }); await p.waitForTimeout(2500);
+    if (want('F')) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; SS.weapon.ammo = 10; SS.weapon.reserve = 200; SS.input.reloadPressed = true; }); await p.waitForFunction(() => SS.weapon.reloading, null, { timeout: 8000, polling: 100 }).catch(() => {});
       const f0 = await shots(p); const rl = await p.evaluate(() => !!SS.weapon.reloading); await p.mouse.click(260, 140);
       await p.waitForFunction(() => !SS.weapon.reloading, null, { timeout: 40000, polling: 300 }).catch(() => {}); await p.waitForTimeout(2500);
       res.F = await p.evaluate((f0) => ({ fired: SS.weapon.shotsFired - f0, expired: SS.input.tapsExpired | 0, ammo: SS.weapon.ammo }), f0); res.F.reloadingAtClick = rl; await p.evaluate(() => { window.__slowMs = 0; });

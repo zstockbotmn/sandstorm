@@ -47,8 +47,11 @@ const QS = process.env.SS_QS || '';
       const v = (e.spineTop || e.bones.Spine).getWorldPosition(new THREE.Vector3()).lerp(e.bones.Head.getWorldPosition(new THREE.Vector3()), 0.5); const d = v.clone().sub(c);
       SS.input.yaw = Math.atan2(d.x, -d.z); SS.input.pitch = -Math.atan2(d.y, Math.hypot(d.x, d.z)); window.__aimE = e; return { d: +d.length().toFixed(1) }; });
     if (r.skip) { res.shots.push(r); break; } await p.waitForTimeout(2600); // two rendered frames with this view
-    const vis = await p.evaluate(() => { const THREE = SS.THREE, L = SS.lastCam; const d = new THREE.Vector3(0, 0, -1).applyQuaternion(L.q); const h = SS.weapon.firstHit(L.p.clone(), d); return h ? (h.object.userData.enemy ? 'enemy:' + h.object.userData.part : 'world:' + (h.object.name || h.object.type)) : 'none'; });
-    const s0 = await p.evaluate(() => { SS.input.pendingShots = (SS.input.pendingShots | 0) + 1; return SS.weapon.shotsFired; }); await p.waitForFunction((n) => SS.weapon.shotsFired > n, s0, { timeout: 9000, polling: 200 }).catch(() => {});
+    // check what is ON SCREEN and queue the click in the same task (between two frames): the shot fires next frame along
+    // that drawn view against the fighter as drawn (if he ducks behind the prop later, that is a correct miss, not this check)
+    const [vis, s0] = await p.evaluate(() => { const THREE = SS.THREE, L = SS.lastCam; const d = new THREE.Vector3(0, 0, -1).applyQuaternion(L.q); const h = SS.weapon.firstHit(L.p.clone(), d);
+      SS.input.pendingShots = (SS.input.pendingShots | 0) + 1; return [h ? (h.object.userData.enemy ? 'enemy:' + h.object.userData.part : 'world:' + (h.object.name || h.object.type)) : 'none', SS.weapon.shotsFired]; });
+    await p.waitForFunction((n) => SS.weapon.shotsFired > n, s0, { timeout: 9000, polling: 200 }).catch(() => {});
     r.pre = vis; r.hit = await p.evaluate(() => { const h = SS.weapon.lastShot && SS.weapon.lastShot.hit; return h ? (h.enemy ? 'enemy:' + h.part : 'world:' + h.name) : 'none'; }); res.shots.push(r); }
   await p.evaluate(() => { window.__slowMs = 0; window.__sampling = false; });
   for (const k of ['normal', 'fps1']) { const R = res[k]; if (R.visible < 20) { fail.push(k + ': only ' + R.visible + ' visible crouched/peek samples'); continue; }

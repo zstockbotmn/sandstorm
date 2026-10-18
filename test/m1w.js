@@ -33,11 +33,13 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1W ? process.env.SS_M
   // B
   if (want('B')) try { const { p, cdp } = await start(); res.B = {};
     const y0 = await p.evaluate(() => { SS.input.pitch = 0; window.__slowMs = 450; return [SS.input.yaw, SS.input.pitch]; }); await p.waitForTimeout(1500);
-    const x = 500, y = 200; await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
-    for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + i * 5, y: y + i * 2, button: 'left', buttons: 1 }); // a small 30x12 px drag
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + 30, y: y + 12 + 260, button: 'left', buttons: 1 }); // one stale/teleport jump (lag burst)
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + 30, y: y + 12 + 260, button: 'left', buttons: 1 });
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 30, y: y + 272, button: 'left', clickCount: 1 });
+    // m1y: explicit event timestamps (s): small moves 30 ms apart, the teleport 4 ms after the last one (a fast real drag
+    // at low fps is no longer clamped; only a true teleport, > 1/3 screen at > 8000 px/s, is)
+    const x = 500, y = 200, T0 = Date.now() / 1000; await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1, timestamp: T0 });
+    for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + i * 5, y: y + i * 2, button: 'left', buttons: 1, timestamp: T0 + i * 0.03 }); // a small 30x12 px drag
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + 30, y: y + 12 + 260, button: 'left', buttons: 1, timestamp: T0 + 0.184 }); // one stale/teleport jump (lag burst)
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + 30, y: y + 12 + 260, button: 'left', buttons: 1, timestamp: T0 + 0.19 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 30, y: y + 272, button: 'left', clickCount: 1, timestamp: T0 + 0.22 });
     await p.waitForTimeout(4000); const r = await p.evaluate(() => { window.__slowMs = 0; return { yaw: SS.input.yaw, pitch: SS.input.pitch, spikes: SS.input.aimSpikes | 0, sens: (70 * Math.PI / 180) / Math.max(200, innerHeight) }; });
     r.dYawDeg = +((r.yaw - y0[0]) * 180 / Math.PI).toFixed(2); r.dPitchDeg = +((r.pitch - y0[1]) * 180 / Math.PI).toFixed(2); res.B = r;
     const capPx = Math.max(24, 390 * 0.12), maxPitch = (12 + capPx * 1.05) * r.sens * 180 / Math.PI, maxYaw = 30 * 1.05 * r.sens * 180 / Math.PI;
