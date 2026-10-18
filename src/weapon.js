@@ -156,7 +156,7 @@ export function createWeapon(camera, world, scene) {
 
   let frameShots = 0;
   function shoot(input) {
-    weapon.ammo -= 1;
+    weapon.ammo -= 1; pushAmmo(); // m1w: the counter follows the shot itself (it lagged seconds at 2-5 fps)
     weapon.shotsFired += 1;
     cooldown = Math.max(cooldown, -SHOT_INTERVAL * 3) + SHOT_INTERVAL; // real-time cadence (keeps the remainder)
     flashT = 0.05;
@@ -240,6 +240,7 @@ export function createWeapon(camera, world, scene) {
   weapon.debugShoot = (input) => { if (weapon.ammo <= 0) weapon.ammo = MAG; shoot(input); return weapon.lastShot; };
   // A drag after a shot means the player is controlling the muzzle: drop the pending recoil recovery (no drift back).
   weapon.cancelRecoil = function cancelRecoil() { recoil = 0; };
+  function pushAmmo() { const h = window.SS && window.SS.hud; if (h && h.setAmmo) h.setAmmo(weapon.ammo, weapon.reserve); }
   weapon.update = function update(dt, input) {
     frameShots = 0;
     const k = 1 - Math.exp(-10 * dt);
@@ -277,7 +278,7 @@ export function createWeapon(camera, world, scene) {
       reloadT += dt;
       if (performance.now() >= reloadEnd) {
         weapon.reloading = false;
-        { const take = Math.min(MAG - weapon.ammo, weapon.reserve); weapon.ammo += take; weapon.reserve -= take; }
+        { const take = Math.min(MAG - weapon.ammo, weapon.reserve); weapon.ammo += take; weapon.reserve -= take; pushAmmo(); }
         if (weapon.onReload) weapon.onReload('end');
         { const h = window.SS && window.SS.hud; if (h && h.hintText === 'Emergency magazine' && h.hint) h.hint(''); } // message ends with the reload
       }
@@ -298,6 +299,9 @@ export function createWeapon(camera, world, scene) {
       weapon.onTarget = !!(h && h.object.userData && h.object.userData.enemy); weapon.onTargetName = h ? (h.object.name || h.object.type) : null; }
     // Fire cadence runs on the real-time clock (sim dt is capped at low fps, which starved held FIRE).
     { const now = performance.now(); const rdt = lastUpd ? Math.min(0.5, (now - lastUpd) / 1000) : dt; lastGap = lastUpd ? (now - lastUpd) / 1000 : 0; lastUpd = now; cooldown -= rdt; }
+    // m1w: shots only in a frame's FIRST sim step: catch-up steps 2-4 run after fighters moved, so a shot there tested
+    // positions the player never saw (scoped misses on moving fighters at low fps). Timers/recoil still run every step.
+    if (window.SS && (window.SS.subStep | 0) > 0) { pushAmmo(); return; }
     // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
     // m1v: at low fps every queued click fires this frame (each was a separate real-time click; one per frame dropped/lagged them)
     { const slowFrame = lastGap > SHOT_INTERVAL * 2; for (let n = 0; n < 8 && (input.pendingShots | 0) > 0 && !weapon.reloading && weapon.ammo > 0 && (cooldown <= 0 || (slowFrame && n > 0)); n++) { input.pendingShots -= 1; shoot(input); } }

@@ -876,12 +876,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     slot.sprite.position.copy(pos);
   }
 
-  function tracer(a, b) {
+  function tracer(a, b, long) {
     let slot = tracers[0];
     for (let i = 0; i < tracers.length; i++) {
       if (tracers[i].life <= 0) { slot = tracers[i]; break; }
     }
-    slot.life = 0.07;
+    // m1w: real-time life + at least 2 rendered frames (0.07 s of sim time expired inside one low-fps frame: never drawn)
+    slot.life = 0.07; slot.untilR = performance.now() + (long ? 260 : 120); slot.frame0 = (window.SS && window.SS.frameN) | 0;
     const attr = slot.line.geometry.attributes.position;
     attr.setXYZ(0, a.x, a.y, a.z);
     attr.setXYZ(1, b.x, b.y, b.z);
@@ -950,8 +951,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
       _aim.y += (Math.random() - 0.5) * 1.2;
       _aim.z += (Math.random() - 0.5) * 2.4;
     }
+    // m1w: an off-view shot's tracer ends in front of the player on the shooter's side, so it streaks in from that edge
+    if (offView) { const yw = window.SS && window.SS.input ? window.SS.input.yaw : 0, fx = Math.sin(yw), fz = -Math.cos(yw), sx = Math.cos(yw), sz = Math.sin(yw);
+      const side = Math.sign((_muzzle.x - camera.position.x) * sx + (_muzzle.z - camera.position.z) * sz) || 1;
+      _aim.set(camera.position.x + fx * 3.2 + sx * side * 0.9, camera.position.y - 0.15, camera.position.z + fz * 3.2 + sz * side * 0.9); if (window.SS) window.SS.offViewTracers = (window.SS.offViewTracers | 0) + 1; }
     muzzleFlash(_muzzle);
-    tracer(_muzzle, _aim);
+    tracer(_muzzle, _aim, offView);
     if (window.SS && window.SS.audio) window.SS.audio.enemyShot(_muzzle);
     enemy.rounds = (enemy.rounds || 0) + 1;
     if (enemy.rounds >= 6) {
@@ -1681,9 +1686,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (let i = 0; i < tracers.length; i++) {
       const t = tracers[i];
       if (t.life <= 0) continue;
-      t.life -= dt;
-      t.line.material.opacity = Math.max(0, t.life / 0.07);
-      if (t.life <= 0) t.line.visible = false;
+      { const nowR = performance.now(), fN = (window.SS && window.SS.frameN) | 0, left = Math.max(0, (t.untilR || 0) - nowR);
+        t.line.material.opacity = 0.35 + 0.55 * Math.min(1, left / 120);
+        if (left <= 0 && fN >= (t.frame0 | 0) + 2) { t.life = 0; t.line.visible = false; } }
     }
     for (let i = 0; i < blood.length; i++) {
       const b = blood[i];

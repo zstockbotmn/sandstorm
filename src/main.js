@@ -188,7 +188,7 @@ function adaptRes(raw) {
 }
 
 const frameErrs = new Set();
-function frame(now) {
+function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
   requestAnimationFrame(frame);
   if (!window.SS.running && document.body.classList.contains('starting')) { last = 0; return; } // m1v: let 'Starting...' present (no GPU work until the run is live)
   const raw = last ? (now - last) / 1000 : 0; const tFrame = performance.now();
@@ -199,7 +199,7 @@ function frame(now) {
   const steps = raw > 0 ? Math.min(4, Math.max(1, Math.ceil(raw / 0.05))) : 1;
   const dt = raw > 0 ? Math.min(0.05, raw / steps) : 0;
   const slow = (window.SS.slowmoUntil || 0) > performance.now() ? 0.3 : 1; window.SS.timeScale = slow;
-  try { for (let i = 0; i < steps; i++) simStep(dt * slow); }
+  try { for (let i = 0; i < steps; i++) { window.SS.subStep = i; simStep(dt * slow); } window.SS.subStep = 0; }
   catch (err) { // never freeze HUD/render on a sim error; report once per message
     const k = String(err && err.message); if (!frameErrs.has(k)) { frameErrs.add(k); console.error('[sandstorm] sim step failed:', err && (err.stack || err)); (window.SS.errors = window.SS.errors || []).push('sim:' + k); } }
   { const sw = document.getElementById('switch-cover'); if (sw) sw.classList.toggle('on', cover.state !== 'none' && player.alive && window.SS.running); }

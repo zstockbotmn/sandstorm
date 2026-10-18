@@ -192,7 +192,9 @@ export function createHud() {
 
   applyHealth();
 
+  function setAmmo(a, r) { const t = a + ' / ' + (r != null ? r : '\u221E'); if (ammoEl.textContent !== t) ammoEl.textContent = t; }
   const hud = {
+    setAmmo,
     update(info) {
       if (!info) return;
       if (info.distance != null) distanceEl.textContent = Math.floor(info.distance) + ' m';

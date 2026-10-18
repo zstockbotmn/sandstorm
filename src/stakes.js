@@ -17,7 +17,15 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
     g.fillStyle = '#ffd23a'; for (const x of [14, 28, 42]) { g.fillRect(x, 20, 9, 34); g.beginPath(); g.arc(x + 4.5, 20, 4.5, Math.PI, 0); g.fill(); }
     const t = new THREE.CanvasTexture(c); return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, sizeAttenuation: false }); })();
   let goalDone = false;
-  const st = { items, drop, update, reset, prewarm };
+  const st = { items, drop, update, reset, prewarm, pickAt };
+  // m1w: tap/click hit-test for drops (generous touch radius: >= 56 px or 9% of the short screen side, box or icon)
+  const _pp = new THREE.Vector3();
+  function pickAt(cx, cy) { const W = window.innerWidth || 844, H = window.innerHeight || 390, R = Math.max(56, Math.min(W, H) * 0.09); camera.updateMatrixWorld();
+    for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; let best = 1e9;
+      for (const y of [0.16, 0.45, 0.75]) { _pp.set(0, y, 0); it.g.localToWorld(_pp); _pp.project(camera); if (_pp.z <= -1 || _pp.z >= 1) continue;
+        best = Math.min(best, Math.hypot((_pp.x + 1) / 2 * W - cx, (1 - _pp.y) / 2 * H - cy)); }
+      if (best <= R) { take(it); scene.remove(it.g); items.splice(i, 1); if (window.SS) window.SS.pickupsTapped = (window.SS.pickupsTapped | 0) + 1; return true; } }
+    return false; }
   function drop(kind, pos) {
     const g = new THREE.Group(); const box = new THREE.Mesh(geo, mats[kind]); box.position.y = 0.16; box.castShadow = true; g.add(box);
     const icon = new THREE.Sprite(kind === 'health' ? cross : bullet); icon.scale.set(0.05, 0.05, 1); icon.position.y = 0.75; icon.renderOrder = 5; g.add(icon);
