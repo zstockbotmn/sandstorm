@@ -20,7 +20,13 @@ const CAP = { 'ultra-low': 2, low: 3 }; // locomotion.js tierCap (others 4)
 let offline = null; { const r = require('child_process').spawnSync('node', [path.resolve(__dirname, '../tools/loco-check.mjs'), '--json'], { encoding: 'utf8', timeout: 120000 }); const ln = String(r.stdout || '').split('\n').find((l) => l.startsWith('[{'));
   try { const rows = JSON.parse(ln); offline = { clips: rows.length, fail: rows.filter((q) => !q.ok) }; } catch (e) { offline = { error: 'no JSON rows (exit ' + r.status + ') ' + String(r.stderr || '').slice(0, 160) }; } }
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 900000 });
-  const res = { cases: [], offline }, fail = [];
+  // FLAG (Zack 3:45 AM): tools/loco-check.mjs passes partly on a loosened rule - a foot counts as planted if its heel OR its
+  // toe holds still (drift = min(ankle, toe)); ankle-only backRun is ~11 cm. This live test measures the ANKLE (LeftFoot/
+  // RightFoot) in world space, i.e. the strict rule, and prints the flag so a pass offline is not read as a pass here.
+  const blend = (() => { const r = require('child_process').spawnSync('node', [path.resolve(__dirname, '../tools/loco-blendcheck.mjs')], { encoding: 'utf8', timeout: 60000 }); return { ok: r.status === 0, line: String(r.stdout || '').trim().split('\n').pop() }; })();
+  const res = { cases: [], offline, offlineRule: 'loco-check drift = min(heel, toe) planted point (LOOSENED; live slide below is ankle-only)', blend }, fail = [];
+  console.log('NOTE offline loco-check uses the heel/toe rule (loosened); live slide numbers below are ankle-only (strict)');
+  if (!blend.ok) fail.push('loco-blendcheck: ' + blend.line.slice(0, 200));
   if (offline && offline.error) fail.push('tools/loco-check.mjs failed: ' + offline.error); else if (offline && offline.fail && offline.fail.length) fail.push('loco-check (offline clips): ' + JSON.stringify(offline.fail).slice(0, 300));
   const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }); const p = await ctx.newPage();
   await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { if (window.__preFrame && t !== window.__pfT) { window.__pfT = t; try { window.__preFrame(); } catch (_) {} } cb(t); }); });
@@ -92,5 +98,5 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
     if (r.legInTorso) fail.push(C.name + ': knee inside the torso capsule on ' + r.legInTorso + ' frames');
     if (process.env.SS_LOCO_DIAG) console.log(JSON.stringify(r)); }
   if (res.pageErrors) fail.push('page errors: ' + res.pageErrors.join(' | '));
-  console.log(JSON.stringify(res)); console.log(fail.length ? 'LOCOFOOT FAIL ' + fail.join(' ; ').slice(0, 900) : 'LOCOFOOT PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
+  console.log(JSON.stringify(res)); console.log('offline rule: heel/toe (loosened) | live: ankle-only'); console.log(fail.length ? 'LOCOFOOT FAIL ' + fail.join(' ; ').slice(0, 900) : 'LOCOFOOT PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
 })().catch((e) => { console.log('LOCOFOOT FAIL exception ' + e.message); process.exit(1); });
