@@ -101,6 +101,7 @@ export function createInput(canvas) {
   // Every tap counts (tester m1q: taps lost at low fps): a tap that lands while the previous one is still being fired
   // (ended but not yet consumed by the weapon, e.g. two taps inside one long frame) is queued, not dropped.
   input.holdQ = [];
+  input.tapT = []; // m1y: event times of queued still-clicks (pendingShots); expired by event time in weapon.update
   const openHold = () => (input.holdQ.length ? input.holdQ[input.holdQ.length - 1] : input.hold);
   function startHold() { if (kia()) return; const o = openHold(); if (o && !o.end) return; const h = { start: evNow(), end: null, id: ++holdN, at: performance.now() };
     if (input.hold) { if (input.holdQ.length < 8) input.holdQ.push(h); } else input.hold = h; input.holdLog.push(h); if (input.holdLog.length > 20) input.holdLog.shift(); }
@@ -108,7 +109,7 @@ export function createInput(canvas) {
   function endHold() { lastUpT = performance.now(); const o = openHold(); if (o && !o.end) o.end = evNow(); }
   input.startHold = startHold; input.endHold = endHold;
   input.clearAim = function clearAim() { aimDX = aimDY = 0; };
-  input.resetState = function resetState() { input.hold = null; input.holdQ.length = 0; aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; fireBtn = fireKey = fireMouse = false; sync(); };
+  input.resetState = function resetState() { input.hold = null; input.holdQ.length = 0; aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; input.tapT.length = 0; fireBtn = fireKey = fireMouse = false; sync(); };
   function sync() {
     input.fire = fireKey || fireMouse; // the FIRE button drives input.hold (timeline), not this flag
     if (!fireBtn) endHold();
@@ -134,7 +135,7 @@ export function createInput(canvas) {
     if (window.SS.stakes && window.SS.stakes.pickAt && window.SS.stakes.pickAt(e.clientX, e.clientY)) { input.pickTaps = (input.pickTaps | 0) + 1; return; }
     // m1x: one mouse = one live pointer; a stale entry (missed pointerup, pointerId switch) must not keep steering the view
     if (e.pointerType === 'mouse') for (const [k, q] of pointers) if (q.mouse && k !== e.pointerId) pointers.delete(k);
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: e.timeStamp || 0, mouse: e.pointerType === 'mouse', shots0: window.SS.weapon ? window.SS.weapon.shotsFired : 0 });
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: e.timeStamp || 0, t0: e.timeStamp || performance.now(), mouse: e.pointerType === 'mouse', shots0: window.SS.weapon ? window.SS.weapon.shotsFired : 0 });
     // Mouse: never fire on press. A click (released <=4 px from press) fires one shot; holding still starts auto-fire.
     // m1x (tester: a scoped drag fired a round): at low fps the drag's first moves are delivered with the next frame, after
     // a 100 ms timer had already opened fire. The hold now waits max(100 ms, 2.5 frames) and is confirmed on the next
@@ -156,15 +157,20 @@ export function createInput(canvas) {
     // m1w: at low fps Chrome coalesces a whole frame of moves into one event; clamp each real sample (coalesced events),
     // so a teleport/stale jump is capped while a genuine fast swipe (many small samples) passes in full.
     const subs = (e.getCoalescedEvents && e.getCoalescedEvents()) || []; const list = subs.length ? subs : [e];
-    const cap = Math.max(24, (window.innerHeight || 390) * 0.12); let dx = 0, dy = 0;
+    const cap = Math.max(24, (window.innerHeight || 390) * 0.12), shortSide = Math.min(window.innerWidth || 844, window.innerHeight || 390); let dx = 0, dy = 0;
     // m1x: plus a speed cap from the samples' own timestamps (5000 px/s, >= 24 px per sample): a burst of stale/teleported
     // samples delivered after a long frame can't add up to a whip, a real flick (< ~3000 px/s) passes in full.
     for (const q of list) { const sx = q.clientX - p.x, sy = q.clientY - p.y; p.x = q.clientX; p.y = q.clientY;
       const qt = q.timeStamp || 0, sdt = p.t && qt > p.t ? (qt - p.t) / 1000 : 0; if (qt > (p.t || 0)) p.t = qt;
-      const capS = sdt > 0 ? Math.min(cap, Math.max(24, 5000 * sdt)) : cap;
-      const m = Math.hypot(sx, sy), k = m > capS ? capS / m : 1; if (k < 1) input.aimSpikes = (input.aimSpikes | 0) + 1; dx += sx * k; dy += sy * k; }
+      // m1y (tester at ~1 fps: a fast 300 px drag turned ~20 px): the m1x speed cap (5000 px/s, >= 24 px/sample) and the 12%
+      // per-sample cap ate the big samples a fast drag delivers at low fps. Only a TRUE teleport is clamped now: a sample of
+      // more than 1/3 of the short screen side that arrived within 16 ms of the previous one (or without a timestamp).
+      const m = Math.hypot(sx, sy), tele = m > shortSide / 3 && !(sdt >= 0.016), k = tele ? cap / m : 1; if (k < 1) input.aimSpikes = (input.aimSpikes | 0) + 1; dx += sx * k; dy += sy * k; }
     p.x = e.clientX; p.y = e.clientY;
     // A drag is aiming, never shooting: cancel the mouse shot once it moves past 6 px.
+    // m1y: a drag starting > 300 ms (event time) after an earlier still-click drops that click if it has not fired yet
+    // (tester: a scoped tap fired late, during a later drag)
+    if (p.mouse && !p.moved && Math.hypot(p.x - p.sx, p.y - p.sy) > 4) { while (input.tapT.length && input.tapT[0] < (p.t0 || 0) - 300 && input.pendingShots > 0) { input.tapT.shift(); input.pendingShots -= 1; input.tapsExpired = (input.tapsExpired | 0) + 1; } }
     if (p.mouse && Math.hypot(p.x - p.sx, p.y - p.sy) > 4) { p.moved = true; clearTimeout(pressTimer); if (fireMouse) { fireMouse = false; sync(); } }
     // Proportional drag aim with light smoothing: deltas queue and are applied over ~35 ms in applyAim(dt).
     // Spikes (coalesced/late events) are capped so one event can't fling the view; gentle friction on a target.
@@ -176,7 +182,7 @@ export function createInput(canvas) {
     if (kia()) return;
     // Per-event clamp sized to the screen: a real fast swipe moves < ~60% width / 35% height between two events;
     // larger single jumps are lag bursts or pointer teleports (spun the view into the ground). Clamp, don't drop.
-    const mx = Math.max(160, (window.innerWidth || 844) * 0.6), my = Math.max(70, (window.innerHeight || 390) * 0.35);
+    const mx = Math.max(160, (window.innerWidth || 844) * 0.75), my = Math.max(70, (window.innerHeight || 390) * 0.75); // m1y: was 60% / 35% (cut fast low-fps drags)
     aimDX += Math.max(-mx, Math.min(mx, dx)) * sens; aimDY += Math.max(-my, Math.min(my, dy)) * sens;
     input.aimMovedT = performance.now(); if (window.SS && window.SS.weapon && window.SS.weapon.cancelRecoil) window.SS.weapon.cancelRecoil();
   }, { passive: false });
@@ -185,7 +191,7 @@ export function createInput(canvas) {
     const p = pointers.get(e.pointerId);
     if (!p) return;
     pointers.delete(e.pointerId);
-    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) input.pendingShots = (input.pendingShots || 0) + 1; fireMouse = false; } // queue one shot per still-click; weapon drains when cooldown allows
+    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) { input.pendingShots = (input.pendingShots || 0) + 1; input.tapT.push(e.timeStamp || performance.now()); } fireMouse = false; } // queue one shot per still-click; weapon drains when cooldown allows
     sync();
   }
   window.addEventListener('pointerup', endPointer);

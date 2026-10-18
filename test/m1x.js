@@ -18,18 +18,18 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
     if (calm) await p.evaluate(() => { SS.walking = false; SS.player.health = 1e6; }); await p.waitForTimeout(1500); return { p, ctx }; }
   const shots = (p) => p.evaluate(() => SS.weapon.shotsFired);
-  if (want('A') || want('B') || want('C') || want('D')) { const { p, ctx } = await start(true);
+  if (want('A') || want('B') || want('C') || want('D') || want('F')) { const { p, ctx } = await start(true);
     await p.evaluate(() => { window.__freezeCam = true; SS.weapon.ammo = 30; SS.weapon.reserve = 200; });
     // A: drop a kit 7 m ahead, take its screen spot as drawn, click there ~1 s later (fly-in started at 0.6 s)
     if (want('A')) { res.A = [];
-      for (const lateMs of [900, 1700]) { const pos = await p.evaluate(() => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 7; v.z -= Math.cos(y) * 7; v.y = 0;
-          window.__slowMs = 200; SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0;
-          const it = SS.stakes.items[SS.stakes.items.length - 1]; const w = it.g.position.clone(); w.y = 0.45; w.applyMatrix4(SS.lastVP); /* the drop is clamped to the street */ return [(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight]; });
+      for (const [slow, lateMs] of [[200, 900], [200, 1700], [1000, 1500], [1000, 3200]]) { const pos = await p.evaluate((slow) => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 7; v.z -= Math.cos(y) * 7; v.y = 0;
+          window.__slowMs = slow; SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0;
+          const it = SS.stakes.items[SS.stakes.items.length - 1]; const w = it.g.position.clone(); w.y = 0.45; w.applyMatrix4(SS.lastVP); /* the drop is clamped to the street */ return [(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight]; }, slow);
         await p.waitForTimeout(lateMs); const state = await p.evaluate((pos) => ({ items: SS.stakes.items.length, fly: SS.stakes.items.length ? +(SS.stakes.items[0].fly || 0).toFixed(2) : null, dry: SS.stakes.pickAt(pos[0], pos[1], true) }), pos);
         await p.mouse.click(pos[0], pos[1]); await p.waitForTimeout(1800);
         const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, tapped: SS.pickupsTapped | 0, late: SS.pickupsLateTaps | 0 }));
-        Object.assign(r, { lateMs, pos: pos.map(Math.round), atClick: state }); res.A.push(r);
-        if (r.fired !== 0) fail.push('A: a click on the medkit ' + lateMs + ' ms after it was drawn FIRED ' + r.fired + ' ' + JSON.stringify(r));
+        Object.assign(r, { fps: Math.round(1000 / slow), lateMs, pos: pos.map(Math.round), atClick: state }); res.A.push(r);
+        if (r.fired !== 0) fail.push('A: a click on the medkit (' + Math.round(1000 / slow) + ' fps) ' + lateMs + ' ms after it was drawn FIRED ' + r.fired + ' ' + JSON.stringify(r));
         if (r.taken < 1) fail.push('A: the medkit was not collected ' + JSON.stringify(r));
         await p.evaluate(() => { window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(400); }
       // control: a click well away from any drop still fires one round
@@ -53,6 +53,12 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     // D: a still hold at 5 fps still auto-fires (feel)
     if (want('D')) { await p.evaluate(() => { window.__slowMs = 200; SS.weapon.ammo = 30; }); await p.waitForTimeout(600); const f0 = await shots(p); await p.mouse.move(420, 200); await p.mouse.down(); await p.waitForTimeout(1600); await p.mouse.up(); await p.waitForTimeout(800);
       res.D = { fired: (await shots(p)) - f0 }; await p.evaluate(() => { window.__slowMs = 0; }); if (res.D.fired < 3) fail.push('D: a 1.6 s still hold at 5 fps fired only ' + res.D.fired); }
+    // F (m1y): a click held back by a reload at ~1 fps expires by event time instead of firing seconds later (mid-drag)
+    if (want('F')) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; SS.weapon.ammo = 10; SS.input.reloadPressed = true; }); await p.waitForTimeout(2500);
+      const f0 = await shots(p); const rl = await p.evaluate(() => !!SS.weapon.reloading); await p.mouse.click(260, 140);
+      await p.waitForFunction(() => !SS.weapon.reloading, null, { timeout: 40000, polling: 300 }).catch(() => {}); await p.waitForTimeout(2500);
+      res.F = await p.evaluate((f0) => ({ fired: SS.weapon.shotsFired - f0, expired: SS.input.tapsExpired | 0, ammo: SS.weapon.ammo }), f0); res.F.reloadingAtClick = rl; await p.evaluate(() => { window.__slowMs = 0; });
+      if (rl && res.F.fired) fail.push('F: a click made during a reload at 1 fps fired ' + res.F.fired + ' round(s) after the reload ' + JSON.stringify(res.F)); if (!rl) fail.push('F: reload did not start'); }
     await ctx.close(); }
   // E: pacing, real spawns (no calm)
   if (want('E')) { const { p, ctx } = await start(false);

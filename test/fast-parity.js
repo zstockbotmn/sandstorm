@@ -1,14 +1,14 @@
 // Fast-mode parity: the same seeded street + the same fighter/camera poses give IDENTICAL visibility-gate, on-screen,
 // player hit-ray and enemy-shot (hit / damage / blocked) outcomes in normal and ?test=fast mode. Each mode samples in one
 // synchronous page call (no frame can interleave); Math.random is pinned inside it so the shot roll is the same.
-// A third run in ?test=fast&norender (frames skip the draw) must match too, including 'frame-driven' poses where the
+// (m1y: the ?norender third run was removed with the mode) A third run in ?test=fast&norender (frames skip the draw) must match too, including 'frame-driven' poses where the
 // game's own frames (not the test) pick the LOD levels for the camera before sampling.
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const D = path.resolve(__dirname, '../dist'); const PORT = 8823;
 const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary' };
 const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(PORT);
-const QS = (process.env.SS_QS || '&q=low').replace(/&test=fast|&norender/g, '');
+const QS = (process.env.SS_QS || '&q=low').replace(/&test=fast/g, '');
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 900000 });
   const res = {}, fail = [];
   async function sample(extra) { const t0 = Date.now(); const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true }); const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e).slice(0, 160)));
@@ -45,18 +45,15 @@ const QS = (process.env.SS_QS || '&q=low').replace(/&test=fast|&norender/g, '');
       } finally { Math.random = R; SS.distance = keep.d; SS.startedAt = keep.st; SS.simTime = keep.sim; }
       return { dbg: window.__dbg || [], rows, blocked: (SS.blindHitsBlocked | 0) - bg, offView: (SS.offViewShots | 0) - fv, fast: !!SS.fast, norender: !!SS.norender, override: !!SS.scene && !!SS.scene.overrideMaterial, buf: [document.querySelector('canvas').width, document.querySelector('canvas').height], inner: [innerWidth, innerHeight] }; });
     out.fd = fd; out.drawsPerS = rf; out.ms = Date.now() - t0; out.errs = errs; await ctx.close(); return out; }
-  res.normal = await sample(''); res.fast = await sample('&test=fast'); res.norender = await sample('&test=fast&norender');
+  res.normal = await sample(''); res.fast = await sample('&test=fast');
   const diff = []; res.normal.rows.forEach((r, i) => { const f = res.fast.rows[i]; if (JSON.stringify(r) !== JSON.stringify(f)) diff.push({ normal: r, fast: f }); });
-  const diffN = []; res.normal.rows.forEach((r, i) => { const f = res.norender.rows[i]; if (JSON.stringify(r) !== JSON.stringify(f)) diffN.push({ normal: r, norender: f }); });
-  const diffF = []; res.normal.fd.forEach((r, i) => { for (const k of ['fast', 'norender']) { const f = res[k].fd[i]; const lodBad = [...r[5]].some((c, j) => c !== '-' && f[5][j] !== '-' && c !== f[5][j]); if (JSON.stringify(r.slice(0, 5)) !== JSON.stringify(f.slice(0, 5)) || lodBad || r[5].length !== f[5].length) diffF.push({ mode: k, normal: r.slice(0, 5), other: f.slice(0, 5), lodBad }); } });
-  if (diffN.length) fail.push('norender changed ' + diffN.length + ' of ' + res.normal.rows.length + ' outcomes: ' + JSON.stringify(diffN.slice(0, 4)));
+  const diffF = []; res.normal.fd.forEach((r, i) => { for (const k of ['fast']) { const f = res[k].fd[i]; const lodBad = [...r[5]].some((c, j) => c !== '-' && f[5][j] !== '-' && c !== f[5][j]); if (JSON.stringify(r.slice(0, 5)) !== JSON.stringify(f.slice(0, 5)) || lodBad || r[5].length !== f[5].length) diffF.push({ mode: k, normal: r.slice(0, 5), other: f.slice(0, 5), lodBad }); } });
   if (diffF.length) fail.push('frame-driven poses differ (' + diffF.length + '): ' + JSON.stringify(diffF.slice(0, 4)));
-  if (!res.norender.norender || res.norender.drawsPerS > 0) fail.push('norender not active (flag ' + res.norender.norender + ', ' + res.norender.drawsPerS + ' draws/s)'); if (res.fast.norender || res.normal.norender) fail.push('norender on without ?norender');
   res.summary = { n: res.normal.rows.length, diffs: diff.length, sees: res.normal.rows.filter((r) => r[4]).length, hits: res.normal.rows.filter((r) => r[6] > 0).length, onScreen: res.normal.rows.filter((r) => r[3]).length,
-    msNormal: res.normal.ms, msFast: res.fast.ms, msNoRender: res.norender.ms, fdN: res.normal.fd.length, fdSees: res.normal.fd.filter((r) => r[4]).length, draws: [res.normal.drawsPerS, res.fast.drawsPerS, res.norender.drawsPerS], bufNormal: res.normal.buf, bufFast: res.fast.buf, fastFlag: res.fast.fast, fastOverride: res.fast.override, normalFlag: res.normal.fast };
+    msNormal: res.normal.ms, msFast: res.fast.ms, fdN: res.normal.fd.length, fdSees: res.normal.fd.filter((r) => r[4]).length, draws: [res.normal.drawsPerS, res.fast.drawsPerS], bufNormal: res.normal.buf, bufFast: res.fast.buf, fastFlag: res.fast.fast, fastOverride: res.fast.override, normalFlag: res.normal.fast };
   if (diff.length) fail.push('fast mode changed ' + diff.length + ' of ' + res.normal.rows.length + ' outcomes: ' + JSON.stringify(diff.slice(0, 6)));
   if (!res.fast.fast || !res.fast.override) fail.push('fast mode not active under the harness'); if (res.normal.fast) fail.push('fast mode on without ?test=fast');
   if (!res.summary.sees || !res.summary.hits || res.summary.sees === res.summary.n) fail.push('scenario not exercising the gate (sees ' + res.summary.sees + '/' + res.summary.n + ', hits ' + res.summary.hits + ')');
-  for (const k of ['normal', 'fast', 'norender']) if (res[k].errs.length) fail.push(k + ' page errors: ' + res[k].errs.join(' | '));
+  for (const k of ['normal', 'fast']) if (res[k].errs.length) fail.push(k + ' page errors: ' + res[k].errs.join(' | '));
   console.log(JSON.stringify({ dbgN: res.normal.dbg, dbgF: res.fast.dbg, summary: res.summary, diffs: diff.slice(0, 10), fail })); console.log(fail.length ? 'PARITY FAIL ' + fail[0].slice(0, 200) : 'PARITY PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
 })().catch((e) => { console.log('PARITY FAIL exception ' + e.message); process.exit(1); });

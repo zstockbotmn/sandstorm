@@ -246,6 +246,7 @@ canvas {
   pointer-events: none;
 }
 
+#health-num { position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%); font: 800 13px system-ui, sans-serif; color: #ff6a5a; text-shadow: 0 1px 2px #000; }
 #health > div {
   height: 100%;
   width: 100%;

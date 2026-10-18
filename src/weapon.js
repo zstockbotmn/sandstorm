@@ -306,11 +306,16 @@ export function createWeapon(camera, world, scene) {
     // m1w: shots only in a frame's FIRST sim step: catch-up steps 2-4 run after fighters moved, so a shot there tested
     // positions the player never saw (scoped misses on moving fighters at low fps). Timers/recoil still run every step.
     if (window.SS && (window.SS.subStep | 0) > 0) { pushAmmo(); return; }
+    // m1y: queued clicks expire by EVENT time: older than max(900 ms, 2 frames) they no longer fire (a click held back by
+    // a reload/cooldown or 1-2 s of input lag fired late, mid-drag). Only clicks queued by input.js carry times.
+    if (input.tapT && input.tapT.length) { const ttl = Math.max(900, 2000 * lastGap), nowE = performance.now();
+      while (input.tapT.length && (input.pendingShots | 0) > 0 && nowE - input.tapT[0] > ttl) { input.tapT.shift(); input.pendingShots -= 1; input.tapsExpired = (input.tapsExpired | 0) + 1; }
+      if ((input.pendingShots | 0) <= 0) input.tapT.length = 0; }
     // Drain queued still-clicks one per cooldown slot so rapid taps never drop every other shot.
     // m1v: at low fps every queued click fires this frame (each was a separate real-time click; one per frame dropped/lagged them)
-    { const slowFrame = lastGap > SHOT_INTERVAL * 2; for (let n = 0; n < 8 && (input.pendingShots | 0) > 0 && !weapon.reloading && weapon.ammo > 0 && (cooldown <= 0 || (slowFrame && n > 0)); n++) { input.pendingShots -= 1; shoot(input); } }
+    { const slowFrame = lastGap > SHOT_INTERVAL * 2; for (let n = 0; n < 8 && (input.pendingShots | 0) > 0 && !weapon.reloading && weapon.ammo > 0 && (cooldown <= 0 || (slowFrame && n > 0)); n++) { input.pendingShots -= 1; if (input.tapT && input.tapT.length > input.pendingShots) input.tapT.shift(); shoot(input); } }
     if ((input.pendingShots | 0) > 0 && weapon.ammo <= 0 && !weapon.reloading) {
-      input.pendingShots = 0; // empty mag: drop queue (reload will start)
+      input.pendingShots = 0; if (input.tapT) input.tapT.length = 0; // empty mag: drop queue (reload will start)
     }
     if (input.pollFire) input.pollFire();
     // Swallow the Play press (tester: clicking Play fired a round): nothing fires in the first 500 ms of a run.

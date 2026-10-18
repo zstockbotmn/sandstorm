@@ -24,9 +24,9 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
   // so the old current-position test missed and the click FIRED (tester 2/2). Every drop keeps a short trail of where it
   // was drawn; a tap on any recent spot of a live, flying or just-collected kit is a pickup tap: it collects (if still
   // there) and never fires.
-  const TRAIL_S = 2.5, recent = []; // s: a tap may land up to ~2 s after the frame the player saw (1-5 fps + input lag)
+  const TRAIL_S = 2.5, recent = []; const trailMs = () => Math.max(TRAIL_S * 1000, 4.5 * ((window.SS && window.SS.input && window.SS.input.gapMs) || 0)); // m1y: >= 4.5 frames at ~1 fps // s: a tap may land up to ~2 s after the frame the player saw (1-5 fps + input lag)
   function nearTrail(trail, VP, W, H, cx, cy, now) { let best = 1e9;
-    for (let j = trail.length - 1; j >= 0; j--) { const q = trail[j]; if (now - q.t > TRAIL_S * 1000) break;
+    for (let j = trail.length - 1; j >= 0; j--) { const q = trail[j]; if (now - q.t > trailMs()) break;
       for (const y of [0.16, 0.45, 0.75]) { _pp.set(q.x, q.y + y * q.s, q.z); if (q.vp) _pp.applyMatrix4(_vpm.fromArray(q.vp)); else if (VP) _pp.applyMatrix4(VP); else _pp.project(camera); if (_pp.z <= -1 || _pp.z >= 1) continue;
         best = Math.min(best, Math.hypot((_pp.x + 1) / 2 * W - cx, (1 - _pp.y) / 2 * H - cy)); } }
     return best; }
@@ -37,7 +37,7 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
         best = Math.min(best, Math.hypot((_pp.x + 1) / 2 * W - cx, (1 - _pp.y) / 2 * H - cy)); }
       if (it.trail) best = Math.min(best, nearTrail(it.trail, VP, W, H, cx, cy, now)); bestAll = Math.min(bestAll, best);
       if (!dry && best <= R) { take(it); gone(it); scene.remove(it.g); items.splice(i, 1); if (window.SS) window.SS.pickupsTapped = (window.SS.pickupsTapped | 0) + 1; return true; } }
-    for (let i = recent.length - 1; i >= 0; i--) { const r = recent[i]; if (now - r.t > TRAIL_S * 1000) { recent.splice(i, 1); continue; }
+    for (let i = recent.length - 1; i >= 0; i--) { const r = recent[i]; if (now - r.t > trailMs()) { recent.splice(i, 1); continue; }
       const best = nearTrail(r.trail, VP, W, H, cx, cy, now); bestAll = Math.min(bestAll, best);
       if (!dry && best <= R) { if (window.SS) window.SS.pickupsLateTaps = (window.SS.pickupsLateTaps | 0) + 1; return true; } } // already collected: just swallow the tap
     return dry ? { best: Math.round(bestAll), R: Math.round(R), n: items.length, recent: recent.length } : false; }
@@ -45,7 +45,7 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
   // must be projected with the camera it was seen through). Pushed once per frame, before this frame moves the kit.
   const _vpm = new THREE.Matrix4();
   function trailPush(it) { if (window.SS && (window.SS.subStep | 0) > 0) return; const VP = window.SS && window.SS.lastVP; const tr = it.trail || (it.trail = []); const p = it.g.position;
-    tr.push({ x: p.x, y: p.y, z: p.z, s: it.g.scale.x, t: performance.now(), vp: VP ? VP.toArray(new Float32Array(16)) : null }); while (tr.length > 150 || (tr.length && performance.now() - tr[0].t > TRAIL_S * 1000)) tr.shift(); }
+    tr.push({ x: p.x, y: p.y, z: p.z, s: it.g.scale.x, t: performance.now(), vp: VP ? VP.toArray(new Float32Array(16)) : null }); while (tr.length > 150 || (tr.length && performance.now() - tr[0].t > trailMs())) tr.shift(); }
   function gone(it) { if (it.trail && it.trail.length) recent.push({ trail: it.trail, t: performance.now() }); if (recent.length > 8) recent.shift(); }
   function drop(kind, pos) {
     const g = new THREE.Group(); const box = new THREE.Mesh(geo, mats[kind]); box.position.y = 0.16; box.castShadow = true; g.add(box);
