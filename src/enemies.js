@@ -1956,7 +1956,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const alive = aliveCount();
     const dNow = window.SS ? window.SS.distance : 0;
     if (burstIndex === 0 && window.SS && window.SS.running) { // m1x: opening quiet walk (real time, capped per frame)
-      const nr = performance.now(); quietRunT += quietRealAt ? Math.min(0.5, (nr - quietRealAt) / 1000) : 0; quietRealAt = nr;
+      const nr = performance.now(); quietRunT += quietRealAt ? Math.min(2.0, (nr - quietRealAt) / 1000) : 0; /* m1z: cap 2 s/frame (was 0.5: at 0.6 fps the 24 s quiet walk took ~77 s of wall time) - a tab switch still cannot skip it */ quietRealAt = nr;
       const k = FIRST_CONTACT_S > APPROACH_S ? Math.max(0, Math.min(1, (quietRunT - APPROACH_S) / (FIRST_CONTACT_S - APPROACH_S))) : 1;
       window.SS.approach = quietRunT >= APPROACH_S ? k : 0; window.SS.quietRunT = quietRunT;
       if (!radioWarned && FIRST_CONTACT_S > 0 && quietRunT >= FIRST_CONTACT_S - RADIO_WARN_S) { radioWarned = true; window.SS.radioWarnAt = performance.now();

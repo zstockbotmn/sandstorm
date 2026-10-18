@@ -26,7 +26,7 @@ export function createInput(canvas) {
   input.applyAim = function applyAim(dt) {
     if (kia()) { aimDX = aimDY = 0; input.pendingShots = 0; input.fire = false; endHold(); return; }
     const now = performance.now();
-    const rdt = Math.min(0.25, Math.max(0, (now - (input._aimT || now)) / 1000)); input._aimT = now; if (rdt > 0.002) input.gapMs = input.gapMs ? input.gapMs * 0.7 + rdt * 300 : rdt * 1000; // m1x: frame gap EMA (real ms)
+    const rdt = Math.min(0.25, Math.max(0, (now - (input._aimT || now)) / 1000)); input._aimT = now; { const g = Math.min(5, Math.max(0, (now - (input._gapT || now)) / 1000)); input._gapT = now; if (g > 0.002) input.gapMs = input.gapMs ? input.gapMs * 0.7 + g * 300 : g * 1000; } // m1x: frame gap EMA (real ms). m1z: from the UNCAPPED gap (was the 0.25 s aim cap: gapMs never passed 250 ms, so the kit tap trail was 2.5 s at 0.6 fps - a tap 1-2 s after a 1.6 s frame missed the kit and fired)
     if (input.scope !== input._lastScope) { input._lastScope = input.scope; aimDX = aimDY = 0; } // m1u: hip-rate deltas still queued must not land zoomed (overshoot)
     if (!aimDX && !aimDY) return;
     // FPS-independent: queued deltas drain on a real-time exponential (tau 35 ms), so aim speed is the same at 10 or 60 fps

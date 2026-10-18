@@ -12,9 +12,9 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
 const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M1X.split(',') : null; const want = (k) => !ONLY || ONLY.includes(k);
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: 1200000 });
   const res = {}, fail = [];
-  const slowRaf = () => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms && !window.__inSlow) { window.__inSlow = true; const t0 = performance.now(); while (performance.now() - t0 < ms) {} setTimeout(() => { window.__inSlow = false; }, 0); } cb(t); }); };
-  async function start(calm) { const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }); const p = await ctx.newPage(); await p.addInitScript(slowRaf); p.on('pageerror', (e) => (res.pageErrors = res.pageErrors || []).push(String(e).slice(0, 160)));
-    await p.goto('http://127.0.0.1:' + PORT + '/?seed=7' + (calm ? '&calm=1' : '') + QS); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+  const slowRaf = () => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms && !window.__inSlow) { window.__inSlow = true; const t0 = performance.now(); while (performance.now() - t0 < ms) {} setTimeout(() => { window.__inSlow = false; }, 0); } if (window.__preFrame && t !== window.__pfT) { window.__pfT = t; try { window.__preFrame(); } catch (_) {} } cb(t); }); };
+  async function start(calm, qs) { const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }); const p = await ctx.newPage(); await p.addInitScript(slowRaf); p.on('pageerror', (e) => (res.pageErrors = res.pageErrors || []).push(String(e).slice(0, 160)));
+    await p.goto('http://127.0.0.1:' + PORT + '/?seed=7' + (calm ? '&calm=1' : '') + (qs || '') + QS); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
     if (calm) await p.evaluate(() => { SS.walking = false; SS.player.health = 1e6; }); await p.waitForTimeout(1500); return { p, ctx }; }
   const shots = (p) => p.evaluate(() => SS.weapon.shotsFired);
@@ -32,6 +32,27 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
         if (r.fired !== 0) fail.push('A: a click on the medkit (' + Math.round(1000 / slow) + ' fps) ' + lateMs + ' ms after it was drawn FIRED ' + r.fired + ' ' + JSON.stringify(r));
         if (r.taken < 1) fail.push('A: the medkit was not collected ' + JSON.stringify(r));
         await p.evaluate(() => { window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(400); }
+      // m1z (tester, 0.6 fps: health refilled AND the mag dropped 18->17): taps on the kit's spot in a LATER frame of its
+      // fly-in (the kit moves toward the player), 1-2 s after that frame was drawn - often after the auto-collect already took
+      // it, while the tap is still queued in the event loop. Ammo and shotsFired must not change at 1 fps and 0.6 fps.
+      res.A2 = [];
+      for (const [slow, frameIx, lagMs] of [[1000, 3, 1200], [1000, 4, 2000], [1600, 3, 1500], [1600, 4, 1500], [1600, 4, 2000], [1600, 2, 1000]]) {
+        await p.evaluate((slow) => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 6; v.z -= Math.cos(y) * 6; v.y = 0; window.__slowMs = slow;
+          SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0; window.__fr = [];
+          const it = SS.stakes.items[SS.stakes.items.length - 1]; window.__kitFr = () => { if (!SS.stakes.items.includes(it)) { window.__fr.push(null); return; } const w = it.g.position.clone(); w.y += 0.45 * it.g.scale.x; w.applyMatrix4(SS.lastVP); window.__fr.push([(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight, w.z]); };
+          const prev = window.__preFrame; window.__preFrame = () => { if (prev) prev(); if (window.__kitFr) window.__kitFr(); }; window.__prevPF = prev; }, slow);
+        await p.waitForFunction((k) => window.__fr.length > k, frameIx, { timeout: 60000, polling: 200 }); const pos = await p.evaluate((k) => window.__fr[k], frameIx); await p.waitForTimeout(lagMs);
+        const atClick = await p.evaluate(() => SS.stakes.items.length); let clicked = false;
+        if (pos && pos[2] > -1 && pos[2] < 1 && pos[0] >= 0 && pos[0] < 844 && pos[1] >= 0 && pos[1] < 390) { await p.mouse.click(pos[0], pos[1]); clicked = true; }
+        await p.waitForTimeout(Math.max(4000, slow * 4));
+        const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, gapMs: Math.round(SS.input.gapMs) }));
+        Object.assign(r, { fps: +(1000 / slow).toFixed(1), frameIx, lagMs, pos: pos && pos.slice(0, 2).map(Math.round), clicked, kitLeftAtClick: atClick }); res.A2.push(r);
+        if (clicked && (r.fired !== 0 || r.ammo[0] !== r.ammo[1])) fail.push('A2: a tap on the flying medkit (' + r.fps + ' fps, frame ' + frameIx + ', ' + lagMs + ' ms late) cost ammo ' + JSON.stringify(r));
+        if (r.taken < 1) fail.push('A2: the medkit was not collected ' + JSON.stringify(r));
+        await p.evaluate(() => { window.__preFrame = window.__prevPF; window.__kitFr = null; window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(600); }
+      if (!res.A2.some((r) => r.clicked && r.kitLeftAtClick === 0)) fail.push('A2: no case tapped after the auto-collect took the kit (tap pending while collected) ' + JSON.stringify(res.A2.map((r) => [r.clicked, r.kitLeftAtClick])));
+      // and ammo is untouched in the A cases too
+      for (const r of res.A) if (r.ammo[0] !== r.ammo[1]) fail.push('A: medkit tap changed ammo ' + JSON.stringify(r));
       // control: a click well away from any drop still fires one round
       const f0 = await shots(p); await p.mouse.click(200, 120); await p.waitForTimeout(1500); res.A_ctrl = (await shots(p)) - f0;
       if (res.A_ctrl !== 1) fail.push('A: a plain canvas click fired ' + res.A_ctrl + ' rounds (want 1)'); }
@@ -79,6 +100,21 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
       if (rl && res.F.fired) fail.push('F: a click made during a reload at 1 fps fired ' + res.F.fired + ' round(s) after the reload ' + JSON.stringify(res.F)); if (!rl && !res.F.expired) fail.push('F: not exercised (no reload seen, no click expired) ' + JSON.stringify(res.F)); }
     await ctx.close(); }
   // E: pacing, real spawns (no calm)
+  // R (m1z, tester at 0.6 fps never saw the radio line in 45+ s): default path (no calm) at 0.6 fps with ?contact=14. The
+  // '[RADIO] Contact reported ahead' line must appear before first contact, on the wall clock (not frame count), and stay
+  // fully visible for >= 5 rendered frames AND >= 6 s real time; nothing may clear it early.
+  if (want('R')) { const { p, ctx } = await start(false, '&contact=14');
+    await p.evaluate(() => { SS.player.health = 1e6; window.__slowMs = 1600; const t0 = performance.now(); const R = window.__R = { t0, shownT: 0, visFrames: 0, visFirst: 0, visLast: 0, contactT: 0, frames: 0, text: '' };
+      window.__preFrame = () => { R.frames++; const now = performance.now() - t0; const el = document.querySelector('.radio-warn');
+        if (el) { const op = +getComputedStyle(el).opacity; if (!R.shownT) { R.shownT = now; R.text = el.textContent; } if (op > 0.9) { R.visFrames++; if (!R.visFirst) R.visFirst = now; R.visLast = now; } }
+        if (!R.contactT && (SS.enemies.list || []).some((e) => e.alive)) R.contactT = now; }; });
+    const t0 = Date.now(); while (Date.now() - t0 < 150000) { const R = await p.evaluate(() => window.__R); if (R.contactT && R.visLast && R.contactT - R.visLast > 3000) break; if (R.contactT && Date.now() - t0 > 100000) break; await p.waitForTimeout(2000); }
+    res.R = await p.evaluate(() => { window.__preFrame = null; window.__slowMs = 0; const R = window.__R; return { ...R, visMs: Math.round(R.visLast - R.visFirst), shownT: Math.round(R.shownT), contactT: Math.round(R.contactT), quietRunT: +(SS.quietRunT || 0).toFixed(1), gone: SS.hud.radioGoneAt ? Math.round(SS.hud.radioGoneAt - SS.hud.radioShownAt) : null }; });
+    const R = res.R; if (!R.shownT) fail.push('R: radio warning never shown at 0.6 fps ' + JSON.stringify(R));
+    else { if (!/Contact reported ahead/.test(R.text)) fail.push('R: wrong radio text ' + R.text); if (R.contactT && R.shownT > R.contactT) fail.push('R: radio warning after first contact ' + JSON.stringify(R));
+      if (R.visFrames < 5) fail.push('R: radio warning visible on only ' + R.visFrames + ' frames at 0.6 fps (want >= 5)'); if (R.gone != null && R.gone < 6000) fail.push('R: radio warning removed after ' + R.gone + ' ms (want >= 6 s)');
+      if (R.shownT > (14 - 5) * 1000 * 1.6) fail.push('R: radio warning at ' + R.shownT + ' ms wall (contact=14: want ~9 s; frame-count based?)'); }
+    await ctx.close(); }
   if (want('E')) { const { p, ctx } = await start(false);
     await p.evaluate(() => { SS.player.health = 1e6; window.__E = { warnT: 0, firstShotT: 0, firstEnemyT: 0, maxApproach: 0 }; const t0 = SS.startedAt || performance.now(); window.__Et0 = t0;
       setInterval(() => { const E = window.__E, now = performance.now() - t0; if (!E.warnT && SS.radioWarnAt) E.warnT = SS.radioWarnAt - t0; if (!E.firstShotT && (SS.enemyShots | 0) > 0) E.firstShotT = now;
