@@ -199,6 +199,7 @@ function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
   const steps = raw > 0 ? Math.min(4, Math.max(1, Math.ceil(raw / 0.05))) : 1;
   const dt = raw > 0 ? Math.min(0.05, raw / steps) : 0;
   const slow = (window.SS.slowmoUntil || 0) > performance.now() ? 0.3 : 1; window.SS.timeScale = slow;
+  window.SS.lastSimDt = dt * slow * steps; // tests: this frame's total sim time (a tracking aim leads by about this much)
   try { for (let i = 0; i < steps; i++) { window.SS.subStep = i; simStep(dt * slow); } window.SS.subStep = 0; }
   catch (err) { // never freeze HUD/render on a sim error; report once per message
     const k = String(err && err.message); if (!frameErrs.has(k)) { frameErrs.add(k); console.error('[sandstorm] sim step failed:', err && (err.stack || err)); (window.SS.errors = window.SS.errors || []).push('sim:' + k); } }

@@ -66,8 +66,10 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     if (want('F')) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; SS.weapon.ammo = 10; SS.weapon.reserve = 200; SS.input.reloadPressed = true; }); await p.waitForFunction(() => SS.weapon.reloading, null, { timeout: 8000, polling: 100 }).catch(() => {});
       const f0 = await shots(p); const rl = await p.evaluate(() => !!SS.weapon.reloading); await p.mouse.click(260, 140);
       await p.waitForFunction(() => !SS.weapon.reloading, null, { timeout: 40000, polling: 300 }).catch(() => {}); await p.waitForTimeout(2500);
-      res.F = await p.evaluate((f0) => ({ fired: SS.weapon.shotsFired - f0, expired: SS.input.tapsExpired | 0, ammo: SS.weapon.ammo }), f0); res.F.reloadingAtClick = rl; await p.evaluate(() => { window.__slowMs = 0; });
-      if (rl && res.F.fired) fail.push('F: a click made during a reload at 1 fps fired ' + res.F.fired + ' round(s) after the reload ' + JSON.stringify(res.F)); if (!rl) fail.push('F: reload did not start'); }
+      res.F = await p.evaluate((f0) => ({ fired: SS.weapon.shotsFired - f0, expired: SS.input.tapsExpired | 0, ammo: SS.weapon.ammo }), f0); res.F.reloadingAtClick = rl;
+      { const g0 = await shots(p); await p.mouse.click(260, 140); await p.waitForTimeout(4000); res.F.plainClick1fps = (await shots(p)) - g0; if (res.F.plainClick1fps !== 1) fail.push('F: a plain click at 1 fps fired ' + res.F.plainClick1fps + ' (want 1)'); }
+      await p.evaluate(() => { window.__slowMs = 0; });
+      if (rl && res.F.fired) fail.push('F: a click made during a reload at 1 fps fired ' + res.F.fired + ' round(s) after the reload ' + JSON.stringify(res.F)); if (!rl && !res.F.expired) fail.push('F: not exercised (no reload seen, no click expired) ' + JSON.stringify(res.F)); }
     await ctx.close(); }
   // E: pacing, real spawns (no calm)
   if (want('E')) { const { p, ctx } = await start(false);
