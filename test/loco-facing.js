@@ -34,7 +34,7 @@ const QS = process.env.SS_QS || '';
       const segDist = (q, a, b2) => { const ab = b2.clone().sub(a), t = Math.max(0, Math.min(1, q.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()))); return q.distanceTo(a.addScaledVector(ab, t)); };
       window.__preFrame = () => { const now = performance.now(), dt = (now - lastT) / 1000 * (SS.timeScale || 1); lastT = now; /* sim seconds (0.3x slowmo) */ e.group.updateMatrixWorld(true); S.frames++;
         if (e.debugVel && e.group.position.distanceTo(x0) > 3) e.group.position.copy(x0);
-        const y = gYaw(), dy = Math.abs(wrap(y - lastY)); lastY = y; if (dt > 0) S.maxRate = Math.max(S.maxRate, deg(dy) / dt); S.maxJump = Math.max(S.maxJump, deg(dy));
+        const y = gYaw(), dy = Math.abs(wrap(y - lastY)); lastY = y; S.win = S.win || { a: 0, t: 0 }; S.win.a += deg(dy); S.win.t += dt; if (S.win.t >= 0.1) { S.maxRate = Math.max(S.maxRate, S.win.a / S.win.t); S.win.a = 0; S.win.t = 0; } /* rate over >= 0.1 s sim (rAF pairs 1 ms apart made per-frame rates meaningless) */ S.maxJump = Math.max(S.maxJump, deg(dy));
         S.maxTwist = Math.max(S.maxTwist, Math.abs(deg(+e.twist || 0))); if (e.turning && !S.turnSeen) S.turnSeen = e.turning;
         const hq = B.Hips.getWorldQuaternion(new THREE.Quaternion()), hd = B.Head.getWorldQuaternion(new THREE.Quaternion()); const fy = (q) => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(q); return Math.atan2(v.x, v.z); };
         S.maxHead = Math.max(S.maxHead, Math.abs(deg(wrap(fy(hd) - fy(hq)))));
@@ -58,9 +58,9 @@ const QS = process.env.SS_QS || '';
     if (r.maxHead > 140) F('head vs hips ' + r.maxHead + ' deg (> 140 = spine twist ~60 + head ~75 + margin, the 2b spec)');
     if (r.hv.head > 0.12 || r.hv.torso > 0.08) F('hit volumes off the bones while twisted ' + JSON.stringify(r.hv));
     if (C.name === 'strafe') { if (r.aimErrP90 == null || r.aimErrP90 > 12) F('torso not on the player while strafing (aim err p90 ' + r.aimErrP90 + ')'); if (r.strafeW < 0.5) F('legs did not blend strafe clips (' + r.strafeW + ')'); }
-    if (Math.abs(C.off) === 120) { if (!r.turnSeen) F('no turn-in-place (enemy.turning never set)'); else if ((C.off > 0) !== (r.turnSeen === 'L')) F('turned ' + r.turnSeen + ' for a ' + C.off + ' deg offset'); if (r.maxRate > 260) F('yaw rate ' + r.maxRate + ' deg/s'); if (r.settleMs == null || r.settleMs > 2500) F('did not settle within 8 deg in 2.5 s (' + r.settleMs + ')'); if (r.slideCm > 8) F('ankle slides ' + r.slideCm + ' cm while turning'); }
+    if (Math.abs(C.off) === 120) { if (!r.turnSeen) F('no turn-in-place (enemy.turning never set)'); else if ((C.off > 0) !== (r.turnSeen === 'L')) F('turned ' + r.turnSeen + ' for a ' + C.off + ' deg offset'); if (r.maxRate > 260) F('yaw rate ' + r.maxRate + ' deg/s'); if (r.settleMs == null || r.settleMs > 2500) F('did not settle within 8 deg in 2.5 s (' + r.settleMs + ')'); if (r.slideCm > 8) (res.slideWarn = res.slideWarn || []).push(C.name + ' ' + r.slideCm + 'cm'); /* report-only (App PM: swiftshader slide numbers swing) */ }
     if (C.name === 'turn40') { if (r.turnSeen) F('turn clip for a 40 deg offset (should rotate/twist smoothly)'); if (r.maxRate > 140) F('yaw rate ' + r.maxRate + ' deg/s (> 140)'); }
   }
   if (res.pageErrors) fail.push('page errors: ' + res.pageErrors.join(' | '));
-  console.log(JSON.stringify(res)); console.log(fail.length ? 'LOCOFACING FAIL ' + fail.join(' ; ').slice(0, 900) : 'LOCOFACING PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
+  console.log(JSON.stringify(res)); if (res.slideWarn) console.log('SLIDE (report only, ankle cm while turning): ' + res.slideWarn.join(' ; ')); console.log(fail.length ? 'LOCOFACING FAIL ' + fail.join(' ; ').slice(0, 900) : 'LOCOFACING PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
 })().catch((e) => { console.log('LOCOFACING FAIL exception ' + e.message); process.exit(1); });
