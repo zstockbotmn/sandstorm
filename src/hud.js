@@ -166,12 +166,22 @@ export function createHud() {
   }
   function onTarget(on) { cross.classList.toggle('on-target', !!on); }
   // m1x: a priority radio line (pacing warning before first contact): bypasses the 4 s throttle, stays up longer
+  // m1z (tester at 0.6 fps never saw it): the line had the 2 s CSS fade of normal callouts, so it was transparent before a
+  // second frame was painted, and later callouts could evict it. It now stays fully visible until BOTH a minimum real
+  // time (6 s) and a minimum number of rendered frames (5) have passed, is never evicted by normal callouts, then fades.
+  const RADIO_MIN_MS = 6000, RADIO_MIN_FRAMES = 5;
   function radio(text, ms) {
     radioNext = performance.now() + 4000; radioLast = text;
     const line = document.createElement('div'); line.className = 'radio-line radio-warn'; line.textContent = '[RADIO] ' + text;
-    radioStack.appendChild(line); radioLines.push(line); while (radioLines.length > 2) radioLines.shift().remove();
-    setTimeout(() => { line.remove(); const i = radioLines.indexOf(line); if (i >= 0) radioLines.splice(i, 1); }, ms || 4200);
+    radioStack.appendChild(line); radioLines.push(line); evict();
+    const t0 = performance.now(), f0 = (window.SS && window.SS.frameN) | 0, minMs = Math.max(RADIO_MIN_MS, ms || 0);
+    hud.radioShownAt = t0; hud.radioText = text;
+    const done = () => { line.remove(); const i = radioLines.indexOf(line); if (i >= 0) radioLines.splice(i, 1); hud.radioGoneAt = performance.now(); hud.radioFrames = ((window.SS && window.SS.frameN) | 0) - f0; };
+    const check = () => { if (!line.isConnected) return; if (performance.now() - t0 >= minMs && (((window.SS && window.SS.frameN) | 0) - f0) >= RADIO_MIN_FRAMES) { line.classList.add('fade'); setTimeout(done, 900); } else setTimeout(check, 250); };
+    setTimeout(check, 250);
   }
+  // keep at most 2 lines; a priority (radio-warn) line is never the one evicted
+  function evict() { while (radioLines.length > 2) { const i = radioLines.findIndex((l) => !l.classList.contains('radio-warn')); const l = radioLines.splice(i >= 0 ? i : 0, 1)[0]; l.remove(); } }
   function callout(text) {
     const now = performance.now();
     if (now < radioNext || text === radioLast) return; // max one line per 4 s, never the same line twice in a row
@@ -181,7 +191,7 @@ export function createHud() {
     line.textContent = '[RADIO] ' + text;
     radioStack.appendChild(line);
     radioLines.push(line);
-    while (radioLines.length > 2) radioLines.shift().remove();
+    evict();
     setTimeout(() => {
       line.remove();
       const i = radioLines.indexOf(line);

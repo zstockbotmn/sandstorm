@@ -213,6 +213,9 @@ canvas {
   animation: radioFade 2s linear forwards;
 }
 
+#radio-callouts .radio-line.radio-warn { animation: none; opacity: 1; color: #f3f7c8; } /* m1z: held by JS for >= 6 s and >= 5 frames */
+#radio-callouts .radio-line.radio-warn.fade { opacity: 0; transition: opacity 0.8s linear; }
+
 @keyframes radioFade {
   0% { opacity: 1; }
   65% { opacity: 1; }
