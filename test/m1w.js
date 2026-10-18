@@ -10,7 +10,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
 const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1W ? process.env.SS_M1W.split(',') : null; const want = (k) => !ONLY || ONLY.includes(k);
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: 1200000 });
   const res = {}, fail = [];
-  const slowRaf = () => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { if (window.__preFrame) try { window.__preFrame(); } catch (_) {} const ms = window.__slowMs | 0; if (ms) { const t0 = performance.now(); while (performance.now() - t0 < ms) {} } cb(t); }); };
+  const slowRaf = () => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { if (window.__preFrame && t !== window.__pfT) { window.__pfT = t; try { window.__preFrame(); } catch (_) {} } const ms = window.__slowMs | 0; if (ms) { const t0 = performance.now(); while (performance.now() - t0 < ms) {} } cb(t); }); };
   async function start() { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true }); const p = await ctx.newPage(); await p.addInitScript(slowRaf); p.on('pageerror', (e) => (res.pageErrors = res.pageErrors || []).push(String(e).slice(0, 160)));
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1' + QS); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
@@ -57,10 +57,13 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1W ? process.env.SS_M
     Object.assign(res.D, await p.evaluate(() => { const c = SS.camera.position.clone(); window.__e = SS.debug.spawnEnemy('shifter'); const e = window.__e; let ok = null;
       for (const dz of [20, 18, 22, 24]) { for (const dx of [-1.5, 0, 1.5, -3, 3]) { SS.enemies.debugPose(e, c.x + dx, c.z - dz, 'idle'); e.group.updateMatrixWorld(true); const v = e.group.position.clone(); v.y += 1.25;
         const h = SS.weapon.firstHit(c.clone(), v.sub(c).normalize()); if (h && h.object.userData && h.object.userData.enemy === e) { ok = [dx, dz]; break; } } if (ok) break; }
-      e.health = 100; e.shootCd = 1e9; e.debugVel = new SS.camera.position.constructor(2.2, 0, 0); window.__x0 = e.group.position.x; window.__flip = setInterval(() => { const ex = e.group.position.x - window.__x0; if (Math.abs(ex) > 1.6) e.debugVel.x = -Math.sign(ex) * 2.2; }, 100);
+      e.health = 100; e.shootCd = 1e9; e.debugVel = new SS.camera.position.constructor(2.2, 0, 0); window.__x0 = e.group.position.x; window.__flip = 0; /* m1x: flips in the frame hook (the aim's lead must know the velocity) */
       SS.input.scope = true; SS.weapon.ammo = 30; window.__f0 = SS.weapon.shotsFired; window.__parts = []; const kill0 = SS.weapon.shotsHit;
-      // aim like a player: at the start of every frame, at where the LAST rendered frame showed the fighter's chest
-      window.__aim = 0; window.__preFrame = () => { const bm = SS.weapon.targets.find((m) => m.userData.enemy === e && m.userData.part === 'body'); const v = e.group.position.clone(); v.y += 1.2; if (bm) bm.getWorldPosition(v); v.sub(SS.camera.position);
+      // aim like a player tracking: the view set this frame is drawn with the fighter's NEW position, so lead by this frame's
+      // motion (v * sim dt); m1x shots fly along the view that was on screen, against the fighter as drawn in that frame
+      window.__aim = 0; window.__lastPF = 0; window.__preFrame = () => { const now = performance.now(), gap = window.__lastPF ? Math.min(0.2, (now - window.__lastPF) / 1000) : 0.016; window.__lastPF = now;
+        { const ex = e.group.position.x - window.__x0; if (Math.abs(ex) > 1.6 && Math.sign(e.debugVel.x) === Math.sign(ex)) e.debugVel.x = -e.debugVel.x; }
+        const bm = SS.weapon.targets.find((m) => m.userData.enemy === e && m.userData.part === 'body'); const v = e.group.position.clone(); v.y += 1.2; if (bm) bm.getWorldPosition(v); v.addScaledVector(e.debugVel, gap * (SS.timeScale || 1)); v.sub(SS.camera.position);
         SS.input.yaw = Math.atan2(v.x, -v.z); SS.input.pitch = -Math.atan2(v.y, Math.hypot(v.x, v.z)); }; window.__slowMs = 450; return { spot: ok }; }));
     await p.waitForTimeout(2500); const fb = await p.evaluate(() => { const r = document.querySelector('[data-ctl=fire]').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
     res.D.taps = [];
@@ -68,7 +71,10 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1W ? process.env.SS_M
       res.D.taps.push(await p.evaluate(() => ({ shot: SS.weapon.lastShot && SS.weapon.lastShot.hit ? { part: SS.weapon.lastShot.hit.part, enemy: SS.weapon.lastShot.hit.enemy, name: SS.weapon.lastShot.hit.name, d: +SS.weapon.lastShot.hit.point.distanceTo(SS.weapon.lastShot.origin).toFixed(1) } : 'none', ed: +window.__e.group.position.distanceTo(SS.camera.position).toFixed(1), ex: +window.__e.group.position.x.toFixed(2), cx: +SS.camera.position.x.toFixed(2), scope: SS.input.scope, fov: Math.round(SS.camera.fov), hp: window.__e.health, alive: window.__e.alive, last: SS.lastEnemyHit ? SS.lastEnemyHit.part : null, vx: +window.__e.debugVel.x.toFixed(1), moving: !!window.__e.moving }))); }
     await p.waitForTimeout(800); Object.assign(res.D, await p.evaluate(() => { window.__preFrame = null; clearInterval(window.__flip); window.__slowMs = 0; return { dead: !window.__e.alive, fired: SS.weapon.shotsFired - window.__f0, hits: SS.weapon.shotsHit }; }));
     if (!res.D.spot) fail.push('D: no clear spot'); else { const n = res.D.taps.length; if (!res.D.dead) fail.push('D: strafing fighter not killed by ' + n + ' scoped taps at 2 fps ' + JSON.stringify(res.D.taps));
-      else if (n > 2) fail.push('D: kill took ' + n + ' scoped taps (expected 2 torso hits) ' + JSON.stringify(res.D.taps)); if (res.D.fired !== n) fail.push('D: ' + res.D.fired + ' rounds for ' + n + ' taps'); }
+      else { // m1x (App PM): torso kills in 2, head in 1, limb hits deal less (a limb hit may add a tap); every tap must register
+        const parts = res.D.taps.map((t) => (t.shot && t.shot.enemy ? t.shot.part : 'miss')); res.D.parts = parts;
+        if (parts.includes('miss')) fail.push('D: a scoped tap on the strafing fighter did not register ' + JSON.stringify(res.D.taps));
+        if (parts.filter((q) => q === 'body').length > 2) fail.push('D: 3+ torso hits to kill (expected 2) ' + JSON.stringify(parts)); } if (res.D.fired !== n) fail.push('D: ' + res.D.fired + ' rounds for ' + n + ' taps'); }
     await p.context().close(); } catch (e) { fail.push('D exception ' + e.message); }
   // E
   if (want('E')) try { const { p } = await start(); res.E = {};

@@ -16,6 +16,7 @@ export const SEEN_PEEK_S = 0; // ordinary peeks from the same cover: only the in
 // cover grace: COVER_GRACE_S in cover.js
 const BODY_DMG = 55;
 const HEAD_DMG = 100;
+const LIMB_DMG = 34; // m1x (App PM): torso kills in 2, head in 1, limbs can take more (3)
 const MAX_HEALTH = 100;
 
 const _look = new THREE.Vector3();
@@ -887,7 +888,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function hitEnemy(enemy, part, point) {
     if (!enemy.alive) return;
-    const dmg = part === 'head' ? HEAD_DMG : BODY_DMG;
+    const dmg = part === 'head' ? HEAD_DMG : part === 'limb' ? LIMB_DMG : BODY_DMG;
     enemy.health -= dmg;
     // Fix 3: blood, damage and the hit marker all come from this one registered hit (spray is emitted with the marker below
     // or with the kill marker in kill()); nothing else spawns blood on a live enemy.
@@ -941,6 +942,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // m1w item 7: engaged fights were too lethal (a lone fighter took the player 100% -> ~5% in ~20 s). Incoming gunfire
   // is capped at DMG_CAP_HPS hp per second (token bucket, accrues on the slower of real and game time, holds one full
   // hit). A hit the bucket cannot pay for becomes a near miss (tracer/crack still), so the lone-enemy kill takes >= ~30 s.
+  const LOW_HP_CHANCE = 0.3; // m1x: hit-chance floor once a hit would be lethal and the player is exposed
   const DMG_CAP_HPS = 2.8, DMG_CAP_BURST = 22; let dmgBucket = DMG_CAP_BURST, dmgBucketR = 0, dmgBucketSim = 0;
   function dmgBudget(nowS, simS) { if (dmgBucketR) dmgBucket = Math.min(DMG_CAP_BURST, dmgBucket + DMG_CAP_HPS * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
   // m1v: warning for fire from outside the view - edge flash on the shooter's side + a supersonic crack
@@ -983,6 +985,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     chance *= 0.45 + 0.55 * grace;
     if (window.SS && window.SS.testAccuracy) chance *= window.SS.testAccuracy; // tests only: draw enough hits to exercise the sight check
     chance = Math.max(0.02, Math.min(0.85, chance));
+    // m1x (tester: held at a sliver ~30 s, felt fake): there was no explicit HP floor; the sliver came from the damage cap
+    // (a hit had to wait for a FULL 18-22 hp in the shared 2.8 hp/s bucket, ~7 s, even when 3 hp would kill) stacked with
+    // the low early hit chance. Once one hit would be lethal and the player is exposed (not ducked), a seen shooter's hit
+    // chance is at least LOW_HP_CHANCE and the lethal hit only needs the HP that is left in the bucket: low HP resolves
+    // within a few seconds of real fire (death, or survive by ducking into cover / killing the shooter).
+    const dmgAmt0 = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1) * (window.SS && window.SS.input && window.SS.input.cover ? 0.6 : 1);
+    const lowHp = !!(player && player.alive && player.health <= dmgAmt0 && !(window.SS && window.SS.input && window.SS.input.cover));
+    if (lowHp) chance = Math.max(chance, LOW_HP_CHANCE);
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap && simS - (lastPlayerHitSim || -99) >= gap; // spacing holds in BOTH real and game time
@@ -994,8 +1004,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const needSeen = nowS - (enemy.movedR || -99) < 3 ? SEEN_BEFORE_HIT_S : SEEN_PEEK_S; // full hold right after a relocation, a short one for peeks from known cover
     if (hit && needSeen > 0 && !(enemy.seenSinceR && nowS - enemy.seenSinceR >= needSeen && simS - (enemy.seenSinceSim || 0) >= needSeen)) { hit = false; enemy.freshBlocked = (enemy.freshBlocked | 0) + 1; if (window.SS) window.SS.freshBlocked = (window.SS.freshBlocked | 0) + 1; }
     if (hit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
-    const dmgAmt = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1) * (window.SS && window.SS.input && window.SS.input.cover ? 0.6 : 1);
-    if (dmgBudget(nowS, simS) < dmgAmt - 1e-6 && hit) { hit = false; if (window.SS) window.SS.dmgCapBlocked = (window.SS.dmgCapBlocked | 0) + 1; } // m1w: incoming damage-per-second cap
+    const dmgAmt = dmgAmt0, dmgCost = lowHp ? Math.min(dmgAmt, Math.max(1, player.health)) : dmgAmt;
+    if (dmgBudget(nowS, simS) < dmgCost - 1e-6 && hit) { hit = false; if (window.SS) window.SS.dmgCapBlocked = (window.SS.dmgCapBlocked | 0) + 1; } // m1w: incoming damage-per-second cap
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
     if (!hit) {
@@ -1018,7 +1028,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const amount = dmgAmt; // m1v: softer first wave (opening only); cover softening (x0.6) included
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
-      dmgBucket -= amount; player.damage(amount, _muzzle); // cover also softens hits (x0.6, in dmgAmt)
+      dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle); // cover also softens hits (x0.6, in dmgAmt)
     }
   }
 
