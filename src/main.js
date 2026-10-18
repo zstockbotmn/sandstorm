@@ -16,7 +16,7 @@ import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { preloadRapier } from './ragdoll.js';
-import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, PICKED, isSoftwareRenderer, rendererString } from './quality.js';
+import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, PICKED, isSoftwareRenderer, rendererString, FAST } from './quality.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
@@ -44,7 +44,9 @@ const post = createPostFx(renderer, scene, camera);
 const sky = createSky(scene);
 
 // Daytime HDRI for high tier. The warm fog stays so the street still reads as desert.
-if (art.tier === 'high') {
+// test=fast: flat untextured look for everything (raycasts use each mesh's OWN material, so hits are unchanged)
+if (FAST) { scene.overrideMaterial = new THREE.MeshBasicMaterial({ color: 0x8a8478 }); }
+if (art.tier === 'high' && !FAST) {
   new RGBELoader().load('assets/env/noon_grass_512.hdr', (hdr) => {
     const tp = performance.now(); const pmrem = new THREE.PMREMGenerator(renderer);
     const env = pmrem.fromEquirectangular(hdr).texture;
@@ -64,7 +66,7 @@ const score = createScore(hud, audio);
 const cover = createCover(scene, camera, world, input);
 const stakes = createStakes(scene, camera, hud, player, weapon, score, audio);
 
-window.SS = {
+window.SS = { fast: FAST,
   THREE,
   scene,
   camera,
@@ -159,6 +161,7 @@ function simStep(dt) {
   // the enemy update tested next-frame positions - a running fighter at 20 fps had moved ~0.25 m off the crosshair).
   weapon.update(dt, input.state);
   if (window.SS.quality === 'ultra-low' && (ultraT += dt || 0) > 2) { ultraT = 0; try { ultraTrim(); } catch (e) {} }
+  if (FAST && (fastT += dt || 0) > 1) { fastT = 0; try { fastTrim(); } catch (e) {} }
   if (arms) { try { arms.update(weapon.reloadProgress()); } catch (err) { console.warn('arms', err); arms = null; } }
   player.update(step);
   if (!frozen) enemies.update(step);
@@ -416,6 +419,8 @@ art.onReady(() => {
 // cover) is hidden; colliders, fighters, the rifle/hands, drops and grenades are
 // never touched (they are not in the segment groups), so cover and hits behave exactly as before. Re-run as segments recycle.
 const _ultraS = new THREE.Sphere(); let ultraT = 0;
+// test=fast: hide only the backdrop rows (never colliders or shot props: shotList skips hidden props, which would change LOS)
+let fastT = 0; function fastTrim() { const keep = new Set(world.colliders || []); for (const seg of world.segments || []) { if (seg && seg.group) seg.group.traverse((o) => { if (o.userData.backdrop && o.visible && !keep.has(o) && !o.userData.shotProp) o.visible = false; }); } }
 function ultraTrim() { let hid = 0; const keep = new Set(world.colliders || []);
   for (const seg of world.segments || []) { if (!seg || !seg.group) continue; seg.group.traverse((o) => {
     if (!o.isMesh || o.isSkinnedMesh || !o.visible || keep.has(o) || o.userData.ultraKeep || !o.geometry) return;

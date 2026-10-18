@@ -11,7 +11,7 @@ const MODES = (process.env.SS_WAVES_MODES || 'ultra,low,high').split(','); const
   for (const mode of MODES) { const r = res[mode] = {};
     try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true }); const p = await ctx.newPage();
       await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms) { const t0 = performance.now(); while (performance.now() - t0 < ms) {} } cb(t); }); });
-      await p.goto('http://127.0.0.1:' + PORT + '/?seed=' + (process.env.SS_SEED || 1) + '&slow=' + (process.env.SS_SLOW || 60) + '&q=' + (mode === 'high' ? 'high' : 'low')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+      await p.goto('http://127.0.0.1:' + PORT + '/?seed=' + (process.env.SS_SEED || 1) + '&slow=' + (process.env.SS_SLOW || 60) + '&q=' + (mode === 'high' ? 'high' : 'low') + (process.env.SS_EXTRA || '')); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
       if (mode === 'ultra') await p.evaluate(() => SS.goUltra('test'));
       await p.evaluate((c) => { window.__cone = c; }, process.env.SS_CONE !== '0'); await p.click('#play'); await p.waitForFunction(() => window.SS && SS.running, null, { timeout: 90000 }); await p.waitForTimeout(1000);
       // m1t: every hit on the player must come from a fighter the player could see (eye ray against drawn meshes, in the haze)

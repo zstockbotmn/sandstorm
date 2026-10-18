@@ -10,7 +10,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   try { const p = await (await b.newContext({ viewport: { width: 844, height: 390 } })).newPage();
     await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const t0 = performance.now(); while (performance.now() - t0 < 150) {} cb(t); }); });
     const state = () => p.evaluate(() => ({ q: SS.quality, auto: SS.autoLow || null, saved: localStorage.getItem('ss.quality'), pick: localStorage.getItem('ss.qualityPick'), label: document.getElementById('quality').textContent }));
-    await p.goto('http://127.0.0.1:' + PORT + '/'); await p.evaluate(() => localStorage.clear()); await p.reload();
+    await p.goto('http://127.0.0.1:' + PORT + '/' + (process.env.SS_EXTRA ? '?' + process.env.SS_EXTRA.replace(/^&/, '') : '')); await p.evaluate(() => localStorage.clear()); await p.reload();
     await p.waitForFunction(() => window.SS && SS.quality === 'ultra-low', null, { timeout: 120000 }).catch(() => {});
     res.steps.push(['auto', await state()]);
     const next = (c) => (c === 'ultra-low' ? 'low' : c === 'low' ? 'high' : 'ultra-low'); let cur = res.steps[0][1].q;

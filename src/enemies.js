@@ -1762,6 +1762,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   api.debugGrenade = () => { const th = list.find((e) => e.alive); if (th) throwGrenade(th); return !!th; };
   api.debugRoof = () => spawnOne('roof');
   api.debugShoot = (e) => enemyShoot(e); // tests: one real enemy shot (all gates apply)
+  api.debugClearSpacing = () => { lastPlayerHitS = 0; lastPlayerHitSim = -99; }; // tests (fast-parity): back-to-back sample shots
   api.spawnEnemy = function spawnEnemy(behavior) {
     return spawnOne(behavior || undefined);
   };
