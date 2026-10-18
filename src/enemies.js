@@ -2024,6 +2024,33 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return best;
   }
 
+  // No 12-30 m hop: same pool and filters, but 5-12 m further ahead of the player (still <= 40 m).
+  function pickFallbackCover(e) {
+    if (!e.anchor || !e.anchor.pos) return null;
+    const pool = coverPool(['wall', 'barrel', 'car', 'door']);
+    const pz = camera.position.z, a0 = e.anchor, h0 = e.home;
+    const aAhead = pz - a0.pos.z;
+    let best = null, bestS = 1e9;
+    try {
+      for (let i = 0; i < pool.length; i++) {
+        const c = pool[i];
+        if (c === a0 || !c.pos) continue;
+        if (occupiedBy(c.pos, e)) continue;
+        const d2 = c.pos.distanceToSquared(a0.pos);
+        if (d2 < 36 || d2 > 400) continue;
+        const ahead = pz - c.pos.z;
+        const extra = ahead - aAhead;
+        if (extra < 5 || extra > 12 || ahead > 40) continue;
+        e.anchor = c; e.home = standPos(c);
+        const fp = firePoint(e); _losP.set(fp.x, 1.25, fp.z);
+        if (!clearToEye(_losP)) continue;
+        const score = Math.abs(extra - 8) + 0.3 * Math.abs(c.pos.x);
+        if (score < bestS) { bestS = score; best = c; }
+      }
+    } finally { e.anchor = a0; e.home = h0; }
+    return best;
+  }
+
   // Hops under 6 m use crouchRun when that clip exists. The blend and desiredAnim have no crouchRun, so they run.
   function repositionMoveKind(e, dist) {
     if (dist < 6 && e.actions && e.actions.crouchRun) return 'crouchRun';
@@ -2426,8 +2453,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
             const spot = pickRepositionCover(e);
             if (spot) startReposition(e, spot);
             else {
-              // TODO fallback (3c-iii)
-              e.coverHoldT = 0;
+              const back = pickFallbackCover(e);
+              if (back) { startReposition(e, back); e.fellBack = (e.fellBack | 0) + 1; }
+              else e.coverHoldT = 0;
             }
           }
         } else { e.coverHoldT = 0; e._holdAnchor = null; }
