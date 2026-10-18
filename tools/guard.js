@@ -15,7 +15,7 @@ function arm(timeoutMs) {
 }
 async function launch(chromium, opts = {}, { timeoutMs = +(process.env.SS_TIMEOUT_MS || 20 * 60 * 1000), fresh = !browsers.length } = {}) {
   if (fresh) { // shared box: never kill or overlap another run; wait for it to finish (up to the watchdog time)
-    const { execSync: x } = require('child_process'), busy = () => { try { x("pgrep -f -- '[-]-sg-harness' || pgrep -f -- 'chrom[e].*--headless'", { stdio: 'ignore' }); return true; } catch (e) { return false; } };
+    const { execSync: x } = require('child_process'), busy = () => { try { x(JSON.stringify(require('path').join(__dirname, 'busy.sh')), { stdio: 'ignore' }); return true; } catch (e) { return false; } }; // tools/busy.sh (SS_PAR aware)
     const t0 = Date.now(); while (busy() && Date.now() - t0 < timeoutMs) { console.error('guard: another headless run is active, waiting'); await new Promise(r => setTimeout(r, 20000)); } }
   arm(timeoutMs);
   const b = await chromium.launch({ ...opts, args: [...(opts.args || []), TAG] }); browsers.push(b);

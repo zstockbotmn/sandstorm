@@ -16,7 +16,7 @@ import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { preloadRapier } from './ragdoll.js';
-import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, PICKED, isSoftwareRenderer, rendererString, FAST } from './quality.js';
+import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, PICKED, isSoftwareRenderer, rendererString, FAST, NORENDER } from './quality.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
@@ -66,7 +66,7 @@ const score = createScore(hud, audio);
 const cover = createCover(scene, camera, world, input);
 const stakes = createStakes(scene, camera, hud, player, weapon, score, audio);
 
-window.SS = { fast: FAST,
+window.SS = { fast: FAST, norender: NORENDER,
   THREE,
   scene,
   camera,
@@ -188,6 +188,12 @@ function adaptRes(raw) {
 }
 
 const frameErrs = new Set();
+// NORENDER: what renderer.render(scene, camera) does that game logic depends on, without drawing: scene/camera
+// matrices, THREE.LOD level picks for this camera (LOD.update, as the renderer's autoUpdate does) and skeletons.
+function logicFrame() {
+  if (scene.matrixWorldAutoUpdate) scene.updateMatrixWorld(); if (camera.parent === null && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
+  scene.traverseVisible((o) => { if (o.isLOD && o.autoUpdate) o.update(camera); else if (o.isSkinnedMesh && o.skeleton) o.skeleton.update(); });
+}
 function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
   requestAnimationFrame(frame);
   if (!window.SS.running && document.body.classList.contains('starting')) { last = 0; return; } // m1v: let 'Starting...' present (no GPU work until the run is live)
@@ -213,7 +219,7 @@ function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
     health: window.SS.health,
   });
   const tr = performance.now(); const simMs = tr - tFrame;
-  if (Q.post && !post.low) post.render(); else renderer.render(scene, camera);
+  if (NORENDER) logicFrame(); else if (Q.post && !post.low) post.render(); else renderer.render(scene, camera);
   window.SS.lastVP = (window.SS.lastVP || new THREE.Matrix4()).multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); // m1w: taps hit-test what was ON SCREEN
   if (window.SS.running && window.SS.firstRunFrame) window.SS.firstRunFrame(); // drop 'Starting...' + unmute with the first run frame
   window.SS.lastRI = [renderer.info.render.calls, renderer.info.render.triangles];
@@ -331,7 +337,7 @@ function startNow() { window.SS.startNowAt = Date.now(); // m1v: wall clock when
   // m1v: chunked heavy start - yield after the reset, then compile the run's shaders asynchronously (parallel compile
   // where available, capped at 2.5 s) before the first run frame, so the page keeps painting 'Starting...'.
   setTimeout(() => { let done = false; const go = () => { if (done) return; done = true; startRunLive(); };
-    try { const pr = renderer.compileAsync ? renderer.compileAsync(scene, camera) : null; if (pr && pr.then) { pr.then(go, go); setTimeout(go, 2500); } else go(); } catch (_) { go(); } }, 0);
+    try { const pr = renderer.compileAsync && !NORENDER ? renderer.compileAsync(scene, camera) : null; if (pr && pr.then) { pr.then(go, go); setTimeout(go, 2500); } else go(); } catch (_) { go(); } }, 0);
 }
 function startRunLive() {
   window.SS.walking = true;
