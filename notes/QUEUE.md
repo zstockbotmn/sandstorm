@@ -25,3 +25,8 @@ in front of the chest and the first round registers as a limb hit (34). Margins 
 mesh after the box->cylinder change, limit 13). Candidate fix later: rank body over limb when the torso capsule is within
 ~0.35 m behind a forearm hit (firstHit rank already does this when the ray reaches the capsule).
 Rules: one heavy job at a time (coordinate with tester), no Meshy spend without me, arms opt-in until gloved grip reads right.
+
+## PAUSED (Oct 18, 2026, 10:25 AM ET, Zack via App PM)
+Step 1 state on step1-movement: blendspace + measured clip directions, facing (yaw capped 270/240/300 deg/s, 40-deg re-plant step OK'd), cover 3a/3b, last-enemy reposition 3c all built and tested (loco-cover, loco-facing green). Internal preview A0 = ss-ee912e469c (tools/preview-step1.sh, localhost:8850; server stopped).
+Not started: peek polish (prompt drafted at tools/prompts/step1/3d-peek-polish.txt), step 2 hit reactions (prompts drafted in tools/prompts/step2/, tool note in DECISIONS.md draft).
+Open: strafe coverage at 26 m (78% vs 90%), crouch-head hit-volume trim (10-14 cm vs 13), deterministic foot-slide test. b1 + 11 s walk are on main 280a9a4, unpublished (bundle rule). Live remains m2a ss-556a20f839.
