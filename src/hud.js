@@ -102,7 +102,7 @@ export function createHud() {
     if (isKill(shownKind) && !isKill(kind) && now < hideAt) { framesLeft = Math.max(framesLeft, 2); return; }
     marker.classList.remove('kill', 'head', 'headkill'); if (kind !== 'hit') { void marker.offsetWidth; marker.classList.add(kind); }
     marker.classList.add('show'); shownKind = kind; hud.markerCount = (hud.markerCount | 0) + 1; if (isKill(kind)) hud.killMarkers = (hud.killMarkers | 0) + 1;
-    hideAt = now + (isKill(kind) ? 600 : 400); framesLeft = 3; // >= blood spray life
+    hideAt = now + (isKill(kind) ? 600 : 550); framesLeft = 3; // m1x: plain torso hits were too brief to notice at low fps // >= blood spray life
     if (!hudRaf) hudRaf = requestAnimationFrame(markerTick);
   }
 
@@ -163,6 +163,13 @@ export function createHud() {
     hintTimer = setTimeout(() => { hintEl.classList.remove('show'); hud.hintText = ''; }, 2800);
   }
   function onTarget(on) { cross.classList.toggle('on-target', !!on); }
+  // m1x: a priority radio line (pacing warning before first contact): bypasses the 4 s throttle, stays up longer
+  function radio(text, ms) {
+    radioNext = performance.now() + 4000; radioLast = text;
+    const line = document.createElement('div'); line.className = 'radio-line radio-warn'; line.textContent = '[RADIO] ' + text;
+    radioStack.appendChild(line); radioLines.push(line); while (radioLines.length > 2) radioLines.shift().remove();
+    setTimeout(() => { line.remove(); const i = radioLines.indexOf(line); if (i >= 0) radioLines.splice(i, 1); }, ms || 4200);
+  }
   function callout(text) {
     const now = performance.now();
     if (now < radioNext || text === radioLast) return; // max one line per 4 s, never the same line twice in a row
@@ -222,6 +229,7 @@ export function createHud() {
     setScore,
     headshotFlash,
     callout,
+    radio,
     banner,
     hint,
     setRemaining,

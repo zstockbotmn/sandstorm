@@ -1,0 +1,72 @@
+// m1x hotfix checks (tester at 1-8 fps, mouse):
+//  A a click on a medkit ~1 s after it was drawn (it is already flying in / just collected) collects or is swallowed and
+//    fires NOTHING; a click away from it still fires one round   B a stale mouse pointer (missed pointerup) + a plain hover
+//    never turns the view   C a scoped press -> short pause -> drag at 5 fps never fires   D a still hold at 5 fps still auto-fires
+//  E pacing: a run opens with a quiet walk; approaching gunfire, a TEXT radio warning before the first enemy shot, first
+//    contact after FIRST_CONTACT_S
+const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
+const D = path.resolve(__dirname, '../dist'); const PORT = 8832;
+const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary' };
+const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
+  fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(PORT);
+const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M1X.split(',') : null; const want = (k) => !ONLY || ONLY.includes(k);
+(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: 1200000 });
+  const res = {}, fail = [];
+  const slowRaf = () => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const ms = window.__slowMs | 0; if (ms && !window.__inSlow) { window.__inSlow = true; const t0 = performance.now(); while (performance.now() - t0 < ms) {} setTimeout(() => { window.__inSlow = false; }, 0); } cb(t); }); };
+  async function start(calm) { const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }); const p = await ctx.newPage(); await p.addInitScript(slowRaf); p.on('pageerror', (e) => (res.pageErrors = res.pageErrors || []).push(String(e).slice(0, 160)));
+    await p.goto('http://127.0.0.1:' + PORT + '/?seed=7' + (calm ? '&calm=1' : '') + QS); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+    await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
+    if (calm) await p.evaluate(() => { SS.walking = false; SS.player.health = 1e6; }); await p.waitForTimeout(1500); return { p, ctx }; }
+  const shots = (p) => p.evaluate(() => SS.weapon.shotsFired);
+  if (want('A') || want('B') || want('C') || want('D')) { const { p, ctx } = await start(true);
+    await p.evaluate(() => { window.__freezeCam = true; SS.weapon.ammo = 30; SS.weapon.reserve = 200; });
+    // A: drop a kit 7 m ahead, take its screen spot as drawn, click there ~1 s later (fly-in started at 0.6 s)
+    if (want('A')) { res.A = [];
+      for (const lateMs of [900, 1700]) { const pos = await p.evaluate(() => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 7; v.z -= Math.cos(y) * 7; v.y = 0;
+          window.__slowMs = 200; SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0;
+          const it = SS.stakes.items[SS.stakes.items.length - 1]; const w = it.g.position.clone(); w.y = 0.45; w.applyMatrix4(SS.lastVP); /* the drop is clamped to the street */ return [(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight]; });
+        await p.waitForTimeout(lateMs); const state = await p.evaluate((pos) => ({ items: SS.stakes.items.length, fly: SS.stakes.items.length ? +(SS.stakes.items[0].fly || 0).toFixed(2) : null, dry: SS.stakes.pickAt(pos[0], pos[1], true) }), pos);
+        await p.mouse.click(pos[0], pos[1]); await p.waitForTimeout(1800);
+        const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, tapped: SS.pickupsTapped | 0, late: SS.pickupsLateTaps | 0 }));
+        Object.assign(r, { lateMs, pos: pos.map(Math.round), atClick: state }); res.A.push(r);
+        if (r.fired !== 0) fail.push('A: a click on the medkit ' + lateMs + ' ms after it was drawn FIRED ' + r.fired + ' ' + JSON.stringify(r));
+        if (r.taken < 1) fail.push('A: the medkit was not collected ' + JSON.stringify(r));
+        await p.evaluate(() => { window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(400); }
+      // control: a click well away from any drop still fires one round
+      const f0 = await shots(p); await p.mouse.click(200, 120); await p.waitForTimeout(1500); res.A_ctrl = (await shots(p)) - f0;
+      if (res.A_ctrl !== 1) fail.push('A: a plain canvas click fired ' + res.A_ctrl + ' rounds (want 1)'); }
+    // B: a stale mouse pointer (its pointerup was missed) must not steer the view on a hover
+    if (want('B')) { await p.mouse.move(400, 200); await p.evaluate(() => { const c = document.querySelector('canvas'); c.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, clientX: 400, clientY: 200, bubbles: true })); window.__y0 = SS.input.yaw; });
+      await p.waitForTimeout(150); for (let i = 1; i <= 10; i++) { await p.mouse.move(400 + i * 40, 200); await p.waitForTimeout(30); } await p.waitForTimeout(600);
+      res.B = await p.evaluate(() => ({ dyawDeg: +((SS.input.yaw - window.__y0) * 180 / Math.PI).toFixed(1), hoverDrops: SS.input.hoverDrops | 0 }));
+      if (Math.abs(res.B.dyawDeg) > 2) fail.push('B: a buttonless hover turned the view ' + res.B.dyawDeg + ' deg ' + JSON.stringify(res.B));
+      // and a real slow drag still turns it (~1:1)
+      await p.evaluate(() => { window.__y0 = SS.input.yaw; window.__f0 = SS.weapon.shotsFired; }); await p.mouse.move(300, 200); await p.mouse.down(); for (let i = 1; i <= 10; i++) { await p.mouse.move(300 + i * 10, 200); await p.waitForTimeout(30); } await p.mouse.up(); await p.waitForTimeout(600);
+      res.B_drag = await p.evaluate(() => ({ dyawDeg: +((SS.input.yaw - window.__y0) * 180 / Math.PI).toFixed(1), fired: SS.weapon.shotsFired - window.__f0, want: +(100 * 70 / innerHeight).toFixed(1) }));
+      if (Math.abs(Math.abs(res.B_drag.dyawDeg) - res.B_drag.want) > res.B_drag.want * 0.3) fail.push('B: a 100 px drag turned ' + res.B_drag.dyawDeg + ' deg (want ~' + res.B_drag.want + ')'); }
+    // C: scoped, 5 fps: press, pause 150 ms, drag 80 px over ~0.6 s, release -> no round
+    if (want('C')) { res.C = [];
+      for (const pause of [60, 150, 300]) { await p.evaluate(() => { SS.input.scope = true; window.__slowMs = 200; }); await p.waitForTimeout(800); const f0 = await shots(p);
+        await p.mouse.move(420, 200); await p.mouse.down(); await p.waitForTimeout(pause); for (let i = 1; i <= 8; i++) { await p.mouse.move(420 + i * 10, 200 + i * 2); await p.waitForTimeout(70); } await p.mouse.up(); await p.waitForTimeout(1200);
+        const fired = (await shots(p)) - f0; res.C.push({ pause, fired }); if (fired) fail.push('C: a scoped drag (pause ' + pause + ' ms) at 5 fps fired ' + fired); }
+      await p.evaluate(() => { window.__slowMs = 0; SS.input.scope = false; }); }
+    // D: a still hold at 5 fps still auto-fires (feel)
+    if (want('D')) { await p.evaluate(() => { window.__slowMs = 200; SS.weapon.ammo = 30; }); await p.waitForTimeout(600); const f0 = await shots(p); await p.mouse.move(420, 200); await p.mouse.down(); await p.waitForTimeout(1600); await p.mouse.up(); await p.waitForTimeout(800);
+      res.D = { fired: (await shots(p)) - f0 }; await p.evaluate(() => { window.__slowMs = 0; }); if (res.D.fired < 3) fail.push('D: a 1.6 s still hold at 5 fps fired only ' + res.D.fired); }
+    await ctx.close(); }
+  // E: pacing, real spawns (no calm)
+  if (want('E')) { const { p, ctx } = await start(false);
+    await p.evaluate(() => { SS.player.health = 1e6; window.__E = { warnT: 0, firstShotT: 0, firstEnemyT: 0, maxApproach: 0 }; const t0 = SS.startedAt || performance.now(); window.__Et0 = t0;
+      setInterval(() => { const E = window.__E, now = performance.now() - t0; if (!E.warnT && SS.radioWarnAt) E.warnT = SS.radioWarnAt - t0; if (!E.firstShotT && (SS.enemyShots | 0) > 0) E.firstShotT = now;
+        if (!E.firstEnemyT && (SS.enemies.list || []).some((e) => e.alive)) { E.firstEnemyT = now; E.d = +SS.distance.toFixed(1); } E.maxApproach = Math.max(E.maxApproach, SS.approach || 0); E.line = E.line || ([...document.querySelectorAll('.radio-warn')].map((x) => x.textContent)[0] || ''); }, 100); });
+    const t0 = Date.now(); while (Date.now() - t0 < 90000) { const E = await p.evaluate(() => window.__E); if (E.firstShotT) break; await p.waitForTimeout(1000); }
+    res.E = await p.evaluate(() => Object.assign({}, window.__E, { FIRST_CONTACT_S: SS.enemies.FIRST_CONTACT_S, quietRunT: +(SS.quietRunT || 0).toFixed(1), approachShots: SS.approachShots | 0, firstWave: SS.firstWave }));
+    const E = res.E, C = E.FIRST_CONTACT_S * 1000;
+    if (!E.firstEnemyT || E.firstEnemyT < C - 1500) fail.push('E: first contact at ' + Math.round(E.firstEnemyT / 100) / 10 + ' s (want >= ' + E.FIRST_CONTACT_S + ' s)');
+    if (!E.warnT || !E.firstShotT || E.firstShotT - E.warnT < 3000) fail.push('E: radio warning not >= 3 s before the first enemy shot ' + JSON.stringify(E));
+    if (!/Contact reported ahead/.test(E.line)) fail.push('E: no text radio warning ' + JSON.stringify(E.line));
+    if (E.maxApproach < 0.8) fail.push('E: approach gunfire did not build up ' + E.maxApproach);
+    await ctx.close(); }
+  if (res.pageErrors) fail.push('page errors: ' + res.pageErrors.join(' | '));
+  console.log(JSON.stringify(res)); console.log(fail.length ? 'M1X FAIL ' + fail.join(' ; ').slice(0, 900) : 'M1X PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
+})().catch((e) => { console.log('M1X FAIL exception ' + e.message); process.exit(1); });

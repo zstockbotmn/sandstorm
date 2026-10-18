@@ -206,6 +206,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let phaseT = 0;
   let quietCap = 0, waveOpen = false, regenWaitT = 0; // never stragglers (a quiet-phase spawn made the first wave 1 or 3)
   const FIRST_WAVE_AT = 6;
+  // m1x pacing preview (App PM): a run opens with a quiet walk; distant gunfire swells from APPROACH_S, a TEXT radio
+  // warning shows RADIO_WARN_S before contact, first contact no earlier than FIRST_CONTACT_S of run time (and FIRST_WAVE_AT m).
+  // Tunable: ?contact=<s> (debug/test builds only) overrides FIRST_CONTACT_S.
+  const FIRST_CONTACT_S = (() => { try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) return +m[1]; } catch (_) {} return 24; })();
+  const RADIO_WARN_S = 5, APPROACH_S = 6;
+  let quietRunT = 0, quietRealAt = 0, radioWarned = false;
+  api.FIRST_CONTACT_S = FIRST_CONTACT_S; api.RADIO_WARN_S = RADIO_WARN_S;
   let waveSpawned = 0, waveTotal = 0; // hard cap: every wave has a fixed total, truck included
   let burstCap = 3, burstSpawned = 0, waveActive = false, roofWave = false;
   let spawnCd = 1.2;
@@ -1554,11 +1561,18 @@ export function createEnemies(scene, camera, world, weapon, player) {
     phaseT -= dt;
     const alive = aliveCount();
     const dNow = window.SS ? window.SS.distance : 0;
+    if (burstIndex === 0 && window.SS && window.SS.running) { // m1x: opening quiet walk (real time, capped per frame)
+      const nr = performance.now(); quietRunT += quietRealAt ? Math.min(0.5, (nr - quietRealAt) / 1000) : 0; quietRealAt = nr;
+      const k = FIRST_CONTACT_S > APPROACH_S ? Math.max(0, Math.min(1, (quietRunT - APPROACH_S) / (FIRST_CONTACT_S - APPROACH_S))) : 1;
+      window.SS.approach = quietRunT >= APPROACH_S ? k : 0; window.SS.quietRunT = quietRunT;
+      if (!radioWarned && FIRST_CONTACT_S > 0 && quietRunT >= FIRST_CONTACT_S - RADIO_WARN_S) { radioWarned = true; window.SS.radioWarnAt = performance.now();
+        if (window.SS.hud && window.SS.hud.radio) window.SS.hud.radio('Contact reported ahead. Stay sharp.'); else squadCall('Contact reported ahead'); }
+    } else if (window.SS) window.SS.approach = null;
     if (phase === 'quiet') {
       // m1u: the next wave waits (up to 8 s past its distance) for out-of-combat regen to bring the player to >= 90 hp
       if (dNow >= breatherTo && waveClears > 0 && !waveActive && alive === 0) { regenWaitT += dt; } else regenWaitT = 0;
       const healthy = !window.SS || waveClears === 0 || (window.SS.health == null ? 100 : window.SS.health) >= 90 || regenWaitT > 8;
-      if (phaseT <= 0 && dNow >= breatherTo && !waveActive && alive === 0 && truckPending === 0 && healthy) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
+      if (phaseT <= 0 && dNow >= breatherTo && (burstIndex > 0 || quietRunT >= FIRST_CONTACT_S) && !waveActive && alive === 0 && truckPending === 0 && healthy) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
         phase = 'burst';
         burstIndex += 1;
         if (window.SS) window.SS.bursting = true;
@@ -1789,7 +1803,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0;
+    prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
     if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
     if (window.SS) window.SS.bursting = false;

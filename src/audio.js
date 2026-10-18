@@ -8,7 +8,7 @@ export function createAudio() {
   function hush() { live = false; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + 0.05); } } // m1u: Restart is silent until its first frame
   let chatterT = 10;
   let barkT = 9;
-  let distantT = 7;
+  let distantT = 7, approachT = 0;
   let wasBurst = false;
 
   // m1v: the gesture only creates/resumes the context (cheap); the graph (impulse + noise buffers, ~250k random
@@ -183,11 +183,14 @@ export function createAudio() {
     if (window.SS) window.SS.cracks = (window.SS.cracks | 0) + 1;
   }
 
-  function distantShot() {
+  // m1x: near = 0..1 (approaching firefight before first contact): louder, brighter, from ahead
+  function distantShot(near) {
     if (!ctx) return;
-    const p = panNode((Math.random() * 2 - 1) * 0.85);
+    const n = near == null ? -1 : near;
+    const p = panNode(n >= 0 ? (Math.random() * 2 - 1) * (0.5 - 0.3 * n) : (Math.random() * 2 - 1) * 0.85);
     const g = ctx.createGain();
-    g.gain.value = 0.16;
+    g.gain.value = n >= 0 ? 0.06 + 0.34 * n : 0.16;
+    if (n >= 0) { const g0 = g; p.connect(g0); g0.connect(master); burst(0.12 + 0.08 * n, 0.35, 380 + 1100 * n * n, 0.5, 'lowpass', p); tone(52 + 18 * n, 0.12, 0.08, 'sine', p); return; }
     p.connect(g);
     g.connect(master);
     burst(0.16, 0.35, 480, 0.5, 'lowpass', p);
@@ -348,7 +351,11 @@ export function createAudio() {
       bark();
     }
     distantT -= dt;
-    if (distantT <= 0) {
+    const appr = window.SS.approach; // m1x: opening approach, gunfire up ahead getting closer (synth, short volleys)
+    if (appr != null && appr > 0) { approachT -= dt; if (approachT <= 0) { approachT = 2.6 - 1.6 * appr + Math.random() * 1.2;
+      const nShots = 1 + Math.floor(Math.random() * (1 + 3 * appr)); for (let i = 0; i < nShots; i++) setTimeout(() => distantShot(appr), i * (90 + Math.random() * 70));
+      window.SS.approachShots = (window.SS.approachShots | 0) + nShots; } distantT = Math.max(distantT, 3); }
+    else if (distantT <= 0) {
       distantT = 6 + Math.random() * 10;
       distantShot();
     }

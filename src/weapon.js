@@ -154,7 +154,7 @@ export function createWeapon(camera, world, scene) {
     if (weapon.onReload) weapon.onReload('start');
   }
 
-  let frameShots = 0;
+  let frameShots = 0, seenShot = true; // debugShoot (tests that stage the camera synchronously) uses the live camera
   function shoot(input) {
     weapon.ammo -= 1; pushAmmo(); // m1w: the counter follows the shot itself (it lagged seconds at 2-5 fps)
     weapon.shotsFired += 1;
@@ -168,12 +168,16 @@ export function createWeapon(camera, world, scene) {
     kick = input.scope ? 0.03 : 0.07;
     if (weapon.onShot) weapon.onShot();
 
-    camera.getWorldDirection(_dir);
+    // m1x: fire along the view the player SAW (last rendered camera) against the fighters as drawn in that frame (shots
+    // run in sim step 0, before fighters move). At 1-8 fps a tracking drag applied before the shot moved the ray one frame
+    // ahead of the drawn target (~v*dt = 0.5-1 m at a strafing fighter): 20 'on the torso' rounds registered nothing.
+    const seen = seenShot && weapon.seenAim !== false && window.SS && window.SS.lastCam && window.SS.lastCam.ok ? window.SS.lastCam : null;
+    if (seen) _dir.set(0, 0, -1).applyQuaternion(seen.q); else camera.getWorldDirection(_dir);
     _right.crossVectors(_dir, _up.set(0, 1, 0));
     if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
     _right.normalize();
     _camUp.crossVectors(_right, _dir).normalize();
-    camera.getWorldPosition(_origin);
+    if (seen) _origin.copy(seen.p); else camera.getWorldPosition(_origin);
     // No shot-bending aim assist (App PM): the hit ray is exactly the crosshair ray (+ weapon spread). The only assist is
     // the touch view assist in input.js, which moves the view, never the shot.
     if (input.cover) {
@@ -237,7 +241,7 @@ export function createWeapon(camera, world, scene) {
   }
   weapon.firstHit = firstHit;
   let lastGap = 0;
-  weapon.debugShoot = (input) => { if (weapon.ammo <= 0) weapon.ammo = MAG; shoot(input); return weapon.lastShot; };
+  weapon.debugShoot = (input) => { if (weapon.ammo <= 0) weapon.ammo = MAG; seenShot = false; try { shoot(input); } finally { seenShot = true; } return weapon.lastShot; };
   // A drag after a shot means the player is controlling the muzzle: drop the pending recoil recovery (no drift back).
   weapon.cancelRecoil = function cancelRecoil() { recoil = 0; };
   function pushAmmo() { const h = window.SS && window.SS.hud; if (h && h.setAmmo) h.setAmmo(weapon.ammo, weapon.reserve); }
