@@ -3,6 +3,7 @@ import { Q } from './quality.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { LOCO2, LOCO_KEYS } from './locomotion.js';
 
 // Names match assets/models/<name>.glb. dist/ serves index.html with assets/ beside it.
 const PRIMARY = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter.quaternius.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'];
@@ -119,6 +120,10 @@ const UPPER_RE = /(Spine|neck|Neck|Head|Shoulder|Arm|Hand)/;
 const LOWER_ONLY = ['crouch', 'crouchIdle', 'lean'];
 const NATIVE = { idle: 'idle', aim: 'idle', run: 'run', jog: 'run', strafe: 'strafe', walk: 'run', hit: 'hit', hitHead: 'hit' };
 export const SPLIT_ANIMS = new Set(LOWER_ONLY);
+// ?loco=2: strafe/turn clips are legs+hips too, so the Combat_Stance upper layer stays on under them.
+if (LOCO2) {
+  for (let i = 0; i < LOCO_KEYS.length; i++) { LOWER_ONLY.push(LOCO_KEYS[i]); SPLIT_ANIMS.add(LOCO_KEYS[i]); }
+}
 function splitUpper(meshyStance) {
   const up = meshyStance.tracks.filter((t) => UPPER_RE.test(t.name.split('.')[0].split('/').pop()));
   if (!up.length) return;
@@ -126,6 +131,27 @@ function splitUpper(meshyStance) {
   const done = new Set();
   for (const k of LOWER_ONLY) { const c = clips[k]; if (!c || done.has(c)) continue; done.add(c);
     c.tracks = c.tracks.filter((t) => !UPPER_RE.test(t.name.split('.')[0].split('/').pop())); }
+}
+
+// Same legs-only cut as splitUpper. Hips XZ stay pinned so the clip does not walk the rig off its root.
+function bakeLoco(animations) {
+  if (!clips || !animations) return;
+  for (let i = 0; i < animations.length; i++) {
+    const clip = animations[i];
+    if (LOCO_KEYS.indexOf(clip.name) < 0) continue;
+    const tracks = [];
+    for (let t = 0; t < clip.tracks.length; t++) {
+      const track = clip.tracks[t];
+      if (track.name.endsWith('.scale')) continue;
+      const bone = track.name.split('.')[0].split('/').pop();
+      if (UPPER_RE.test(bone)) continue;
+      if (track.name === 'Hips.position' || track.name.endsWith('/Hips.position')) tracks.push(pinHipXZ(track));
+      else tracks.push(track);
+    }
+    if (!tracks.length) continue;
+    try { clips[clip.name] = new THREE.AnimationClip(clip.name, clip.duration, tracks); }
+    catch (err) { console.warn('art loco clip', clip.name, err && (err.message || err)); }
+  }
 }
 
 function makeLoader() {
@@ -151,7 +177,7 @@ function adopt(name, gltf) {
       splitUpper(baked.idle);
     }
     else if (clipsUsable(baked)) clips = baked;
-  }
+  } else if (LOCO2 && name === 'fighter.loco.anim') bakeLoco(gltf.animations || []);
   anims[name] = gltf.animations || [];
   assets[name] = gltf.scene;
 }
@@ -221,11 +247,22 @@ function makeFighter(i) {
   if (clips.crouchIdle) actions.crouchIdle = makeAction(mixer, clips.crouchIdle, false);
   if (clips.aim) actions.aim = makeAction(mixer, clips.aim, false);
   if (clips.hitHead) actions.hitHead = makeAction(mixer, clips.hitHead, true);
+  if (LOCO2) {
+    for (let li = 0; li < LOCO_KEYS.length; li++) {
+      const k = LOCO_KEYS[li];
+      if (!clips[k]) continue;
+      try { actions[k] = makeAction(mixer, clips[k], false); }
+      catch (err) { console.warn('art loco action', k, err && (err.message || err)); }
+    }
+  }
   const bones = {};
   for (let k = 0; k < BONE_NAMES.length; k++) {
     bones[BONE_NAMES[k]] = root.getObjectByName(BONE_NAMES[k]) || null;
   }
-  return { root, mixer, actions, bones, height: measureHeight(root), name };
+  const inst = { root, mixer, actions, bones, height: measureHeight(root), name };
+  // Live: meta arrives with the glb load, which may finish after the first instance is built.
+  if (LOCO2) Object.defineProperty(inst, 'locoMeta', { get() { return art.locoMeta || null; }, enumerable: true });
+  return inst;
 }
 
 const anims = {};
@@ -397,14 +434,49 @@ const art = {
   measureHeight,
 };
 
+// Optional strafe/turn set. A 404 or a bad file must not reject the rest of the art load.
+async function loadLoco() {
+  try {
+    // Own budget: a hung or missing loco file must not stall props or finish().
+    const row = await withTimeout(loadOneBudget('fighter.loco.anim'), 4000);
+    if (row && row.gltf) {
+      adopt(row.name, row.gltf);
+      art.loaded.push(row.name);
+      art.bytes = bytesUsed;
+    } else {
+      art.failed.push('fighter.loco.anim');
+      if (row && row.err && !row.missing && !row.skipped) console.warn('art loco anim', row.err.message || row.err);
+    }
+  } catch (err) {
+    console.warn('art loco anim', err && (err.message || err));
+    art.failed.push('fighter.loco.anim');
+  }
+  const ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ac ? setTimeout(() => ac.abort(), 4000) : null;
+  try {
+    const res = await fetch('assets/models/fighter.loco.meta.json', ac ? { signal: ac.signal } : undefined);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (json && typeof json === 'object') art.locoMeta = json;
+    else art.failed.push('fighter.loco.meta');
+  } catch (err) {
+    console.warn('art loco meta', err && (err.message || err));
+    art.failed.push('fighter.loco.meta');
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 let loadStarted = 0;
+if (LOCO2) art.locoMeta = null;
 if (art.tier === 'low') {
   finish();
 } else {
   loadStarted = performance.now();
-  loadGroup(PRIMARY, false).then(() => {
+  const chain = loadGroup(PRIMARY, false).then(() => {
     return loadGroup([ANIM_FALLBACK], false); // fallback clips if Quaternius failed, else the upper-body layer
-  }).then(() => loadGroup(PROPS, true)).then(finish).catch((err) => {
+  });
+  (LOCO2 ? chain.then(loadLoco) : chain).then(() => loadGroup(PROPS, true)).then(finish).catch((err) => {
     console.warn('art load', err);
     finish();
   });
