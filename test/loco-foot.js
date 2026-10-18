@@ -70,6 +70,7 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
   for (const a of [0, 90, 180, 270]) cases.push({ name: 'crouch' + a, band: 'crouch', speed: 1.1, ang: a, crouch: true });
   cases.push({ name: 'turnL', band: 'turn', speed: 0, turn: 1.5 }, { name: 'turnR', band: 'turn', speed: 0, turn: -1.5 });
   cases.push({ name: 'startstop', band: 'walk', speed: 1.4, ang: 0, startStop: true }, { name: 'dirflip', band: 'run', speed: 4.2, ang: 90, flip: true });
+const SLOWMO = process.env.SS_LOCO_SLOWMO !== '0'; // sim at 0.3x (SS.slowmoUntil): ~3x more samples per gait cycle at swiftshader's ~10 fps
   const ONLY = process.env.SS_LOCO_CASES ? process.env.SS_LOCO_CASES.split(',') : null;
   for (const C of cases.filter((c) => !ONLY || ONLY.includes(c.name))) {
     await p.evaluate((C) => { const THREE = SS.THREE, e = window.__e, c = SS.camera.position; SS.enemies.debugPose(e, c.x + 1.5, c.z - 12, C.crouch ? 'crouch' : 'idle'); e.health = 1e9; e.shootCd = 1e9;
@@ -77,14 +78,14 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
       // body-frame direction ang (0 = forward, 90 = character's right) -> world velocity; facing from the group's +Z
       const vel = (ang) => { const f = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), e.group.rotation.y), r = new THREE.Vector3(-f.z, 0, f.x); /* model faces +Z: its right is -X */ const a = ang * Math.PI / 180; return f.multiplyScalar(Math.cos(a)).addScaledVector(r, Math.sin(a)).multiplyScalar(C.speed); };
       e.debugVel = C.speed ? vel(C.ang) : null; window.__x0 = e.group.position.clone();
-      window.__drive = () => { const now = performance.now(), dt = Math.min(0.2, (now - lastT) / 1000), T = (now - t0) / 1000; lastT = now;
+      window.__drive = () => { const ts = SS.timeScale || 1, now = performance.now(), dt = Math.min(0.2, (now - lastT) / 1000) * ts; window.__simT = (window.__simT || 0) + dt; const T = window.__simT; lastT = now;
         if (C.turn) e.group.rotation.y += C.turn * dt;
         if (C.startStop) e.debugVel = (Math.floor(T / 1.2) % 2 === 0) ? vel(0) : null;
         if (C.flip && Math.floor(T / 1.0) !== window.__fl) { window.__fl = Math.floor(T / 1.0); e.debugVel = vel(window.__fl % 2 ? 270 : 90); }
         if (e.group.position.distanceTo(window.__x0) > 4 && e.debugVel) { e.group.position.copy(window.__x0); window.__reset = 2; } }; // stay in front of the camera (the reset frame is not a contact: spans need >= 3 frames)
-      window.__start(C.name); }, C);
+      window.__simT = 0; if (C.slowmo) SS.slowmoUntil = 1e15; window.__start(C.name); }, Object.assign({}, C, { slowmo: SLOWMO }));
     await p.waitForTimeout(1000); await p.evaluate(() => { window.__S.f.length = 0; window.__S.snap = 0; window.__S.lastQ = null; }); // skip the first second (posture change)
-    await p.waitForTimeout(C.startStop || C.flip ? 4800 : 3000);
+    await p.waitForTimeout((C.startStop || C.flip ? 4800 : 3000) * (SLOWMO ? 2 : 1)); // 2x real time at 0.3x sim = 0.6x the sim time, 3.3x denser samples
     const S = await p.evaluate(() => { const S = window.__S; window.__S = null; window.__drive = null; window.__e.debugVel = null; return { f: S.f, snap: +S.snap.toFixed(1), hv: { torso: +S.hv.torso.toFixed(3), head: +S.hv.head.toFixed(3), limb: +S.hv.limb.toFixed(3) }, wN: S.wN, wMax: +S.wMax.toFixed(2), wMin: +S.wMin.toFixed(2), gap: +S.gap.toFixed(3), legInTorso: S.legInTorso, diag: S.diag, frames: S.f.length }; });
     if (process.env.SS_LOCO_DUMP) console.log('ACTS ' + JSON.stringify(await p.evaluate(() => { const e = window.__e; const o = {}; for (const [k, a] of Object.entries(e.actions)) { const w = a.getEffectiveWeight(); if (w > 0.01 || a.isRunning()) o[k] = { w: +w.toFixed(2), t: +a.time.toFixed(2), ts: +a.getEffectiveTimeScale().toFixed(2), run: a.isRunning(), tracks: a.getClip().tracks.length, legT: a.getClip().tracks.filter((t) => /Leg|Foot/.test(t.name)).map((t) => t.name).slice(0, 3) }; } const wa = e.actions.walk; return { walkA: wa && { en: wa.enabled, w: wa.weight, ew: wa._effectiveWeight, wi: !!wa._weightInterpolant, mixOk: wa._mixer === e.mixer, sched: wa.isScheduled(), paused: wa.paused, t: +wa.time.toFixed(2), ts: wa.timeScale, ets: wa._effectiveTimeScale, clipOk: !!wa.getClip(), tracks: wa.getClip().tracks.length, bound: (wa._propertyBindings || []).filter((b) => b && b.binding && b.binding.node).length + '/' + (wa._propertyBindings || []).length }, owned: e._locoOwned, force: e.forceAnim || null, dying: !!e.dying, hitRet: !!e.hitReturning, locoW: e.locoW, acts: o, pinned: e.pinned, stagger: e.staggerT, moving: e.moving, hitPlaying: e.hitPlaying }; })));
     if (process.env.SS_LOCO_DUMP) console.log('DUMP ' + C.name + ' ' + JSON.stringify(S.f.map((q) => [Math.round(q.t), q.reset ? 1 : 0, ...q.LeftFoot.map((v) => +v.toFixed(3)), ...q.RightFoot.map((v) => +v.toFixed(3))])));
