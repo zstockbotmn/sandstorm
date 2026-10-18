@@ -29,6 +29,60 @@ function smoothstep(e0, e1, x) {
   const t = clamp((x - e0) / (e1 - e0), 0, 1);
   return t * t * (3 - 2 * t);
 }
+
+// Facing vs travel (?loco=2). Rates are rad/s; meta turnRate is degrees (positive = left / CCW from above).
+const DEG = Math.PI / 180;
+export const MOVE_YAW_MAX = 220 * DEG;   // moving body yaw
+export const PLANT_YAW_MAX = 120 * DEG;  // planted feet, error under the turn-clip threshold
+export const TWIST_MAX = 60 * DEG;        // spine, summed across the chain
+export const HEAD_YAW_MAX = 75 * DEG;     // head yaw relative to the body, spine included
+export const PLANT_TWIST_MAX = 45 * DEG;  // re-plant once the feet have been twisted this far
+export const TURN_ENTER = 60 * DEG;
+export const TURN_DONE = 8 * DEG;
+export const AIM_DIST = 45;
+export const HOP_DIST = 9;
+export const STILL_SPEED = 0.25;
+
+export function wrapPi(a) {
+  if (!Number.isFinite(a)) return 0;
+  a = a % (Math.PI * 2);
+  if (a > Math.PI) a -= Math.PI * 2;
+  else if (a <= -Math.PI) a += Math.PI * 2;
+  return a;
+}
+// Engaged, within 45 m, and either a lateral cover shuffle or a hop whose path is still under 9 m.
+export function aimBody(engaged, dist, remain, lateral) {
+  if (!engaged || !(dist <= AIM_DIST)) return false;
+  if (lateral) return true;
+  return (remain || 0) < HOP_DIST;
+}
+// Meta is degrees per second. L is positive (left), R is negative.
+export function clipYawRate(meta, side) {
+  const key = side === 'R' ? 'turnR' : 'turnL';
+  const m = meta && meta[key];
+  let deg = m && +m.turnRate;
+  if (!Number.isFinite(deg) || Math.abs(deg) < 1) deg = key === 'turnL' ? 84.686 : -70.564;
+  deg = key === 'turnL' ? Math.abs(deg) : -Math.abs(deg);
+  return deg * DEG;
+}
+// 1.0 at a 60 deg error, 2.2 at 180. A 90 deg turn then lands near 0.8-1.0 s on these clips.
+export function turnPlayback(absErr) {
+  const t = clamp((Math.abs(absErr) - TURN_ENTER) / (Math.PI - TURN_ENTER), 0, 1);
+  return 1 + 1.2 * t;
+}
+// Eased yaw rate toward ±maxRate. Never steps past the remaining error, so the body does not snap.
+export function yawRateStep(prev, err, maxRate, dt, tau) {
+  if (!(dt > 0) || !Number.isFinite(err) || Math.abs(err) < 1e-5) return 0;
+  const sign = err > 0 ? 1 : -1;
+  const cap = Math.abs(maxRate);
+  const target = sign * Math.min(cap, Math.abs(err) / dt);
+  const k = tau > 0 ? 1 - Math.exp(-dt / tau) : 1;
+  let r = (+prev || 0) + (target - (+prev || 0)) * k;
+  if (r * sign < 0) r = 0;
+  if (Math.abs(r) > cap) r = sign * cap;
+  if (Math.abs(r) * dt > Math.abs(err)) r = err / dt;
+  return r;
+}
 function angDist(a, b) {
   let d = Math.abs(a - b) % (Math.PI * 2);
   if (d > Math.PI) d = Math.PI * 2 - d;
@@ -184,7 +238,17 @@ function buildTargets(enemy, input) {
   const baseName = resolveBase(actions, input.base);
   let turnBlend = 0, turnName = null;
   const turnRate = +input.turnRate || 0;
-  if (speed < 0.25 && Math.abs(turnRate) > 0.6) {
+  // Explicit facing (steerFacing) owns the clip. Without it, a measured yaw rate still picks the turn.
+  if (input.turnExplicit) {
+    const side = input.turnClip;
+    if (side === 'L' || side === 'R') {
+      const want = side === 'L' ? 'turnL' : 'turnR';
+      let b = input.turnBlend == null ? 1 : +input.turnBlend;
+      if (!Number.isFinite(b)) b = 0;
+      b = clamp(b, 0, 1);
+      if (b > 0 && actions[want]) { turnName = want; turnBlend = b; }
+    }
+  } else if (speed < 0.25 && Math.abs(turnRate) > 0.6) {
     turnBlend = smoothstep(0.6, 1.5, Math.abs(turnRate));
     const want = turnRate > 0 ? 'turnL' : 'turnR'; // +yaw rate = left
     if (turnBlend > 0 && actions[want]) turnName = want;
@@ -298,8 +362,12 @@ export function updateLoco(enemy, dt, input) {
   if (!actions) return;
   const built = buildTargets(enemy, input);
   const targets = built.targets;
-  const k = dt > 0 ? 1 - Math.exp(-10 * dt) : 0; // ease weights at 10/s
+  const k = dt > 0 ? 1 - Math.exp(-10 * dt) : 0; // ease weights at 10/s (idle <-> run, and turn clips)
   const speed = enemy.locoVel.speed;
+  const turnPlay = +input.turnPlay > 0 ? clamp(+input.turnPlay, 1, 2.2) : 0;
+  const turnLive = turnPlay > 0 && (targets.turnL > 0 || targets.turnR > 0 || enemy.locoW.turnL > 0 || enemy.locoW.turnR > 0);
+  if (turnLive) enemy.turnTime = (enemy.turnTime || 0) + turnPlay * dt;
+  else enemy.turnTime = 0;
   let adv = 0;
   for (let i = 0; i < MANAGED.length; i++) {
     const name = MANAGED[i];
@@ -313,8 +381,9 @@ export function updateLoco(enemy, dt, input) {
     enemy.locoW[name] = action ? w : 0;
     if (!action || !(w > 0)) continue;
     // Shared gait clock. The stationary base is not in this sum; a crouch clip used as the base stays out until it is the stepping clip.
+    // Turn clips with an explicit playback advance on their own clock (turnTime), not the stride clock.
     const manual = !!GAIT[name] && (name !== built.baseName || !!built.phased[name]);
-    if (!manual) continue;
+    if (!manual || (turnPlay && (name === 'turnL' || name === 'turnR'))) continue;
     const ms = Math.max(0.3, metaSpeed(enemy, name));
     adv += w * clamp(speed / ms, 0.45, 1.7) / Math.max(1e-3, clipDur(action, enemy, name));
   }
@@ -326,6 +395,12 @@ export function updateLoco(enemy, dt, input) {
     if (!action) continue;
     const w = enemy.locoW[name] || 0;
     const manual = !!GAIT[name] && (name !== built.baseName || !!built.phased[name]);
+    if (turnPlay && (name === 'turnL' || name === 'turnR')) {
+      const dur = clipDur(action, enemy, name);
+      const ph = dur > 0 ? wrap01((enemy.turnTime || 0) / dur) : 0;
+      applyAction(action, w, ph, dur, manual);
+      continue;
+    }
     applyAction(action, w, phase, clipDur(action, enemy, name), manual);
   }
 }

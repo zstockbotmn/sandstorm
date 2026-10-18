@@ -1,7 +1,7 @@
 const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.search); // tests: no auto spawns
 import * as THREE from 'three';
 import { art, SPLIT_ANIMS } from './art.js';
-import { LOCO2, createLoco, updateLoco } from './locomotion.js';
+import { LOCO2, createLoco, updateLoco, aimBody, clipYawRate, turnPlayback, yawRateStep, wrapPi, MOVE_YAW_MAX, PLANT_YAW_MAX, TWIST_MAX, HEAD_YAW_MAX, PLANT_TWIST_MAX, TURN_ENTER, TURN_DONE } from './locomotion.js';
 import { createRagdollSystem } from './ragdoll.js';
 
 // m1v tunables: wave-1 enemy damage multiplier (tester died at the first cover every run) and the cover grace period
@@ -298,19 +298,90 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   const _fwdW = new THREE.Vector3(), _rightW = new THREE.Vector3();
   // Head look-at toward the player, limited to +-55 deg yaw / +-25 deg pitch, eased (no snapping or bobbing).
+  // ?loco=2: the player when engaged, otherwise the last threat. Total head yaw +-75 deg, spine twist included.
   const _hlD = new THREE.Vector3(), _hlF = new THREE.Vector3(), _hlR = new THREE.Vector3();
+  const SPINE_CHAIN = ['Spine02', 'Spine01', 'Spine', 'neck', 'Neck'];
+  function spineBones(enemy) {
+    if (enemy._spineChain) return enemy._spineChain;
+    const r = enemy.art && enemy.art.root;
+    const list = [], seen = new Set();
+    if (r) for (let i = 0; i < SPINE_CHAIN.length; i++) {
+      const b = r.getObjectByName(SPINE_CHAIN[i]);
+      if (b && !seen.has(b)) { seen.add(b); list.push(b); }
+    }
+    if (!list.length && enemy.bones) {
+      if (enemy.bones.Spine01) list.push(enemy.bones.Spine01);
+      if (enemy.bones.Spine && enemy.bones.Spine !== enemy.bones.Spine01) list.push(enemy.bones.Spine);
+    }
+    enemy._spineChain = list;
+    return list;
+  }
+  function lowFar(enemy) {
+    let q = '';
+    try { q = (window.SS && window.SS.quality) || window.SS_QUALITY || ''; } catch (e) { q = ''; }
+    if (q !== 'low' && q !== 'ultra-low') return false;
+    const p = enemy.group.position, c = camera.position;
+    const dx = p.x - c.x, dy = p.y - c.y, dz = p.z - c.z;
+    return dx * dx + dy * dy + dz * dz > 900;
+  }
+  // Spine twist toward aimYaw, spread over the chain, eased. Low / ultra-low past 30 m keep the head only.
+  function aimPose(enemy, dt) {
+    const body = Number.isFinite(enemy.bodyYaw) ? enemy.bodyYaw : groupYaw(enemy.group);
+    const aim = Number.isFinite(enemy.aimYaw) ? enemy.aimYaw : body;
+    const rel = wrapPi(aim - body - (enemy._hipShown || 0));
+    const skip = lowFar(enemy);
+    const goal = skip ? 0 : (rel < -TWIST_MAX ? -TWIST_MAX : rel > TWIST_MAX ? TWIST_MAX : rel);
+    const k = dt > 0 ? 1 - Math.exp(-dt / 0.09) : 0;
+    let tw = (enemy.twist || 0) + (goal - (enemy.twist || 0)) * k;
+    if (tw > TWIST_MAX) tw = TWIST_MAX; else if (tw < -TWIST_MAX) tw = -TWIST_MAX;
+    if (Math.abs(tw) < 1e-4) tw = 0;
+    enemy.twist = tw;
+    if (skip || !tw) return;
+    const chain = spineBones(enemy);
+    if (!chain.length) return;
+    const part = tw / chain.length;
+    for (let i = 0; i < chain.length; i++) {
+      bendBone(chain[i], _up, part);
+      chain[i].updateMatrixWorld(true);
+    }
+  }
   function headLook(enemy, dt) {
     const h = enemy.bones && enemy.bones.Head; if (!h || !h.parent) return;
     enemy.group.updateMatrixWorld(true);
-    h.getWorldPosition(_hlD); _hlD.subVectors(camera.position, _hlD);
+    h.getWorldPosition(_hlD);
+    const locoAim = LOCO2 && !enemy.pinned && !(enemy.staggerT > 0) && !enemy.hitPlaying;
+    if (!locoAim) {
+      _hlD.subVectors(camera.position, _hlD);
+      _hlF.set(0, 0, 1).applyQuaternion(enemy.group.quaternion); _hlR.set(1, 0, 0).applyQuaternion(enemy.group.quaternion);
+      const yaw = Math.atan2(_hlD.dot(_hlR), _hlD.dot(_hlF)), pitch = Math.atan2(_hlD.y, Math.hypot(_hlD.x, _hlD.z));
+      const ty = Math.max(-0.96, Math.min(0.96, yaw)), tp = Math.max(-0.44, Math.min(0.44, pitch));
+      const k = Math.min(1, dt * 5); enemy.lookY = (enemy.lookY || 0) + (ty - (enemy.lookY || 0)) * k; enemy.lookP = (enemy.lookP || 0) + (tp - (enemy.lookP || 0)) * k;
+      bendBone(h, _up, enemy.lookY); bendBone(h, _hlR, -enemy.lookP);
+      return;
+    }
+    const engaged = aimEngaged(enemy);
+    const lookAt = engaged ? camera.position : enemy.threatPos;
     _hlF.set(0, 0, 1).applyQuaternion(enemy.group.quaternion); _hlR.set(1, 0, 0).applyQuaternion(enemy.group.quaternion);
-    const yaw = Math.atan2(_hlD.dot(_hlR), _hlD.dot(_hlF)), pitch = Math.atan2(_hlD.y, Math.hypot(_hlD.x, _hlD.z));
-    const ty = Math.max(-0.96, Math.min(0.96, yaw)), tp = Math.max(-0.44, Math.min(0.44, pitch));
-    const k = Math.min(1, dt * 5); enemy.lookY = (enemy.lookY || 0) + (ty - (enemy.lookY || 0)) * k; enemy.lookP = (enemy.lookP || 0) + (tp - (enemy.lookP || 0)) * k;
+    let yaw = 0, pitch = 0;
+    if (lookAt) {
+      _hlD.subVectors(lookAt, _hlD);
+      yaw = Math.atan2(_hlD.dot(_hlR), _hlD.dot(_hlF)); pitch = Math.atan2(_hlD.y, Math.hypot(_hlD.x, _hlD.z));
+    }
+    const ty = Math.max(-HEAD_YAW_MAX, Math.min(HEAD_YAW_MAX, yaw)), tp = Math.max(-0.44, Math.min(0.44, pitch));
+    let extra = ty - (enemy.twist || 0) - (enemy._hipShown || 0);
+    if (extra > HEAD_YAW_MAX) extra = HEAD_YAW_MAX; else if (extra < -HEAD_YAW_MAX) extra = -HEAD_YAW_MAX;
+    const k = Math.min(1, dt * 6);
+    enemy.lookY = (enemy.lookY || 0) + (extra - (enemy.lookY || 0)) * k;
+    enemy.lookP = (enemy.lookP || 0) + (tp - (enemy.lookP || 0)) * k;
+    const sum = enemy.lookY + (enemy.twist || 0) + (enemy._hipShown || 0);
+    if (sum > HEAD_YAW_MAX) enemy.lookY -= sum - HEAD_YAW_MAX;
+    else if (sum < -HEAD_YAW_MAX) enemy.lookY -= sum + HEAD_YAW_MAX;
     bendBone(h, _up, enemy.lookY); bendBone(h, _hlR, -enemy.lookP);
   }
   function proceduralLean(enemy, name, dt) {
     const b = enemy.bones; if (!b || enemy.dying || window.SS_NOPROC) { enemy.leanW = 0; return; }
+    if (LOCO2 && !enemy.pinned && !(enemy.staggerT > 0) && !enemy.hitPlaying) { leadHips(enemy, dt); aimPose(enemy, dt); }
+    else if (LOCO2) { enemy.twist = 0; enemy._hipShown = 0; }
     headLook(enemy, dt);
     const tgtRoll = name === 'lean' ? 1 : 0;
     const tgtHunch = (name === 'aim' || name === 'lean') ? 1 : 0;
@@ -342,7 +413,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const b = enemy.bones, r = enemy.art.root; if (!b || !b.LeftArm || !b.LeftForeArm || !b.RightArm || !b.RightForeArm || !b.RightHand) return;
     const lh = enemy.leftHand || (enemy.leftHand = r.getObjectByName('LeftHand')); if (!lh) return;
     enemy.group.updateMatrixWorld(true);
-    _saF.set(0, 0, 1).applyQuaternion(enemy.group.quaternion); _saF.y = 0; _saF.normalize(); _saR.set(0, 1, 0).cross(_saF).negate(); // fighter's right
+    _saF.set(0, 0, 1).applyQuaternion(enemy.group.quaternion); _saF.y = 0; _saF.normalize();
+    if (LOCO2 && !enemy.pinned && !(enemy.staggerT > 0)) {
+      const off = (enemy.twist || 0) + (enemy._hipShown || 0);
+      if (off) {
+        const c = Math.cos(off), s = Math.sin(off), x = _saF.x, z = _saF.z;
+        _saF.x = c * x + s * z; _saF.z = -s * x + c * z;
+      }
+    }
+    _saR.set(0, 1, 0).cross(_saF).negate(); // fighter's right
     const qa = b.LeftArm.quaternion.clone(), qf = b.LeftForeArm.quaternion.clone(), ra = b.RightArm.quaternion.clone(), rf = b.RightForeArm.quaternion.clone();
     // right (trigger) hand low at the chest, just right of centre; the clip held it straight out to the side
     b.RightArm.getWorldPosition(_saS); _saT.copy(_saS).addScaledVector(_saF, 0.3).addScaledVector(_saR, -0.08); _saT.y -= 0.24;
@@ -373,6 +452,18 @@ export function createEnemies(scene, camera, world, weapon, player) {
     foot.getWorldPosition(_ikF); _ikA.subVectors(_ikF, _ikH).normalize(); _ikB.subVectors(T, _ikH).normalize();
     rotWorld(up, _ikQ.setFromUnitVectors(_ikA, _ikB));
   }
+  function leadHips(enemy, dt) {
+    const planted = !!(enemy.footPlant && !enemy.moving && !enemy._turnBig && !(enemy.replantT > 0));
+    const want = planted ? (enemy.hipLead || 0) : 0;
+    const k = dt > 0 ? 1 - Math.exp(-dt / 0.1) : 1;
+    enemy._hipShown = (enemy._hipShown || 0) + (want - (enemy._hipShown || 0)) * k;
+    if (Math.abs(enemy._hipShown) < 1e-4) enemy._hipShown = 0;
+    const h = enemy.bones && enemy.bones.Hips;
+    if (!h || !enemy._hipShown) return;
+    enemy.group.updateMatrixWorld(true);
+    bendBone(h, _up, enemy._hipShown);
+    h.updateMatrixWorld(true);
+  }
   function footIK(enemy, dt) {
     const r = enemy.art && enemy.art.root; if (!r || enemy.dying || window.SS_NOPROC) return;
     if (!enemy.legs) {
@@ -401,7 +492,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const L = enemy.legs[i]; L.foot.getWorldPosition(_ikF);
       const down = _ikF.y < ground + 0.05;
       const was = L.lock;
-      if (down && enemy.moving) { if (!L.lock) L.lock = _ikF.clone().setY(ground); }
+      // ?loco=2 planted turn: hold the feet while the body yaws under 60 deg (the hip counter leads the chest).
+      const plant = LOCO2 && enemy.footPlant && !enemy.moving;
+      if (down && (enemy.moving || plant)) { if (!L.lock) L.lock = _ikF.clone().setY(ground); }
       else L.lock = null;
       if (L.lock && L.lock.distanceTo(_ikF.clone().setY(ground)) > 0.32) L.lock = null; // stride too long: release
       // Fix 11: a released lock eases back to the clip foot over ~0.12 s instead of snapping (the visible foot "pop").
@@ -541,7 +634,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const base = locoBase(enemy);
     enemy.loco.base = base;
     // Raw body-frame velocity (diagonals included). updateLoco eases speed; do not smooth again.
-    updateLoco(enemy, dt, { vel: m.vel, crouch: enemy.posture === 'crouch', base, turnRate: m.turnRate, tier: art.tier });
+    // Turn clips come from steerFacing (last frame). A moving yaw is not a turn-in-place.
+    const cmd = enemy._turnCmd;
+    updateLoco(enemy, dt, {
+      vel: m.vel, crouch: enemy.posture === 'crouch', base, turnRate: m.turnRate, tier: art.tier,
+      turnExplicit: true, turnClip: (cmd && cmd.clip) || null,
+      turnBlend: cmd && cmd.blend != null ? cmd.blend : 0, turnPlay: (cmd && cmd.play) || 0,
+    });
     if (enemy.hitPlaying && enemy.hitReturning && enemy.actions.hit) {
       const hit = enemy.actions.hit;
       const dur = hit.getClip().duration || 0;
@@ -554,6 +653,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function stepArt(enemy, dt) {
     _turnDt = dt;
+    if (LOCO2) noteAim(enemy);
     const name = desiredAnim(enemy);
     enemy.animState = name;
     const loco = !!(LOCO2 && enemy.loco && enemy.art && enemy.bones);
@@ -788,6 +888,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       suppressT: 0,
       engaged: false,
     };
+    if (LOCO2) { enemy.bodyYaw = 0; enemy.turning = null; enemy.aimYaw = 0; enemy.twist = 0; }
 
     const torso = new THREE.Mesh(geoTorso, matVest);
     torso.position.y = 1.15 * S;
@@ -899,7 +1000,144 @@ export function createEnemies(scene, camera, world, weapon, player) {
     g.quaternion.rotateTowards(_turnQ, (rate || 7) * _turnDt);
   }
   function facePlayer(enemy) {
+    if (LOCO2) return; // steerFacing keeps the aim; today's turnTo path stays when the flag is off
     turnTo(enemy, camera.position.x, camera.position.z, 6);
+  }
+  function groupYaw(g) {
+    _fwd.set(0, 0, 1).applyQuaternion(g.quaternion);
+    return Math.atan2(_fwd.x, _fwd.z);
+  }
+  function distToPlayer(enemy) {
+    return enemy.group.position.distanceTo(camera.position);
+  }
+  function remainPath(enemy) {
+    const g = enemy.group.position;
+    const path = enemy.path;
+    let d = 0, x = g.x, z = g.z, any = false;
+    if (path && path.length) {
+      for (let i = enemy.pathI | 0; i < path.length; i++) {
+        const q = path[i];
+        if (!q) continue;
+        d += Math.hypot(q.x - x, q.z - z);
+        x = q.x; z = q.z;
+        any = true;
+      }
+    }
+    if (!any && enemy.goal) return Math.hypot(enemy.goal.x - g.x, enemy.goal.z - g.z);
+    return d;
+  }
+  const COVER_PHASE = { peek: 1, hide: 1, fire: 1, takeCover: 1 };
+  function aimEngaged(enemy) {
+    return !!(enemy.engaged || COVER_PHASE[enemy.phase]);
+  }
+  function yawAt(enemy, x, z) {
+    const dx = x - enemy.group.position.x, dz = z - enemy.group.position.z;
+    if (dx * dx + dz * dz < 1e-6) return null;
+    return Math.atan2(dx, dz);
+  }
+  function noteAim(enemy) {
+    if (aimEngaged(enemy)) {
+      const y = yawAt(enemy, camera.position.x, camera.position.z);
+      if (y != null) {
+        enemy.threatYaw = y;
+        if (!enemy.threatPos) enemy.threatPos = new THREE.Vector3();
+        enemy.threatPos.copy(camera.position);
+      }
+    }
+    enemy.aimYaw = Number.isFinite(enemy.threatYaw) ? enemy.threatYaw : groupYaw(enemy.group);
+  }
+  function travelYaw(enemy) {
+    const g = enemy.group.position;
+    let dx = 0, dz = 0;
+    if (enemy._locoPos) { dx = g.x - enemy._locoPos.x; dz = g.z - enemy._locoPos.z; }
+    if (dx * dx + dz * dz < 1e-8) {
+      const dest = (enemy.path && enemy.path[enemy.pathI | 0]) || enemy.goal;
+      if (dest) { dx = dest.x - g.x; dz = dest.z - g.z; }
+    }
+    if (dx * dx + dz * dz < 1e-8) return null;
+    return Math.atan2(dx, dz);
+  }
+  function wantBodyYaw(enemy, still) {
+    if (!still) {
+      const lateral = enemy.phase === 'peek' || enemy.phase === 'hide';
+      if (!aimBody(aimEngaged(enemy), distToPlayer(enemy), remainPath(enemy), lateral)) {
+        const t = travelYaw(enemy);
+        if (t != null) return t;
+      }
+    }
+    return Number.isFinite(enemy.aimYaw) ? enemy.aimYaw : groupYaw(enemy.group);
+  }
+  function exposeYaw(enemy) {
+    enemy.bodyYaw = groupYaw(enemy.group);
+    if (enemy.turning !== 'L' && enemy.turning !== 'R') enemy.turning = null;
+    if (!Number.isFinite(enemy.aimYaw)) enemy.aimYaw = enemy.bodyYaw;
+    if (!Number.isFinite(enemy.twist)) enemy.twist = 0;
+  }
+  function easePlant(enemy, ydt) {
+    const p = (enemy.plantTwist || 0) * Math.exp(-(ydt > 0 ? ydt : 0.016) / 0.12);
+    enemy.plantTwist = Math.abs(p) < 1e-3 ? 0 : p;
+  }
+  // ?loco=2: body yaw is not the travel direction. Short engaged hops and cover shuffles stay aimed
+  // at the player; long moves face travel. Stationary turns use the turn clips or a planted yaw.
+  function steerFacing(enemy, dt) {
+    if (enemy.dying) { exposeYaw(enemy); return; }
+    noteAim(enemy);
+    const ydt = dt > 0 ? dt : 0;
+    const spd = enemy.moving ? (enemy.curSpeed || 0) : 0;
+    const still = spd < 0.25 && !enemy.moving;
+    const want = wantBodyYaw(enemy, still);
+    const err = wrapPi(want - groupYaw(enemy.group));
+    const abs = Math.abs(err);
+    const meta = (enemy.art && enemy.art.locoMeta) || enemy.locoMeta || null;
+    let rate = 0, play = 0;
+    enemy.turning = null;
+    if (!still) {
+      enemy._turnBig = false;
+      enemy.footPlant = false;
+      enemy.replantT = 0;
+      easePlant(enemy, ydt);
+      rate = yawRateStep(enemy._yawRate, err, MOVE_YAW_MAX, ydt, 0.03);
+    } else if (abs > TURN_ENTER || (enemy._turnBig && abs > TURN_DONE)) {
+      enemy._turnBig = true;
+      enemy.footPlant = false;
+      enemy.replantT = 0;
+      easePlant(enemy, ydt);
+      const side = err >= 0 ? 'L' : 'R';
+      enemy.turning = side;
+      play = turnPlayback(abs);
+      rate = (err >= 0 ? 1 : -1) * Math.abs(clipYawRate(meta, side)) * play;
+      if (ydt > 0 && Math.abs(rate) * ydt > abs) rate = err / ydt;
+    } else {
+      enemy._turnBig = false;
+      rate = yawRateStep(enemy._yawRate, err, PLANT_YAW_MAX, ydt, 0.08);
+      if (enemy.replantT > 0) {
+        enemy.replantT = Math.max(0, enemy.replantT - ydt);
+        enemy.footPlant = false;
+        const u = enemy.replantT / 0.3;
+        enemy.plantTwist = (enemy._replant0 || 0) * (u > 0 ? u : 0);
+        if (enemy.replantT > 0) { enemy.turning = (enemy._replant0 || err) >= 0 ? 'L' : 'R'; play = 1.35; }
+      } else if (Math.abs(enemy.plantTwist || 0) > PLANT_TWIST_MAX) {
+        enemy._replant0 = enemy.plantTwist;
+        enemy.replantT = 0.3;
+        enemy.footPlant = false;
+        enemy.turning = enemy.plantTwist >= 0 ? 'L' : 'R';
+        play = 1.35;
+      } else {
+        enemy.footPlant = abs > 0.05 || Math.abs(rate) > 0.15 || Math.abs(enemy.plantTwist || 0) > 0.08;
+      }
+    }
+    enemy._yawRate = rate;
+    const y0 = groupYaw(enemy.group);
+    if (ydt > 0 && Math.abs(rate) > 1e-5 && abs > 1e-4) {
+      _turnQ.setFromAxisAngle(_up, want);
+      enemy.group.quaternion.rotateTowards(_turnQ, Math.min(abs, Math.abs(rate) * ydt));
+    }
+    if (enemy.footPlant) enemy.plantTwist = (enemy.plantTwist || 0) + wrapPi(groupYaw(enemy.group) - y0);
+    const ptw = enemy.plantTwist || 0;
+    enemy.hipLead = ptw < -PLANT_TWIST_MAX ? PLANT_TWIST_MAX : ptw > PLANT_TWIST_MAX ? -PLANT_TWIST_MAX : -ptw;
+    if (Math.abs(enemy.hipLead) < 1e-4) enemy.hipLead = 0;
+    enemy._turnCmd = enemy.turning ? { clip: enemy.turning, blend: 1, play: play || 1 } : null;
+    exposeYaw(enemy);
   }
 
   function spray(point) {
@@ -1499,7 +1737,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     p.addScaledVector(_fwd.multiplyScalar(1 / hd), Math.min(hd, step));
     p.y += Math.sign(dy) * Math.min(Math.abs(dy), 0.45 * dt); // vertical drift ≤0.45 m/s (stairs-free scene: no hops)
     if (p.y < 0) p.y = 0;
-    if (horiz > 0.12) turnTo(enemy, dest.x, dest.z, 9);
+    if (horiz > 0.12 && !LOCO2) turnTo(enemy, dest.x, dest.z, 9);
     enemy.moveSpeed = step / Math.max(dt, 1e-4);
     return false;
   }
@@ -1633,9 +1871,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function updateEnemy(enemy, dt, diff) {
     if (!enemy.alive) return;
-    if (enemy.staggerT > 0) { enemy.staggerT -= dt; return; } // hit stagger: frozen, exposed
+    if (enemy.staggerT > 0) {
+      enemy.staggerT -= dt;
+      if (LOCO2) { enemy.turning = null; enemy._turnCmd = null; enemy.footPlant = false; enemy._turnBig = false; exposeYaw(enemy); }
+      return;
+    } // hit stagger: frozen, exposed
     if (enemy.behavior === 'flanker') updateFlanker(enemy, dt, diff);
     else updateCover(enemy, dt, diff);
+    if (LOCO2) steerFacing(enemy, dt);
   }
 
   function aliveCount() {
