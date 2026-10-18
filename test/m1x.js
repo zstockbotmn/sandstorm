@@ -29,7 +29,8 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
         await p.mouse.click(pos[0], pos[1]); await p.waitForTimeout(1800);
         const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, tapped: SS.pickupsTapped | 0, late: SS.pickupsLateTaps | 0 }));
         Object.assign(r, { fps: Math.round(1000 / slow), lateMs, pos: pos.map(Math.round), atClick: state }); res.A.push(r);
-        if (r.fired !== 0) fail.push('A: a click on the medkit (' + Math.round(1000 / slow) + ' fps) ' + lateMs + ' ms after it was drawn FIRED ' + r.fired + ' ' + JSON.stringify(r));
+        // b1 (App PM): auto-pickup ON (default) -> pickups never take taps: the click is exactly one shot, and the kit still auto-collects
+        if (r.fired !== 1 || r.ammo[0] - r.ammo[1] !== 1) fail.push('A: default game, a click near the medkit (' + Math.round(1000 / slow) + ' fps) ' + lateMs + ' ms after it was drawn should fire exactly 1 round, fired ' + r.fired + ' ' + JSON.stringify(r));
         if (r.taken < 1) fail.push('A: the medkit was not collected ' + JSON.stringify(r));
         await p.evaluate(() => { window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(400); }
       // m1z (tester, 0.6 fps: health refilled AND the mag dropped 18->17): taps on the kit's spot in a LATER frame of its
@@ -47,11 +48,26 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
         await p.waitForTimeout(Math.max(4000, slow * 4));
         const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, reserve: [window.__r0, SS.weapon.reserve], gapMs: Math.round(SS.input.gapMs) }));
         Object.assign(r, { kind, fps: +(1000 / slow).toFixed(1), frameIx, lagMs, pos: pos && pos.slice(0, 2).map(Math.round), clicked, kitLeftAtClick: atClick }); res.A2.push(r);
-        if (clicked && (r.fired !== 0 || r.ammo[0] !== r.ammo[1])) fail.push('A2: a tap on the flying ' + kind + ' drop (' + r.fps + ' fps, frame ' + frameIx + ', ' + lagMs + ' ms late) cost ammo ' + JSON.stringify(r));
+        if (clicked && (r.fired !== 1 || r.ammo[0] - r.ammo[1] !== 1)) fail.push('A2: default game, a tap on the flying ' + kind + ' drop (' + r.fps + ' fps, frame ' + frameIx + ', ' + lagMs + ' ms late) should be exactly 1 shot ' + JSON.stringify(r));
         if (r.taken < 1) fail.push('A2: the medkit was not collected ' + JSON.stringify(r));
         if (kind === 'ammo' && !(r.reserve[1] > r.reserve[0])) fail.push('A2: the ammo drop did not add reserve ' + JSON.stringify(r));
         await p.evaluate(() => { window.__preFrame = window.__prevPF; window.__kitFr = null; window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(600); }
       if (!res.A2.some((r) => r.clicked && r.kitLeftAtClick === 0)) fail.push('A2: no case tapped after the auto-collect took the kit (tap pending while collected) ' + JSON.stringify(res.A2.map((r) => [r.clicked, r.kitLeftAtClick])));
+      // A3 (b1, ?autopickup=0 only): a kit/ammo box on the ground; a tap within 60 px of its drawn spot collects it and never fires
+      // (1 fps and 0.6 fps, 1-2 s late); a tap 95 px away is a shot.
+      { const { p: p3, ctx: c3 } = await start(true, '&autopickup=0'); res.A3 = [];
+        await p3.evaluate(() => { window.__freezeCam = true; SS.weapon.ammo = 30; SS.weapon.reserve = 60; });
+        for (const [slow, lagMs, off, kind] of [[1000, 1200, 0, 'health'], [1000, 1500, 45, 'ammo'], [1600, 2000, 55, 'health'], [1600, 1500, 40, 'ammo'], [1000, 1200, 95, 'health']]) {
+          const pos = await p3.evaluate(([slow, kind]) => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 7; v.z -= Math.cos(y) * 7; v.y = 0; window.__slowMs = slow;
+            SS.stakes.drop(kind, v); SS.player.health = 50; window.__r0 = SS.weapon.reserve; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0;
+            const it = SS.stakes.items[SS.stakes.items.length - 1]; const w = it.g.position.clone(); w.y = 0.45 * it.g.scale.x; w.applyMatrix4(SS.lastVP); return [(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight]; }, [slow, kind]);
+          await p3.waitForTimeout(slow * 2 + lagMs); await p3.mouse.click(pos[0] + off, pos[1]); await p3.waitForTimeout(Math.max(3000, slow * 3));
+          const r = await p3.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, left: SS.stakes.items.length }));
+          Object.assign(r, { kind, fps: +(1000 / slow).toFixed(1), lagMs, off }); res.A3.push(r);
+          if (off <= 60) { if (r.fired !== 0 || r.ammo[0] !== r.ammo[1]) fail.push('A3: autopickup=0, a tap ' + off + ' px from the ' + kind + ' fired ' + JSON.stringify(r)); if (r.taken < 1) fail.push('A3: autopickup=0, a tap ' + off + ' px from the ' + kind + ' did not collect it ' + JSON.stringify(r)); }
+          else if (r.fired !== 1 || r.taken !== 0) fail.push('A3: autopickup=0, a tap ' + off + ' px away should be a shot and leave the kit ' + JSON.stringify(r));
+          await p3.evaluate(() => { window.__slowMs = 0; SS.stakes.reset(); }); await p3.waitForTimeout(600); }
+        await c3.close(); }
       // W (m2a): FIRE taps still queued when the last enemy of a wave dies never fire into the walk (0.6 fps, taps queued
       // in the same event-loop window as the kill)
       { await p.evaluate(() => { window.__slowMs = 1600; }); await p.waitForTimeout(2500);
