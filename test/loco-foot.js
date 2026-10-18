@@ -103,5 +103,5 @@ const SLOWMO = process.env.SS_LOCO_SLOWMO !== '0'; // sim at 0.3x (SS.slowmoUnti
     if (r.legInTorso) fail.push(C.name + ': knee inside the torso capsule on ' + r.legInTorso + ' frames');
     if (process.env.SS_LOCO_DIAG) console.log(JSON.stringify(r)); }
   if (res.pageErrors) fail.push('page errors: ' + res.pageErrors.join(' | '));
-  console.log(JSON.stringify(res)); console.log('offline rule: heel/toe (loosened) | live: ankle-only'); console.log(fail.length ? 'LOCOFOOT FAIL ' + fail.join(' ; ').slice(0, 900) : 'LOCOFOOT PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
+  console.log(JSON.stringify(res)); console.log('offline rule: heel/toe (loosened) | live: ankle-only'); if (res.slideWarn) console.log('SLIDE (report only, ankle p90 cm): ' + res.slideWarn.join(' ; ')); console.log(fail.length ? 'LOCOFOOT FAIL ' + fail.join(' ; ').slice(0, 900) : 'LOCOFOOT PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
 })().catch((e) => { console.log('LOCOFOOT FAIL exception ' + e.message); process.exit(1); });
