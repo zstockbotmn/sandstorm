@@ -18,7 +18,7 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
     if (calm) await p.evaluate(() => { SS.walking = false; SS.player.health = 1e6; }); await p.waitForTimeout(1500); return { p, ctx }; }
   const shots = (p) => p.evaluate(() => SS.weapon.shotsFired);
-  if (want('A') || want('B') || want('C') || want('D') || want('F') || want('G')) { const { p, ctx } = await start(true);
+  if (want('A') || want('B') || want('C') || want('D') || want('F') || want('G') || want('H')) { const { p, ctx } = await start(true);
     await p.evaluate(() => { window.__freezeCam = true; SS.weapon.ammo = 30; SS.weapon.reserve = 200; });
     // A: drop a kit 7 m ahead, take its screen spot as drawn, click there ~1 s later (fly-in started at 0.6 s)
     if (want('A')) { res.A = [];
@@ -53,6 +53,13 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     // D: a still hold at 5 fps still auto-fires (feel)
     if (want('D')) { await p.evaluate(() => { window.__slowMs = 200; SS.weapon.ammo = 30; }); await p.waitForTimeout(600); const f0 = await shots(p); await p.mouse.move(420, 200); await p.mouse.down(); await p.waitForTimeout(1600); await p.mouse.up(); await p.waitForTimeout(800);
       res.D = { fired: (await shots(p)) - f0 }; await p.evaluate(() => { window.__slowMs = 0; }); if (res.D.fired < 3) fail.push('D: a 1.6 s still hold at 5 fps fired only ' + res.D.fired); }
+    // H (m1y: a full-screen HUD SVG swallowed canvas clicks): with the damage arc, edge warning, low-HP glow, radio and
+    // banners all showing, every point of the play area hit-tests to the canvas or a real control
+    if (want('H')) { res.H = await p.evaluate(() => { SS.player.health = 1e6; const hud = SS.hud; try { hud.damageDirection(0.7); hud.damageVignette(1); hud.callout && hud.callout('test line'); hud.radio && hud.radio('Contact reported ahead. Stay sharp.'); hud.banner && hud.banner('CONTACT'); hud.hitMarker && hud.hitMarker('hit'); } catch (_) {}
+        document.getElementById('edge-warn') && document.getElementById('edge-warn').classList.add('show'); document.getElementById('lowhp') && document.getElementById('lowhp').classList.add('on');
+        const bad = {}; let n = 0; for (let x = 10; x < innerWidth; x += 24) for (let y = 10; y < innerHeight; y += 24) { const el = document.elementFromPoint(x, y); if (!el || el.tagName === 'CANVAS' || el.closest('[data-ctl]')) continue; const k = (el.id || el.tagName) + '.' + (el.getAttribute('class') || ''); bad[k] = (bad[k] | 0) + 1; n++; }
+        document.getElementById('edge-warn') && document.getElementById('edge-warn').classList.remove('show'); return { n, bad }; });
+      if (res.H.n) fail.push('H: ' + res.H.n + ' play-area points hit a HUD element instead of the canvas ' + JSON.stringify(res.H.bad)); }
     // G (m1y, tester at ~1 fps: a fast 300 px drag turned ~20 px): a fast drag (one 300 px jump / three 100 px moves) at 1 fps turns ~1:1
     if (want('G')) { res.G = []; const cdp = await ctx.newCDPSession(p);
       for (const steps of [1, 3]) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; }); await p.waitForTimeout(2200); const y0 = await p.evaluate(() => SS.input.yaw);

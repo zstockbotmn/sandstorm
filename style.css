@@ -468,7 +468,8 @@ body.starting #starting { display: flex; }
 /* m1v: damage arc + off-view warning drawn as SVG ring segments on the real viewport edge */
 #dmg-dir { left: 0 !important; top: 0 !important; width: 100vw !important; height: 100vh !important; margin: 0 !important; transform: none !important; }
 #dmg-dir .arc, #dmg-dir .arrow { display: none !important; }
-#dmg-dir svg, #edge-warn svg { position: absolute; left: 0; top: 0; overflow: visible; }
+#dmg-dir svg, #edge-warn svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; } /* m1y: the full-screen arc SVGs swallowed canvas taps/clicks */
+#dmg-dir svg *, #edge-warn svg * { pointer-events: none; }
 #dmg-dir path { fill: none; stroke: rgba(255, 30, 30, 0.95); stroke-width: 18; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(255, 0, 0, 0.9)); }
 #edge-warn { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 4; transition: opacity 0.35s linear; }
 #edge-warn.show { opacity: 1; transition: none; }

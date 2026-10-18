@@ -61,12 +61,13 @@ const res = {};
           SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len);
           SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
         let shot; const atShot = []; SS.weapon.onShotDebug = () => atShot.push(e.group.position.clone()); // fighter position AT the shot (a 4.5 m/s mover keeps walking after it)
-        if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; for (let k = 0; k < 12 && SS.weapon.shotsFired === n0; k++) { if (k === 2) SS.input.pendingShots = 1; // fire once a led view has been drawn // keep tracking the moving hitbox until the shot leaves (Low tier frames are long)
+        if (c.moving) { const n0 = SS.weapon.shotsFired; SS.weapon.ammo = 30; let onScreen = null; for (let k = 0; k < 14 && SS.weapon.shotsFired === n0; k++) { // m1y: queue the click only when the DRAWN view (last render) is on this fighter, in the same task (the next frame's shot uses exactly that view + pose)
+            if (k >= 2 && !onScreen) { const L = SS.lastCam, d = new SS.THREE.Vector3(0, 0, -1).applyQuaternion(L.q), h0 = SS.weapon.firstHit(L.p.clone(), d); if (h0 && h0.object.userData && h0.object.userData.enemy === e) { onScreen = h0.object.userData.part; SS.input.pendingShots = 1; } } // keep tracking the moving hitbox until the shot leaves (Low tier frames are long)
             // m1x/m1y: shots fly along the view that was ON SCREEN; the view set now is drawn with the fighter's NEW position,
             // so lead by this frame's motion (v * frame dt), as a tracking player does
             if (k) { const gapL = SS.lastSimDt != null ? SS.lastSimDt : 0.05; const tp = tgt.getWorldPosition(new SS.THREE.Vector3()).addScaledVector(e.debugVel || new SS.THREE.Vector3(), gapL), cp = SS.camera.getWorldPosition(new SS.THREE.Vector3()); const dx = tp.x - cp.x, dy = tp.y - cp.y, dz = tp.z - cp.z, len = Math.hypot(dx, dy, dz);
               SS.input.yaw = -Math.atan2(-dx, -dz); SS.input.pitch = -Math.asin(dy / len); SS.camera.rotation.set(-SS.input.pitch, -SS.input.yaw, 0); SS.camera.updateMatrixWorld(); }
-            await frames(1); } shot = SS.weapon.lastShot; }
+            await frames(1); } shot = SS.weapon.shotsFired === n0 ? null : SS.weapon.lastShot; if (!onScreen) { SS.input.pendingShots = 0; out.push({ part, skip: true, why: 'never on screen under the crosshair' }); SS.weapon.onShotDebug = null; continue; } }
         else shot = SS.weapon.debugShoot(SS.input);
         SS.weapon.onShotDebug = null; const gp = (atShot[atShot.length - 1] || e.group.position).clone(); const ok = !!(shot && shot.hit && shot.hit.enemy && shot.hit.point.distanceTo(gp.setY(shot.hit.point.y)) < 1.2);
         // a moving target that walked behind a prop between aim and the fire frame is occluded, not a false miss
