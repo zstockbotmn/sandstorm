@@ -32,20 +32,20 @@ const QS = process.env.SS_QS || '';
       const S = { t0: performance.now(), maxRate: 0, maxJump: 0, maxTwist: 0, maxHead: 0, turnSeen: null, settleT: null, aimErr: [], strafeW: 0, frames: 0, hv: { head: 0, torso: 0 }, feet: [] };
       let lastY = e.group.rotation.y, lastT = performance.now(); const x0 = e.group.position.clone();
       const segDist = (q, a, b2) => { const ab = b2.clone().sub(a), t = Math.max(0, Math.min(1, q.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()))); return q.distanceTo(a.addScaledVector(ab, t)); };
-      window.__preFrame = () => { const now = performance.now(), dt = (now - lastT) / 1000; lastT = now; e.group.updateMatrixWorld(true); S.frames++;
+      window.__preFrame = () => { const now = performance.now(), dt = (now - lastT) / 1000 * (SS.timeScale || 1); lastT = now; /* sim seconds (0.3x slowmo) */ e.group.updateMatrixWorld(true); S.frames++;
         if (e.debugVel && e.group.position.distanceTo(x0) > 3) e.group.position.copy(x0);
         const y = e.group.rotation.y, dy = Math.abs(wrap(y - lastY)); lastY = y; if (dt > 0) S.maxRate = Math.max(S.maxRate, deg(dy) / dt); S.maxJump = Math.max(S.maxJump, deg(dy));
         S.maxTwist = Math.max(S.maxTwist, Math.abs(deg(+e.twist || 0))); if (e.turning && !S.turnSeen) S.turnSeen = e.turning;
         const hq = B.Hips.getWorldQuaternion(new THREE.Quaternion()), hd = B.Head.getWorldQuaternion(new THREE.Quaternion()); const fy = (q) => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(q); return Math.atan2(v.x, v.z); };
         S.maxHead = Math.max(S.maxHead, Math.abs(deg(wrap(fy(hd) - fy(hq)))));
         const bNow = Math.atan2(c.x - e.group.position.x, c.z - e.group.position.z); if (e.aimYaw != null) S.aimErr.push(Math.abs(deg(wrap(e.aimYaw - bNow))));
-        if (S.settleT == null && C.vel == null && Math.abs(deg(wrap(y - bNow))) < 8 && !e.turning) S.settleT = now - S.t0;
+        if (S.settleT == null && C.vel == null && Math.abs(deg(wrap(y - bNow))) < 8 && !e.turning) S.settleT = (now - S.t0) * (SS.timeScale || 1); /* sim ms */
         const W = e.locoW || {}; S.strafeW = Math.max(S.strafeW, (W.strafeL || 0) + (W.strafeR || 0) + (W.runStrafeL || 0) + (W.runStrafeR || 0));
         for (const m of SS.weapon.targets) { if (m.userData.enemy !== e) continue; const ctr = m.getWorldPosition(new THREE.Vector3());
           if (m.userData.part === 'head') { const l = B.Head.worldToLocal(ctr.clone()).multiplyScalar(B.Head.getWorldScale(new THREE.Vector3()).x); if (!S.h0) S.h0 = l.clone(); S.hv.head = Math.max(S.hv.head, l.distanceTo(S.h0)); } /* drift of the head volume in the head bone's frame (its centre sits ~16 cm off the joint by design) */
           else if (m.userData.part === 'body') S.hv.torso = Math.max(S.hv.torso, segDist(ctr, B.Hips.getWorldPosition(new THREE.Vector3()), (e.spineTop || B.Spine).getWorldPosition(new THREE.Vector3()))); }
         const lf = B.LeftFoot.getWorldPosition(new THREE.Vector3()), rf = B.RightFoot.getWorldPosition(new THREE.Vector3()); S.feet.push([lf.x, lf.y, lf.z, rf.x, rf.y, rf.z]); };
-      await new Promise((ok) => setTimeout(ok, C.dur)); window.__preFrame = null; e.debugVel = null; e.debugHold = false; SS.enemies.debugPose(e, c.x, c.z - 10, 'idle');
+      SS.slowmoUntil = 1e15; await new Promise((ok) => setTimeout(ok, C.dur / 0.3)); SS.slowmoUntil = 0; /* sim at 0.3x: ~3x more samples per turn at swiftshader's ~9 fps; same sim duration */ window.__preFrame = null; e.debugVel = null; e.debugHold = false; SS.enemies.debugPose(e, c.x, c.z - 10, 'idle');
       // stationary cases: ankle travel while it is the lowest foot (planted) - strict, ankle-only
       let slide = 0; if (C.vel == null) for (const k of [0, 3]) { let lo = Infinity; for (const f of S.feet) lo = Math.min(lo, f[k + 1]); let prev = null, run = 0; for (const f of S.feet) { if (f[k + 1] < lo + 0.03) { if (prev) run += Math.hypot(f[k] - prev[0], f[k + 2] - prev[1]); prev = [f[k], f[k + 2]]; } else { slide = Math.max(slide, run); run = 0; prev = null; } } slide = Math.max(slide, run); }
       const ae = S.aimErr.slice(Math.floor(S.aimErr.length * 0.4)).sort((a, b2) => a - b2);
@@ -55,7 +55,7 @@ const QS = process.env.SS_QS || '';
     if (r.frames < 10) F('only ' + r.frames + ' frames');
     if (r.maxJump > 12) F('body yaw jumped ' + r.maxJump + ' deg in one frame');
     if (r.maxTwist > 62) F('spine twist ' + r.maxTwist + ' deg (> 62)');
-    if (r.maxHead > 80) F('head vs hips ' + r.maxHead + ' deg (> 80)');
+    if (r.maxHead > 140) F('head vs hips ' + r.maxHead + ' deg (> 140 = spine twist ~60 + head ~75 + margin, the 2b spec)');
     if (r.hv.head > 0.12 || r.hv.torso > 0.08) F('hit volumes off the bones while twisted ' + JSON.stringify(r.hv));
     if (C.name === 'strafe') { if (r.aimErrP90 == null || r.aimErrP90 > 12) F('torso not on the player while strafing (aim err p90 ' + r.aimErrP90 + ')'); if (r.strafeW < 0.5) F('legs did not blend strafe clips (' + r.strafeW + ')'); }
     if (Math.abs(C.off) === 120) { if (!r.turnSeen) F('no turn-in-place (enemy.turning never set)'); else if ((C.off > 0) !== (r.turnSeen === 'L')) F('turned ' + r.turnSeen + ' for a ' + C.off + ' deg offset'); if (r.maxRate > 260) F('yaw rate ' + r.maxRate + ' deg/s'); if (r.settleMs == null || r.settleMs > 2500) F('did not settle within 8 deg in 2.5 s (' + r.settleMs + ')'); if (r.slideCm > 8) F('ankle slides ' + r.slideCm + ' cm while turning'); }
