@@ -24,6 +24,8 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
   // so the old current-position test missed and the click FIRED (tester 2/2). Every drop keeps a short trail of where it
   // was drawn; a tap on any recent spot of a live, flying or just-collected kit is a pickup tap: it collects (if still
   // there) and never fires.
+  // m2a: ?autopickup=0 (debug/test only: needs ?debug or an automated browser) leaves drops on the ground so they can be tapped at low fps
+  const AUTO_PICK = (() => { try { return !(/[?&]autopickup=0\b/.test(location.search) && (/[?&]debug\b/.test(location.search) || navigator.webdriver)); } catch (_) { return true; } })();
   const TRAIL_S = 2.5, recent = []; const trailMs = () => Math.max(TRAIL_S * 1000, 4.5 * ((window.SS && window.SS.input && window.SS.input.gapMs) || 0)); // m1y: >= 4.5 frames at ~1 fps // s: a tap may land up to ~2 s after the frame the player saw (1-5 fps + input lag)
   function nearTrail(trail, VP, W, H, cx, cy, now) { let best = 1e9;
     for (let j = trail.length - 1; j >= 0; j--) { const q = trail[j]; if (now - q.t > trailMs()) break;
@@ -74,7 +76,7 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
       const dx = it.g.position.x - camera.position.x, dz = it.g.position.z - pz;
       // auto-collect (Zack): after ~0.6 s on the ground the drop flies to the player and applies on arrival
       // Every drop is collected wherever it fell (a drop > 40 m away used to sit there forever, looking like a prop).
-      if (it.t > 0.6) {
+      if (it.t > 0.6 && AUTO_PICK) {
         it.fly = (it.fly || 0) + dt;
         _tgt.set(camera.position.x, camera.position.y - 0.5, camera.position.z);
         const k = Math.min(1, dt * (3 + it.fly * 10)); it.g.position.lerp(_tgt, k); it.g.scale.setScalar(Math.max(0.4, 1 - it.fly));

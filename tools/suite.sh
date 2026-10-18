@@ -7,11 +7,11 @@
 # -j2 (default for fast since m1y): 2 tests at once when the box is free - only our own harness browsers, never next to a
 # foreign headless Chrome, never two tests on one port, the 2nd starts only with >= 40% idle CPU (tools/busy.sh).
 # SOLO tests (fps/timing-sensitive) always run alone.
-FAST_TESTS="fast-parity rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick waves-passive regen scope-switch scope-drag start-feedback m1v m1w m1x aim-reg cover-occl"
+FAST_TESTS="fast-parity rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick waves-passive regen scope-switch scope-drag start-feedback m1v m1w m1x aim-reg cover-occl hitvol-margin"
 # tests that read no pixels/fps (safe 2-at-a-time)
-LOGIC_TESTS="rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit waves-passive regen scope-switch scope-drag m1w m1x aim-reg cover-occl"
+LOGIC_TESTS="rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit waves-passive regen scope-switch scope-drag m1w m1x aim-reg cover-occl hitvol-margin"
 VISUAL_TESTS="art-shots kill-art title-layout stakes-shots ragdoll-shots feedback-shots m1 auto-tier"
-ALL_TESTS="rules-test hit-test art-shots kill-art m1 stakes-shots ragdoll-shots soak fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick feedback-shots waves-passive regen auto-tier title-layout scope-switch scope-drag start-feedback m1v m1w m1x aim-reg cover-occl"
+ALL_TESTS="rules-test hit-test art-shots kill-art m1 stakes-shots ragdoll-shots soak fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick feedback-shots waves-passive regen auto-tier title-layout scope-switch scope-drag start-feedback m1v m1w m1x aim-reg cover-occl hitvol-margin"
 SOLO=" quality-pick auto-tier start-feedback m1v fast-parity soak "
 # m1y (App PM): -j2 is the default for fast runs; -j1 forces serial. visual/release/tier runs stay serial.
 PAR=2; if [ "$1" = "-j2" ]; then shift; elif [ "$1" = "-j1" ]; then PAR=1; shift; fi; case "$1" in fast) ;; *) PAR=1 ;; esac

@@ -108,6 +108,11 @@ export function createInput(canvas) {
   let lastUpT = 0;
   function endHold() { lastUpT = performance.now(); const o = openHold(); if (o && !o.end) o.end = evNow(); }
   input.startHold = startHold; input.endHold = endHold;
+  // m2a (tester: ammo 24->23 as the wave cleared and a drop was tapped): FIRE taps / holds still queued from the fight are
+  // dropped when the last enemy of a wave dies, and taps whose event time is before that moment never queue later.
+  input.fireCutT = 0;
+  input.dropQueuedFire = function dropQueuedFire() { const n = (input.pendingShots | 0) + (input.hold && input.hold.end ? 1 : 0) + input.holdQ.length;
+    input.pendingShots = 0; input.tapT.length = 0; input.holdQ.length = 0; if (input.hold && input.hold.end) input.hold = null; /* a trigger still held down keeps firing; only released/queued fire is dropped */ input.fireCutT = performance.now(); input.fireCuts = (input.fireCuts | 0) + n; return n; };
   input.clearAim = function clearAim() { aimDX = aimDY = 0; };
   input.resetState = function resetState() { input.hold = null; input.holdQ.length = 0; aimDX = aimDY = 0; input.scope = false; input.fire = false; input.cover = false; input.pendingShots = 0; input.tapT.length = 0; fireBtn = fireKey = fireMouse = false; sync(); };
   function sync() {
@@ -184,6 +189,7 @@ export function createInput(canvas) {
     // larger single jumps are lag bursts or pointer teleports (spun the view into the ground). Clamp, don't drop.
     const mx = Math.max(160, (window.innerWidth || 844) * 0.75), my = Math.max(70, (window.innerHeight || 390) * 0.75); // m1y: was 60% / 35% (cut fast low-fps drags)
     aimDX += Math.max(-mx, Math.min(mx, dx)) * sens; aimDY += Math.max(-my, Math.min(my, dy)) * sens;
+    input.dragPx = (input.dragPx || 0) + Math.min(mx, Math.hypot(dx, dy)); // m1z+: first-run hint dismisses on a real aim drag
     input.aimMovedT = performance.now(); if (window.SS && window.SS.weapon && window.SS.weapon.cancelRecoil) window.SS.weapon.cancelRecoil();
   }, { passive: false });
 
@@ -191,7 +197,7 @@ export function createInput(canvas) {
     const p = pointers.get(e.pointerId);
     if (!p) return;
     pointers.delete(e.pointerId);
-    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) { input.pendingShots = (input.pendingShots || 0) + 1; input.tapT.push(e.timeStamp || performance.now()); } fireMouse = false; } // queue one shot per still-click; weapon drains when cooldown allows
+    if (p.mouse) { clearTimeout(pressTimer); if (!p.moved && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= 4 && !((p.t0 || 0) < input.fireCutT) && (!p.held || (window.SS.weapon && window.SS.weapon.shotsFired === p.shots0))) { input.pendingShots = (input.pendingShots || 0) + 1; input.tapT.push(e.timeStamp || performance.now()); } fireMouse = false; } // queue one shot per still-click; weapon drains when cooldown allows
     sync();
   }
   window.addEventListener('pointerup', endPointer);

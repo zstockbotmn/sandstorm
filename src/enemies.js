@@ -823,6 +823,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   const hitBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+  // m2a (tester: hit markers with the crosshair just beside the body): limb volumes are round (cylinder, diameter w). The
+  // square boxes had an arbitrary roll, so seen across a corner they were sqrt(2) x w wide - 10-19 cm past the drawn
+  // crouched limbs (test/hitvol-margin.js). A cylinder is w wide from every side.
+  const limbGeo = new THREE.CylinderGeometry(0.56, 0.56, 1, 12); // diameter 1.12 w: the boxes' mean width over all rolls (~1.2 w) kept aim-reg's >= 88% visible-body coverage
   const _hY = new THREE.Vector3(0, 1, 0), _hD = new THREE.Vector3(), _hQ = new THREE.Quaternion(), _gQi = new THREE.Quaternion();
   // Place a unit box between two world points (group-local), oriented along the segment.
   function boxBetween(group, m, pa, pb, w) {
@@ -910,7 +914,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       ['LeftArm', 'LeftForeArm', 0.17], ['LeftForeArm', 'LeftHand', 0.14], ['RightArm', 'RightForeArm', 0.17], ['RightForeArm', 'RightHand', 0.14]];
     for (const [a, b, w] of LIMBS) {
       const ba = inst.root.getObjectByName(a), bb = inst.root.getObjectByName(b); if (!ba || !bb) continue;
-      const m = new THREE.Mesh(hitBoxGeo, ghostMat); m.castShadow = m.receiveShadow = false; m.userData.w = w; m.userData.seg = [a, b]; group.add(m);
+      const m = new THREE.Mesh(limbGeo, ghostMat); m.castShadow = m.receiveShadow = false; m.userData.w = w; m.userData.seg = [a, b]; group.add(m);
       register(m, enemy, 'limb'); enemy.limbBoxes.push({ m, ba, bb });
     }
     enemy.spineTop = inst.root.getObjectByName('neck') || inst.root.getObjectByName('Neck') || inst.root.getObjectByName('Spine02') || inst.root.getObjectByName('Spine01') || null;
@@ -1371,6 +1375,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const hp = SSx.player ? SSx.player.health : (SSx.health ?? 100), hpNeed = (100 - hp) / 100, ammoNeed = 1 - Math.min(1, (w.reserve | 0) / 120);
         const kind = dry || hp >= 99.5 ? 'ammo' : hpNeed > ammoNeed ? 'health' : ammoNeed > hpNeed ? 'ammo' : (Math.random() < 0.5 ? 'ammo' : 'health');
         SSx.stakes.drop(kind, origin.clone()); } }
+    if (aliveCount() === 0 && !truckPending && SSx.input && SSx.input.dropQueuedFire) SSx.input.dropQueuedFire(); // m2a: the fight's queued FIRE taps never fire into the walk
     if (aliveCount() === 0) { SSx.slowmoUntil = performance.now() + 750; if (SSx.hud && SSx.hud.banner) setTimeout(() => {}, 0); }
   }
 

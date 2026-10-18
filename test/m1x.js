@@ -36,21 +36,33 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
       // fly-in (the kit moves toward the player), 1-2 s after that frame was drawn - often after the auto-collect already took
       // it, while the tap is still queued in the event loop. Ammo and shotsFired must not change at 1 fps and 0.6 fps.
       res.A2 = [];
-      for (const [slow, frameIx, lagMs] of [[1000, 3, 1200], [1000, 4, 2000], [1600, 3, 1500], [1600, 4, 1500], [1600, 4, 2000], [1600, 2, 1000]]) {
-        await p.evaluate((slow) => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 6; v.z -= Math.cos(y) * 6; v.y = 0; window.__slowMs = slow;
-          SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0; window.__fr = [];
+      for (const [slow, frameIx, lagMs, kind] of [[1000, 3, 1200, 'health'], [1000, 4, 2000, 'health'], [1600, 3, 1500, 'health'], [1600, 4, 1500, 'health'], [1600, 4, 2000, 'health'], [1600, 2, 1000, 'health'], [1000, 3, 1500, 'ammo'], [1600, 3, 1500, 'ammo'], [1600, 4, 2000, 'ammo']]) {
+        await p.evaluate(([slow, kind]) => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 6; v.z -= Math.cos(y) * 6; v.y = 0; window.__slowMs = slow;
+          SS.stakes.drop(kind, v); SS.player.health = 50; SS.weapon.reserve = 60; window.__r0 = SS.weapon.reserve; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0; window.__fr = [];
           const it = SS.stakes.items[SS.stakes.items.length - 1]; window.__kitFr = () => { if (!SS.stakes.items.includes(it)) { window.__fr.push(null); return; } const w = it.g.position.clone(); w.y += 0.45 * it.g.scale.x; w.applyMatrix4(SS.lastVP); window.__fr.push([(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight, w.z]); };
-          const prev = window.__preFrame; window.__preFrame = () => { if (prev) prev(); if (window.__kitFr) window.__kitFr(); }; window.__prevPF = prev; }, slow);
+          const prev = window.__preFrame; window.__preFrame = () => { if (prev) prev(); if (window.__kitFr) window.__kitFr(); }; window.__prevPF = prev; }, [slow, kind]);
         await p.waitForFunction((k) => window.__fr.length > k, frameIx, { timeout: 60000, polling: 200 }); const pos = await p.evaluate((k) => window.__fr[k], frameIx); await p.waitForTimeout(lagMs);
         const atClick = await p.evaluate(() => SS.stakes.items.length); let clicked = false;
         if (pos && pos[2] > -1 && pos[2] < 1 && pos[0] >= 0 && pos[0] < 844 && pos[1] >= 0 && pos[1] < 390) { await p.mouse.click(pos[0], pos[1]); clicked = true; }
         await p.waitForTimeout(Math.max(4000, slow * 4));
-        const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, gapMs: Math.round(SS.input.gapMs) }));
-        Object.assign(r, { fps: +(1000 / slow).toFixed(1), frameIx, lagMs, pos: pos && pos.slice(0, 2).map(Math.round), clicked, kitLeftAtClick: atClick }); res.A2.push(r);
-        if (clicked && (r.fired !== 0 || r.ammo[0] !== r.ammo[1])) fail.push('A2: a tap on the flying medkit (' + r.fps + ' fps, frame ' + frameIx + ', ' + lagMs + ' ms late) cost ammo ' + JSON.stringify(r));
+        const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, reserve: [window.__r0, SS.weapon.reserve], gapMs: Math.round(SS.input.gapMs) }));
+        Object.assign(r, { kind, fps: +(1000 / slow).toFixed(1), frameIx, lagMs, pos: pos && pos.slice(0, 2).map(Math.round), clicked, kitLeftAtClick: atClick }); res.A2.push(r);
+        if (clicked && (r.fired !== 0 || r.ammo[0] !== r.ammo[1])) fail.push('A2: a tap on the flying ' + kind + ' drop (' + r.fps + ' fps, frame ' + frameIx + ', ' + lagMs + ' ms late) cost ammo ' + JSON.stringify(r));
         if (r.taken < 1) fail.push('A2: the medkit was not collected ' + JSON.stringify(r));
+        if (kind === 'ammo' && !(r.reserve[1] > r.reserve[0])) fail.push('A2: the ammo drop did not add reserve ' + JSON.stringify(r));
         await p.evaluate(() => { window.__preFrame = window.__prevPF; window.__kitFr = null; window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(600); }
       if (!res.A2.some((r) => r.clicked && r.kitLeftAtClick === 0)) fail.push('A2: no case tapped after the auto-collect took the kit (tap pending while collected) ' + JSON.stringify(res.A2.map((r) => [r.clicked, r.kitLeftAtClick])));
+      // W (m2a): FIRE taps still queued when the last enemy of a wave dies never fire into the walk (0.6 fps, taps queued
+      // in the same event-loop window as the kill)
+      { await p.evaluate(() => { window.__slowMs = 1600; }); await p.waitForTimeout(2500);
+        const e0 = await p.evaluate(() => { const c = SS.camera.position; const e = SS.debug.spawnEnemy('shifter'); SS.enemies.debugPose(e, c.x + 3, c.z - 20, 'idle'); e.shootCd = 1e9; e.noFireUntilR = 1e15; window.__we = e; return !!e; });
+        await p.waitForTimeout(3500); for (let i = 0; i < 3; i++) await p.mouse.click(200 + i * 3, 120);
+        const atKill = await p.evaluate(() => { const e = window.__we; e.health = 1; e.takeHit('body', e.group.position.clone()); return { fired: SS.weapon.shotsFired, alive: (SS.enemies.list || []).filter((x) => x.alive).length, cuts: SS.input.fireCuts | 0 }; });
+        await p.waitForTimeout(8000); const after = await p.evaluate(() => ({ fired: SS.weapon.shotsFired, cuts: SS.input.fireCuts | 0, pending: SS.input.pendingShots | 0 }));
+        await p.evaluate(() => { window.__slowMs = 0; });
+        res.W = { spawned: e0, atKill, after, firedAfterKill: after.fired - atKill.fired };
+        if (atKill.alive !== 0) fail.push('W: other enemies alive, wave not cleared ' + JSON.stringify(res.W));
+        else if (res.W.firedAfterKill !== 0) fail.push('W: ' + res.W.firedAfterKill + ' queued FIRE tap(s) fired after the wave cleared ' + JSON.stringify(res.W)); }
       // and ammo is untouched in the A cases too
       for (const r of res.A) if (r.ammo[0] !== r.ammo[1]) fail.push('A: medkit tap changed ammo ' + JSON.stringify(r));
       // control: a click well away from any drop still fires one round
@@ -115,6 +127,37 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
       if (R.visFrames < 5) fail.push('R: radio warning visible on only ' + R.visFrames + ' frames at 0.6 fps (want >= 5)'); if (R.gone != null && R.gone < 6000) fail.push('R: radio warning removed after ' + R.gone + ' ms (want >= 6 s)');
       if (R.shownT > (14 - 5) * 1000 * 1.6) fail.push('R: radio warning at ' + R.shownT + ' ms wall (contact=14: want ~9 s; frame-count based?)'); }
     await ctx.close(); }
+  // I (first-run hint): 'DRAG TO AIM · TAP FIRE' shows on the first run only, never takes a tap, holds >= 4 s and >= 3
+  // frames, fades after a real drag / a shot / 12 s; at 0.6 fps it is still on screen for >= 3 frames.
+  if (want('I')) { const { p, ctx } = await start(true, '&hint=1'); const vis = () => p.evaluate(() => { const el = document.getElementById('first-hint'); return el ? +getComputedStyle(el).opacity : -1; });
+    res.I = { atStart: await vis() }; if (!(res.I.atStart > 0.9)) fail.push('I: first-run hint not shown at start (opacity ' + res.I.atStart + ')');
+    const box = await p.evaluate(() => { const r = document.getElementById('first-hint').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    res.I.under = await p.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); return el ? el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') : null; }, box);
+    if (res.I.under !== 'canvas') fail.push('I: the hint takes taps (elementFromPoint ' + res.I.under + ')');
+    // an early 200 px drag: the hint stays until its 4 s minimum, then fades with reason 'drag'
+    await p.mouse.move(300, 200); await p.mouse.down(); for (let i = 1; i <= 8; i++) { await p.mouse.move(300 + i * 25, 200); await p.waitForTimeout(30); } await p.mouse.up();
+    await p.waitForTimeout(500); res.I.afterDrag = await vis(); await p.waitForTimeout(5000); res.I.later = await vis(); res.I.fh = await p.evaluate(() => ({ ...SS.hud.firstHint, ms: Math.round(SS.hud.firstHint.goneAt - SS.hud.firstHint.shownAt), seen: localStorage.getItem('ss.firstHint') }));
+    if (!(res.I.afterDrag > 0.9)) fail.push('I: hint faded before its 4 s minimum ' + JSON.stringify(res.I));
+    if (res.I.later > 0.1 || res.I.fh.reason !== 'drag') fail.push('I: hint did not fade after the drag ' + JSON.stringify(res.I));
+    if (res.I.fh.seen !== '1') fail.push('I: hint not stored as seen');
+    // second run in the same profile: not shown again (hint=keep keeps storage)
+    const p2 = await ctx.newPage(); await p2.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&hint=keep' + QS); await p2.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+    await p2.click('#play'); await p2.waitForFunction(() => SS.running, null, { timeout: 120000 }); await p2.waitForTimeout(1500);
+    res.I.second = await p2.evaluate(() => ({ op: +getComputedStyle(document.getElementById('first-hint')).opacity, state: SS.hud.firstHint.state }));
+    if (res.I.second.op > 0.1 || res.I.second.state === 'shown') fail.push('I: hint shown again on the second run ' + JSON.stringify(res.I.second));
+    await ctx.close();
+    // 0.6 fps, no input: on screen for >= 3 rendered frames, gone by ~12 s (timeout); a tap on it fires (passes through)
+    { const { p, ctx } = await start(true, '&hint=1'); await p.evaluate(() => { window.__slowMs = 1600; window.__hf = { vis: 0 }; window.__preFrame = () => { const el = document.getElementById('first-hint'); if (el && +getComputedStyle(el).opacity > 0.9) window.__hf.vis++; }; });
+      const r0 = await p.evaluate(() => SS.weapon.shotsFired); await p.waitForTimeout(16000);
+      res.I.slow = await p.evaluate(() => ({ vis: window.__hf.vis, reason: SS.hud.firstHint.reason, ms: Math.round(SS.hud.firstHint.goneAt - SS.hud.firstHint.shownAt), fired: SS.weapon.shotsFired }));
+      res.I.slow.fired -= r0; await p.evaluate(() => { window.__slowMs = 0; window.__preFrame = null; });
+      if (res.I.slow.vis < 3) fail.push('I: at 0.6 fps the hint was visible on only ' + res.I.slow.vis + ' frames');
+      if (res.I.slow.reason !== 'timeout' || res.I.slow.ms < 12000 || res.I.slow.ms > 15000) fail.push('I: 0.6 fps hint did not time out at ~12 s ' + JSON.stringify(res.I.slow));
+      await ctx.close(); }
+    // a tap on the hint's spot at normal fps fires one round and dismisses it (after the minimum)
+    { const { p, ctx } = await start(true, '&hint=1'); const f0 = await shots(p); await p.mouse.click(box[0], box[1]); await p.waitForTimeout(1500); res.I.tapFired = (await shots(p)) - f0;
+      if (res.I.tapFired !== 1) fail.push('I: a tap on the hint fired ' + res.I.tapFired + ' (want 1: taps pass through)');
+      await p.waitForTimeout(4000); res.I.tapReason = await p.evaluate(() => SS.hud.firstHint.reason); if (res.I.tapReason !== 'fire') fail.push('I: hint did not fade after a shot (' + res.I.tapReason + ')'); await ctx.close(); } }
   if (want('E')) { const { p, ctx } = await start(false);
     await p.evaluate(() => { SS.player.health = 1e6; window.__E = { warnT: 0, firstShotT: 0, firstEnemyT: 0, maxApproach: 0 }; const t0 = SS.startedAt || performance.now(); window.__Et0 = t0;
       setInterval(() => { const E = window.__E, now = performance.now() - t0; if (!E.warnT && SS.radioWarnAt) E.warnT = SS.radioWarnAt - t0; if (!E.firstShotT && (SS.enemyShots | 0) > 0) E.firstShotT = now;

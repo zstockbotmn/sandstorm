@@ -17,4 +17,8 @@ Approved by App PM Oct 17 12:07. Per step: FIRST survey best free, no-login, ope
 4. Buildings: (a) interior-mapping fake-depth room shader on ALL windows, a few randomized room atlases (furniture, lighting, curtains), cheap on iPhone, flat-texture fallback on ultra-low. (b) A few real enterable ground-floor rooms with open doorways (doors can swing) that enemies step out of / fall back into via real paths, never window pops. Keep draw calls in check.
 5. Set pieces + pacing: quiet walk -> sudden contact -> occasional truck crash / RPG strike -> short calm with regen. No instant heal.
 Off list: living soundscape, smarter AI, voiced radio (callouts text-only).
+Known (m2a, test/hitvol-margin.js): a chest shot at 20 m sometimes takes 3 hits (limb,body,body) - the aiming forearm sits
+in front of the chest and the first round registers as a limb hit (34). Margins pass (crouch limb volumes <= 12 cm past the
+mesh after the box->cylinder change, limit 13). Candidate fix later: rank body over limb when the torso capsule is within
+~0.35 m behind a forearm hit (firstHit rank already does this when the ray reaches the capsule).
 Rules: one heavy job at a time (coordinate with tester), no Meshy spend without me, arms opt-in until gloved grip reads right.
