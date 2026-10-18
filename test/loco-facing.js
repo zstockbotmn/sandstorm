@@ -24,9 +24,10 @@ const QS = process.env.SS_QS || '';
   if (res.setup.hooks.length) fail.push('2b hooks missing on the fighter: ' + res.setup.hooks.join(','));
   const cases = [{ name: 'strafe', off: 0, vel: 90, dur: 3000 }, { name: 'turn120', off: 120, dur: 3500 }, { name: 'turn40', off: 40, dur: 2500 }, { name: 'turn-120', off: -120, dur: 3500 }];
   for (const C of cases) {
-    const r = await p.evaluate(async (C) => { const THREE = SS.THREE, e = window.__e, B = e.bones, c = SS.camera.position; const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)), deg = (a) => a * 180 / Math.PI;
+    const r = await p.evaluate(async (C) => { const THREE = SS.THREE, e = window.__e, R0 = e.art || e.group, B = Object.assign({}, e.bones, { LeftFoot: e.bones.LeftFoot || R0.getObjectByName('LeftFoot'), RightFoot: e.bones.RightFoot || R0.getObjectByName('RightFoot') }), c = SS.camera.position; /* art.js bones have no feet */ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)), deg = (a) => a * 180 / Math.PI;
       SS.enemies.debugPose(e, c.x, c.z - 10, 'idle'); e.engaged = true; const bearing = Math.atan2(c.x - e.group.position.x, c.z - e.group.position.z); // yaw that faces the camera (+Z model forward)
       e.group.rotation.y = bearing - C.off * Math.PI / 180; if ('bodyYaw' in e) e.bodyYaw = e.group.rotation.y;
+      if (C.vel == null) { e.pinned = false; e.staggerT = 0; e.path = null; e.phase = 'fire'; e.exposed = true; e.shootCd = 1e9; e.noFireUntilR = 1e15; } // debugPose pins + staggers = 2b facing off
       if (C.vel != null) { const f = new THREE.Vector3(Math.sin(bearing), 0, Math.cos(bearing)), rt = new THREE.Vector3(-f.z, 0, f.x); e.debugVel = rt.multiplyScalar(1.3); } else e.debugVel = null;
       const S = { t0: performance.now(), maxRate: 0, maxJump: 0, maxTwist: 0, maxHead: 0, turnSeen: null, settleT: null, aimErr: [], strafeW: 0, frames: 0, hv: { head: 0, torso: 0 }, feet: [] };
       let lastY = e.group.rotation.y, lastT = performance.now(); const x0 = e.group.position.clone();
@@ -41,10 +42,10 @@ const QS = process.env.SS_QS || '';
         if (S.settleT == null && C.vel == null && Math.abs(deg(wrap(y - bNow))) < 8 && !e.turning) S.settleT = now - S.t0;
         const W = e.locoW || {}; S.strafeW = Math.max(S.strafeW, (W.strafeL || 0) + (W.strafeR || 0) + (W.runStrafeL || 0) + (W.runStrafeR || 0));
         for (const m of SS.weapon.targets) { if (m.userData.enemy !== e) continue; const ctr = m.getWorldPosition(new THREE.Vector3());
-          if (m.userData.part === 'head') S.hv.head = Math.max(S.hv.head, ctr.distanceTo(B.Head.getWorldPosition(new THREE.Vector3())));
+          if (m.userData.part === 'head') { const l = B.Head.worldToLocal(ctr.clone()).multiplyScalar(B.Head.getWorldScale(new THREE.Vector3()).x); if (!S.h0) S.h0 = l.clone(); S.hv.head = Math.max(S.hv.head, l.distanceTo(S.h0)); } /* drift of the head volume in the head bone's frame (its centre sits ~16 cm off the joint by design) */
           else if (m.userData.part === 'body') S.hv.torso = Math.max(S.hv.torso, segDist(ctr, B.Hips.getWorldPosition(new THREE.Vector3()), (e.spineTop || B.Spine).getWorldPosition(new THREE.Vector3()))); }
         const lf = B.LeftFoot.getWorldPosition(new THREE.Vector3()), rf = B.RightFoot.getWorldPosition(new THREE.Vector3()); S.feet.push([lf.x, lf.y, lf.z, rf.x, rf.y, rf.z]); };
-      await new Promise((ok) => setTimeout(ok, C.dur)); window.__preFrame = null; e.debugVel = null;
+      await new Promise((ok) => setTimeout(ok, C.dur)); window.__preFrame = null; e.debugVel = null; SS.enemies.debugPose(e, c.x, c.z - 10, 'idle');
       // stationary cases: ankle travel while it is the lowest foot (planted) - strict, ankle-only
       let slide = 0; if (C.vel == null) for (const k of [0, 3]) { let lo = Infinity; for (const f of S.feet) lo = Math.min(lo, f[k + 1]); let prev = null, run = 0; for (const f of S.feet) { if (f[k + 1] < lo + 0.03) { if (prev) run += Math.hypot(f[k] - prev[0], f[k + 2] - prev[1]); prev = [f[k], f[k + 2]]; } else { slide = Math.max(slide, run); run = 0; prev = null; } } slide = Math.max(slide, run); }
       const ae = S.aimErr.slice(Math.floor(S.aimErr.length * 0.4)).sort((a, b2) => a - b2);

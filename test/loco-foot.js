@@ -29,7 +29,7 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
   if (!blend.ok) fail.push('loco-blendcheck: ' + blend.line.slice(0, 200));
   if (offline && offline.error) fail.push('tools/loco-check.mjs failed: ' + offline.error); else if (offline && offline.fail && offline.fail.length) fail.push('loco-check (offline clips): ' + JSON.stringify(offline.fail).slice(0, 300));
   const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }); const p = await ctx.newPage();
-  await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { if (window.__preFrame && t !== window.__pfT) { window.__pfT = t; try { window.__preFrame(); } catch (_) {} } cb(t); }); });
+  await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { if (window.__preFrame && t !== window.__pfT) { window.__pfT = t; try { window.__preFrame(); } catch (err) { window.__pfErr = String(err).slice(0, 160); } } cb(t); }); });
   p.on('pageerror', (e) => (res.pageErrors = res.pageErrors || []).push(String(e).slice(0, 160)));
   await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&loco=2' + QS); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
   await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
@@ -39,7 +39,7 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
   if (!res.setup.bones) fail.push('fighter has no bones (art tier ' + res.setup.tier + ')');
   if (!res.setup.loco) fail.push('?loco=2 did not load fighter.loco meta (art.locoMeta missing)');
   // per-frame sampler: feet, leg/hip rotations, hit-volume offsets
-  await p.evaluate((LIM) => { const THREE = SS.THREE, e = window.__e, B = e.bones;
+  await p.evaluate((LIM) => { const THREE = SS.THREE, e = window.__e, R0 = e.art || e.group; const B = Object.assign({}, e.bones); for (const n of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) B[n] = B[n] || R0.getObjectByName(n); /* art.js BONE_NAMES has no feet: look them up (harness threw silently -> 0 frames) */
     const legs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'].filter((n) => B[n]);
     const segDist = (p, a, b) => { const ab = b.clone().sub(a), t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()))); return p.distanceTo(a.addScaledVector(ab, t)); };
     window.__S = null; window.__start = (name, setup) => { window.__S = { name, f: [], snap: 0, hv: { torso: 0, head: 0, limb: 0 }, lastQ: null, lastT: 0, wMax: 0, wMin: 9, wN: 0, diag: 0, gap: 9, legInTorso: 0 }; };
@@ -86,7 +86,7 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
     const S = await p.evaluate(() => { const S = window.__S; window.__S = null; window.__drive = null; window.__e.debugVel = null; return { f: S.f, snap: +S.snap.toFixed(1), hv: { torso: +S.hv.torso.toFixed(3), head: +S.hv.head.toFixed(3), limb: +S.hv.limb.toFixed(3) }, wN: S.wN, wMax: +S.wMax.toFixed(2), wMin: +S.wMin.toFixed(2), gap: +S.gap.toFixed(3), legInTorso: S.legInTorso, diag: S.diag, frames: S.f.length }; });
     const r = { name: C.name, band: C.band, frames: S.frames, slide: slideOf(S.f), snap: S.snap, hv: S.hv, wN: S.wN, wMax: S.wMax, wMin: S.wMin, gap: S.gap, legInTorso: S.legInTorso, diag: S.diag }; res.cases.push(r);
     const lim = C.band === 'run' ? LIM.slideRun : C.band === 'crouch' ? LIM.slideCrouch : C.band === 'turn' ? LIM.slideTurn : LIM.slideWalk;
-    if (r.frames < 10) fail.push(C.name + ': only ' + r.frames + ' frames sampled');
+    if (r.frames < 10) fail.push(C.name + ': only ' + r.frames + ' frames sampled' + (await p.evaluate(() => window.__pfErr ? ' (' + window.__pfErr + ')' : '')));
     if (r.slide.p90 > lim) fail.push(C.name + ': planted foot slides ' + r.slide.p90 + ' cm (p90 > ' + lim + ')');
     if (r.snap > LIM.snapDeg) fail.push(C.name + ': pose snap ' + r.snap + ' deg/frame@30fps (> ' + LIM.snapDeg + ')');
     if (r.hv.torso > LIM.torso || r.hv.head > LIM.head || r.hv.limb > LIM.limb) fail.push(C.name + ': hit volumes off the bones ' + JSON.stringify(r.hv));

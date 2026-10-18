@@ -33,7 +33,7 @@ const QS = process.env.SS_QS || '';
         if (k > 0.05) s.peakK = Math.max(s.peakK, k); if (s.k > 0.05 && k <= 0.05) { R.peaks.push({ k: +s.peakK.toFixed(2), fired: !!s.fired }); s.peakK = 0; s.fired = false; } if (k > 0.05 && e.phase === 'fire') s.fired = true;
         e.group.updateMatrixWorld(true); const hy = e.bones.Head.getWorldPosition(new THREE.Vector3()).y; if (fast && !busy && s.hy != null) R.headPop = Math.max(R.headPop, Math.abs(hy - s.hy)); s.hy = hy;
         if (k > 0.5) { R.peekFrames++; const B = e.bones; for (const m of SS.weapon.targets) { if (m.userData.enemy !== e) continue; const ctr = m.getWorldPosition(new THREE.Vector3());
-          if (m.userData.part === 'head') R.hv.head = Math.max(R.hv.head, ctr.distanceTo(B.Head.getWorldPosition(new THREE.Vector3())));
+          if (m.userData.part === 'head') { const l = B.Head.worldToLocal(ctr.clone()).multiplyScalar(B.Head.getWorldScale(new THREE.Vector3()).x); if (!s.h0) s.h0 = l.clone(); R.hv.head = Math.max(R.hv.head, l.distanceTo(s.h0)); }
           else if (m.userData.part === 'body') R.hv.torso = Math.max(R.hv.torso, segDist(ctr, B.Hips.getWorldPosition(new THREE.Vector3()), (e.spineTop || B.Spine).getWorldPosition(new THREE.Vector3()))); } }
         if (e.approachK > 0.5) R.approach = (R.approach | 0) + 1; if (e.exitK > 0 && e.exitK < 1) R.exitRamp = (R.exitRamp | 0) + 1;
         if (e.fidget && k > 0.5) R.fidgetPeek = (R.fidgetPeek | 0) + 1; R.hooks3b = R.hooks3b || ('approachK' in e && 'fidgets' in e && 'duckT' in e && 'exitK' in e);
