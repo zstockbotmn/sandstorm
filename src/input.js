@@ -168,9 +168,9 @@ export function createInput(canvas) {
       const m = Math.hypot(sx, sy), tele = p.nMoves > 0 && m > shortSide / 3 && !(sdt > 0 && m / sdt < 8000), k = tele ? cap / m : 1; p.nMoves = (p.nMoves | 0) + 1; /* the first sample after the press is measured from the fresh press point: never stale */ if (k < 1) input.aimSpikes = (input.aimSpikes | 0) + 1; dx += sx * k; dy += sy * k; }
     p.x = e.clientX; p.y = e.clientY;
     // A drag is aiming, never shooting: cancel the mouse shot once it moves past 6 px.
-    // m1y: a drag starting > 300 ms (event time) after an earlier still-click drops that click if it has not fired yet
+    // m1y: a drag starting > 800 ms (event time) after an earlier still-click drops that click if it has not fired yet
     // (tester: a scoped tap fired late, during a later drag)
-    if (p.mouse && !p.moved && Math.hypot(p.x - p.sx, p.y - p.sy) > 4) { while (input.tapT.length && input.tapT[0] < (p.t0 || 0) - 300 && input.pendingShots > 0) { input.tapT.shift(); input.pendingShots -= 1; input.tapsExpired = (input.tapsExpired | 0) + 1; } }
+    if (p.mouse && !p.moved && Math.hypot(p.x - p.sx, p.y - p.sy) > 4) { while (input.tapT.length && input.tapT[0] < (p.t0 || 0) - 800 && input.pendingShots > 0) { input.tapT.shift(); input.pendingShots -= 1; input.tapsExpired = (input.tapsExpired | 0) + 1; } }
     if (p.mouse && Math.hypot(p.x - p.sx, p.y - p.sy) > 4) { p.moved = true; clearTimeout(pressTimer); if (fireMouse) { fireMouse = false; sync(); } }
     // Proportional drag aim with light smoothing: deltas queue and are applied over ~35 ms in applyAim(dt).
     // Spikes (coalesced/late events) are capped so one event can't fling the view; gentle friction on a target.

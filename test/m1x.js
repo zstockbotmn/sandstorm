@@ -70,8 +70,8 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
         if (r.dyawPx < 300 * 0.7 || r.dyawPx > 300 * 1.3) fail.push('G: a fast 300 px drag (' + steps + ' move' + (steps > 1 ? 's' : '') + ') at 1 fps turned ' + r.dyawPx + ' px'); }
       await p.evaluate(() => { window.__slowMs = 0; }); }
     // F (m1y): a click held back by a reload at ~1 fps expires by event time instead of firing seconds later (mid-drag)
-    if (want('F')) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; SS.weapon.ammo = 10; SS.weapon.reserve = 200; SS.input.reloadPressed = true; }); await p.waitForFunction(() => SS.weapon.reloading, null, { timeout: 8000, polling: 100 }).catch(() => {});
-      const f0 = await shots(p); const rl = await p.evaluate(() => !!SS.weapon.reloading); await p.mouse.click(260, 140);
+    if (want('F')) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; SS.weapon.ammo = 10; SS.weapon.reserve = 200; SS.input.reloadPressed = true; });
+      const f0 = await shots(p); await p.mouse.click(260, 140); const rl = await p.evaluate(() => !!SS.weapon.reloading || SS.weapon.ammo === 30); // reload is 2 s real time (~2 frames here)
       await p.waitForFunction(() => !SS.weapon.reloading, null, { timeout: 40000, polling: 300 }).catch(() => {}); await p.waitForTimeout(2500);
       res.F = await p.evaluate((f0) => ({ fired: SS.weapon.shotsFired - f0, expired: SS.input.tapsExpired | 0, ammo: SS.weapon.ammo }), f0); res.F.reloadingAtClick = rl;
       { const g0 = await shots(p); await p.mouse.click(260, 140); await p.waitForTimeout(4000); res.F.plainClick1fps = (await shots(p)) - g0; if (res.F.plainClick1fps !== 1) fail.push('F: a plain click at 1 fps fired ' + res.F.plainClick1fps + ' (want 1)'); }

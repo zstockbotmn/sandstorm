@@ -161,7 +161,9 @@ canvas {
   gap: 12px;
   align-items: flex-start;
   touch-action: none;
+  pointer-events: none; /* m1y: the gaps between buttons swallowed canvas taps; only the buttons take input */
 }
+#controls button, #controls [data-ctl] { pointer-events: auto; }
 
 #controls button {
   touch-action: none;
