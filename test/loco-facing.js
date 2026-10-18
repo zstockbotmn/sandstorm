@@ -30,11 +30,11 @@ const QS = process.env.SS_QS || '';
       if (C.vel == null) { e.pinned = false; e.staggerT = 0; e.path = null; e.debugHold = true; e.exposed = true; e.shootCd = 1e9; e.noFireUntilR = 1e15; } // debugPose pins + staggers = 2b facing off
       if (C.vel != null) { const f = new THREE.Vector3(Math.sin(bearing), 0, Math.cos(bearing)), rt = new THREE.Vector3(-f.z, 0, f.x); e.debugVel = rt.multiplyScalar(1.3); } else e.debugVel = null;
       const S = { t0: performance.now(), maxRate: 0, maxJump: 0, maxTwist: 0, maxHead: 0, turnSeen: null, settleT: null, aimErr: [], strafeW: 0, frames: 0, hv: { head: 0, torso: 0 }, feet: [] };
-      let lastY = e.group.rotation.y, lastT = performance.now(); const x0 = e.group.position.clone();
+      const gYaw = () => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(e.group.quaternion); return Math.atan2(v.x, v.z); }; let lastY = gYaw(), lastT = performance.now(); const x0 = e.group.position.clone();
       const segDist = (q, a, b2) => { const ab = b2.clone().sub(a), t = Math.max(0, Math.min(1, q.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()))); return q.distanceTo(a.addScaledVector(ab, t)); };
       window.__preFrame = () => { const now = performance.now(), dt = (now - lastT) / 1000 * (SS.timeScale || 1); lastT = now; /* sim seconds (0.3x slowmo) */ e.group.updateMatrixWorld(true); S.frames++;
         if (e.debugVel && e.group.position.distanceTo(x0) > 3) e.group.position.copy(x0);
-        const y = e.group.rotation.y, dy = Math.abs(wrap(y - lastY)); lastY = y; if (dt > 0) S.maxRate = Math.max(S.maxRate, deg(dy) / dt); S.maxJump = Math.max(S.maxJump, deg(dy));
+        const y = gYaw(), dy = Math.abs(wrap(y - lastY)); lastY = y; if (dt > 0) S.maxRate = Math.max(S.maxRate, deg(dy) / dt); S.maxJump = Math.max(S.maxJump, deg(dy));
         S.maxTwist = Math.max(S.maxTwist, Math.abs(deg(+e.twist || 0))); if (e.turning && !S.turnSeen) S.turnSeen = e.turning;
         const hq = B.Hips.getWorldQuaternion(new THREE.Quaternion()), hd = B.Head.getWorldQuaternion(new THREE.Quaternion()); const fy = (q) => { const v = new THREE.Vector3(0, 0, 1).applyQuaternion(q); return Math.atan2(v.x, v.z); };
         S.maxHead = Math.max(S.maxHead, Math.abs(deg(wrap(fy(hd) - fy(hq)))));

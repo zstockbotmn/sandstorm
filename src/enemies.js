@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { art, SPLIT_ANIMS } from './art.js';
 import { LOCO2, createLoco, updateLoco, aimBody, clipYawRate, turnPlayback, yawRateStep, wrapPi, stepPhase, smooth01, MOVE_YAW_MAX, PLANT_YAW_MAX, TWIST_MAX, HEAD_YAW_MAX, PLANT_TWIST_MAX, TURN_ENTER, TURN_DONE } from './locomotion.js';
 // Last fighter only: after ~20 s on one ground cover, run to another. Off unless ?loco=2 or ?repos=1.
+const BODY_YAW_CAP = 270 * Math.PI / 180, TWIST_RATE = 240 * Math.PI / 180, HEAD_RATE = 300 * Math.PI / 180; // ?loco=2 facing rate caps (App PM: no whipping)
 const REPOS = (() => { try { return !!(LOCO2 || /[?&]repos=1\b/.test(location.search)); } catch (_) { return !!LOCO2; } })();
 import { createRagdollSystem } from './ragdoll.js';
 
@@ -334,7 +335,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const skip = lowFar(enemy);
     const goal = skip ? 0 : (rel < -TWIST_MAX ? -TWIST_MAX : rel > TWIST_MAX ? TWIST_MAX : rel);
     const k = dt > 0 ? 1 - Math.exp(-dt / 0.09) : 0;
-    let tw = (enemy.twist || 0) + (goal - (enemy.twist || 0)) * k;
+    let dtw = (goal - (enemy.twist || 0)) * k; const capT = TWIST_RATE * (dt > 0 ? dt : 0); if (dtw > capT) dtw = capT; else if (dtw < -capT) dtw = -capT; // rate-capped: no upper-body whip at low fps
+    let tw = (enemy.twist || 0) + dtw;
     if (tw > TWIST_MAX) tw = TWIST_MAX; else if (tw < -TWIST_MAX) tw = -TWIST_MAX;
     if (Math.abs(tw) < 1e-4) tw = 0;
     enemy.twist = tw;
@@ -373,8 +375,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     let extra = ty - (enemy.twist || 0) - (enemy._hipShown || 0);
     if (LOCO2 && enemy.fidget === 'glance') extra += (enemy._fidYaw || 0) * (enemy._fidEase || 0);
     if (extra > HEAD_YAW_MAX) extra = HEAD_YAW_MAX; else if (extra < -HEAD_YAW_MAX) extra = -HEAD_YAW_MAX;
-    const k = Math.min(1, dt * 6);
-    enemy.lookY = (enemy.lookY || 0) + (extra - (enemy.lookY || 0)) * k;
+    const k = dt > 0 ? 1 - Math.exp(-dt * 6) : 0; // framerate-independent (min(1, dt*6) snapped fully on a 0.2 s frame)
+    { let d = (extra - (enemy.lookY || 0)) * k; const capH = HEAD_RATE * (dt > 0 ? dt : 0); if (d > capH) d = capH; else if (d < -capH) d = -capH; enemy.lookY = (enemy.lookY || 0) + d; }
     enemy.lookP = (enemy.lookP || 0) + (tp - (enemy.lookP || 0)) * k;
     const sum = enemy.lookY + (enemy.twist || 0) + (enemy._hipShown || 0);
     if (sum > HEAD_YAW_MAX) enemy.lookY -= sum - HEAD_YAW_MAX;
@@ -547,12 +549,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
         fwd = (dx * _locoF.x + dz * _locoF.z) * inv;
         right = (dx * _locoR.x + dz * _locoR.z) * inv;
       }
-      const dyaw = Math.atan2(Math.sin(g.rotation.y - enemy._locoYaw), Math.cos(g.rotation.y - enemy._locoYaw));
+      const gy = groupYaw(g); const dyaw = Math.atan2(Math.sin(gy - enemy._locoYaw), Math.cos(gy - enemy._locoYaw)); // groupYaw, not Euler rotation.y (that flips past +-90 deg: fake 1000+ deg/s turn rates fed the turn clips)
       turnRate = dyaw / dt;
     }
     if (!enemy._locoPos) enemy._locoPos = new THREE.Vector3();
     enemy._locoPos.copy(p);
-    enemy._locoYaw = g.rotation.y;
+    enemy._locoYaw = groupYaw(g);
     return { vel: { fwd, right }, turnRate };
   }
   // Stationary clip desiredAnim picks when the fighter is not moving.
@@ -1373,6 +1375,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         enemy.footPlant = abs > 0.05 || Math.abs(rate) > 0.15 || Math.abs(enemy.plantTwist || 0) > 0.08;
       }
     }
+    if (rate > BODY_YAW_CAP) rate = BODY_YAW_CAP; else if (rate < -BODY_YAW_CAP) rate = -BODY_YAW_CAP; // hard cap for every path (turn-in-place clip x2.2 = ~186 deg/s)
     enemy._yawRate = rate;
     const y0 = groupYaw(enemy.group);
     if (ydt > 0 && Math.abs(rate) > 1e-5 && abs > 1e-4) {
