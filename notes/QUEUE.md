@@ -14,7 +14,10 @@ Approved by App PM Oct 17 12:07. Per step: FIRST survey best free, no-login, ope
 4. Buildings: (a) interior-mapping fake-depth room shader on ALL windows, a few randomized room atlases (furniture, lighting, curtains), cheap on iPhone, flat-texture fallback on ultra-low. (b) A few real enterable ground-floor rooms with open doorways (doors can swing) that enemies step out of / fall back into via real paths, never window pops. Keep draw calls in check.
 5. Set pieces + pacing: quiet walk -> sudden contact -> occasional truck crash / RPG strike -> short calm with regen. No instant heal.
 Off list: living soundscape, smarter AI, voiced radio (callouts text-only).
-Known (m2a, test/hitvol-margin.js): a chest shot at 20 m sometimes takes 3 hits (limb,body,body) - the aiming forearm sits
+Known (b1, test/hitvol-margin.js): with the forearm-over-chest fix the chest kill is 2 hits (spec). The margin check is flaky
+by ~1 cm: 20 m crouch head measured 10 cm in one b1 run and 14 cm (> 13 limit) in the next (pose/idle variance). Not loosened again.
+B1 NOT PUBLISHED (App PM, 08:39): b1 + the 11 s walk are folded into the steps 1-5 bundle; no public builds until it ships.
+Old note - Known (m2a, test/hitvol-margin.js): a chest shot at 20 m sometimes takes 3 hits (limb,body,body) - the aiming forearm sits
 in front of the chest and the first round registers as a limb hit (34). Margins pass (crouch limb volumes <= 12 cm past the
 mesh after the box->cylinder change, limit 13). Candidate fix later: rank body over limb when the torso capsule is within
 ~0.35 m behind a forearm hit (firstHit rank already does this when the ray reaches the capsule).

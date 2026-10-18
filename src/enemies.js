@@ -210,8 +210,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // m1x pacing preview (App PM): a run opens with a quiet walk; distant gunfire swells from APPROACH_S, a TEXT radio
   // warning shows RADIO_WARN_S before contact, first contact no earlier than FIRST_CONTACT_S of run time (and FIRST_WAVE_AT m).
   // Tunable: ?contact=<s> (debug/test builds only) overrides FIRST_CONTACT_S.
-  const FIRST_CONTACT_S = (() => { try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) return +m[1]; } catch (_) {} return 24; })();
-  const RADIO_WARN_S = 5, APPROACH_S = 6;
+  const FIRST_CONTACT_S = (() => { try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) return +m[1]; } catch (_) {} return 11; })(); // App PM (bundle): the opening walk was 24 s, Zack found it long
+  const RADIO_WARN_S = 5, APPROACH_S = 3; // build-up from ~3 s, radio at ~6 s (11 - 5); the radio line still holds >= 6 s real / 5 frames, so at low fps it may overlap contact
   let quietRunT = 0, quietRealAt = 0, radioWarned = false;
   api.FIRST_CONTACT_S = FIRST_CONTACT_S; api.RADIO_WARN_S = RADIO_WARN_S;
   let waveSpawned = 0, waveTotal = 0; // hard cap: every wave has a fixed total, truck included
@@ -1580,7 +1580,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const alive = aliveCount();
     const dNow = window.SS ? window.SS.distance : 0;
     if (burstIndex === 0 && window.SS && window.SS.running) { // m1x: opening quiet walk (real time, capped per frame)
-      const nr = performance.now(); quietRunT += quietRealAt ? Math.min(2.0, (nr - quietRealAt) / 1000) : 0; /* m1z: cap 2 s/frame (was 0.5: at 0.6 fps the 24 s quiet walk took ~77 s of wall time) - a tab switch still cannot skip it */ quietRealAt = nr;
+      const nr = performance.now(); quietRunT += quietRealAt ? Math.min(2.0, (nr - quietRealAt) / 1000) : 0; /* m1z: cap 2 s/frame (was 0.5: at 0.6 fps the then-24 s quiet walk took ~77 s of wall time) - a tab switch still cannot skip it */ quietRealAt = nr;
       const k = FIRST_CONTACT_S > APPROACH_S ? Math.max(0, Math.min(1, (quietRunT - APPROACH_S) / (FIRST_CONTACT_S - APPROACH_S))) : 1;
       window.SS.approach = quietRunT >= APPROACH_S ? k : 0; window.SS.quietRunT = quietRunT;
       if (!radioWarned && FIRST_CONTACT_S > 0 && quietRunT >= FIRST_CONTACT_S - RADIO_WARN_S) { radioWarned = true; window.SS.radioWarnAt = performance.now();
