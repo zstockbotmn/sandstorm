@@ -1888,6 +1888,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function enterCover(enemy, hold) {
+    enemy._repositioning = false;
     enemy.phase = 'takeCover';
     enemy.phaseT = hold != null ? hold : 0.22 + Math.random() * 0.2;
     enemy.posture = 'crouch';
@@ -1977,7 +1978,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     enemy.phase = 'relocate';
     enemy.posture = 'idle';
-    enemy.exposed = false;
+    if (!enemy._repositioning) enemy.exposed = false;
     enemy.moveKind = 'run';
     enemy.goal = enemy.path[0];
     if (LOCO2) beginCoverExit(enemy);
@@ -2023,22 +2024,34 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return best;
   }
 
-  // Stub: hand the run to the existing relocate path. No teleport.
+  // Hops under 6 m use crouchRun when that clip exists. The blend and desiredAnim have no crouchRun, so they run.
+  function repositionMoveKind(e, dist) {
+    if (dist < 6 && e.actions && e.actions.crouchRun) return 'crouchRun';
+    return 'run';
+  }
+
+  // Hand the run to the existing relocate path. Rise overlaps the first steps. No teleport.
   function startReposition(e, c) {
+    if (LOCO2) beginCoverExit(e);
     e.anchor = c;
     e.home = standPos(c);
     e.path = pathOnto(e, c);
     e.pathI = 0;
+    const end = e.path && e.path[e.path.length - 1];
+    const dist = end ? Math.hypot(end.x - e.group.position.x, end.z - e.group.position.z) : 0;
+    e._reposDist = dist;
     e.phase = 'relocate';
     e.posture = 'idle';
     e.exposed = true;
-    e.moveKind = 'run';
+    e._repositioning = true;
+    e.moveKind = repositionMoveKind(e, dist);
     e.goal = e.path[0];
     e.repositions = (e.repositions | 0) + 1;
     if (window.SS) window.SS.lastRepos = (window.SS.lastRepos | 0) + 1;
     e._lastReposS = window.SS ? (window.SS.simTime || 0) : 0;
     e.coverHoldT = 0;
     e._holdAnchor = null;
+    squadCall('Moving!');
   }
 
   // Horizontal run/walk, or a short climb when the waypoint is up the facade. No Y pop.
@@ -2056,6 +2069,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const lateral = enemy.phase === 'peek' || enemy.phase === 'hide';
     enemy.moveKind = lateral ? 'strafe' : climb ? 'walk' : 'run';
     if (!lateral && !climb && dist < 1.5) enemy.moveKind = 'walk';
+    else if (!lateral && !climb && enemy._repositioning) enemy.moveKind = repositionMoveKind(enemy, enemy._reposDist != null ? enemy._reposDist : dist);
     enemy.moving = true;
     if (LOCO2) speed = coverGaitSpeed(enemy, speed);
     // Human locomotion: accelerate ~7 m/s², brake into the last metre, no instant starts/stops (no sliding).
@@ -2176,7 +2190,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function updateCover(enemy, dt, diff) {
     const phase = enemy.phase;
     if (phase === 'approach' || phase === 'climb' || phase === 'relocate' || phase === 'peek' || phase === 'hide') {
-      if (phase !== 'peek') enemy.exposed = false;
+      if (enemy._repositioning) enemy.exposed = true;
+      else if (phase !== 'peek') enemy.exposed = false;
       if (LOCO2 && phase === 'hide' && ((enemy.peekT || 0) > 0.05 || (enemy._peekPh || 0) > 0.05)) {
         enemy.moving = false; enemy.curSpeed = 0;
         return;
