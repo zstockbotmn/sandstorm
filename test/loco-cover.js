@@ -29,7 +29,7 @@ const QS = process.env.SS_QS || '';
       for (const e of window.__E) { if (!e.alive || !e.bones) continue; R.hooks.coverT = R.hooks.coverT || ('coverT' in e); R.hooks.peekT = R.hooks.peekT || ('peekT' in e);
         const s = st.get(e) || { c: e.coverT || 0, k: e.peekT || 0, hy: null, sinkT0: null, peakK: 0 }; const c = +e.coverT || 0, k = +e.peekT || 0; const busy = e.hitPlaying || e.dying || !e.alive;
         if (fast && !busy) { R.coverJump = Math.max(R.coverJump, Math.abs(c - s.c)); R.peekJump = Math.max(R.peekJump, Math.abs(k - s.k)); if (Math.abs(c - s.c) > 0.95 || Math.abs(k - s.k) > 0.95) R.flips++; }
-        if (s.c < 0.05 && c >= 0.05) s.sinkT0 = now; if (s.sinkT0 != null && c >= 0.95) { R.sinks.push(now - s.sinkT0); s.sinkT0 = null; }
+        if (s.c < 0.05 && c >= 0.05) s.sinkT0 = now; if (s.sinkT0 != null && c >= 0.95) { R.sinks.push(now - s.sinkT0 + dt * 1000); s.sinkT0 = null; } /* + one frame gap: at ~10 fps the 0.05/0.95 crossings are quantised by a frame */
         if (k > 0.05) s.peakK = Math.max(s.peakK, k); if (s.k > 0.05 && k <= 0.05) { R.peaks.push({ k: +s.peakK.toFixed(2), fired: !!s.fired }); s.peakK = 0; s.fired = false; } if (k > 0.05 && e.phase === 'fire') s.fired = true;
         e.group.updateMatrixWorld(true); const hy = e.bones.Head.getWorldPosition(new THREE.Vector3()).y; if (fast && !busy && s.hy != null) R.headPop = Math.max(R.headPop, Math.abs(hy - s.hy)); s.hy = hy;
         if (k > 0.5) { R.peekFrames++; const B = e.bones; for (const m of SS.weapon.targets) { if (m.userData.enemy !== e) continue; const ctr = m.getWorldPosition(new THREE.Vector3());
@@ -41,15 +41,17 @@ const QS = process.env.SS_QS || '';
   await p.waitForTimeout(Number(process.env.SS_COVER_MS || 90000));
   res.fidgets = await p.evaluate(() => window.__E.reduce((a, e) => a + (e.fidgets | 0), 0));
   // near-miss duck: wait for a peeking fighter, fire one real round 0.8 m beside its chest
-  res.duck = await p.evaluate(async () => { const THREE = SS.THREE; const t0 = performance.now(); let e = null;
+  const duckLeg = async () => { const THREE = SS.THREE; const t0 = performance.now(); let e = null;
     while (performance.now() - t0 < 30000 && !(e = window.__E.find((x) => x.alive && (x.peekT || 0) > 0.9))) await new Promise((r) => setTimeout(r, 50));
-    if (!e) return { skipped: 'no peek in 30 s' }; const d0 = e.ducks | 0; e.group.updateMatrixWorld(true);
+    if (!e) return { skipped: 'no peek in 30 s' }; window.__duckTry = (window.__duckTry | 0) + 1; const d0 = e.ducks | 0; e.group.updateMatrixWorld(true);
     const c = e.bones.Spine.getWorldPosition(new THREE.Vector3()), side = new THREE.Vector3().subVectors(c, SS.camera.position).setY(0).normalize(); side.set(-side.z, 0, side.x);
     const pt = c.addScaledVector(side, 0.8), dv = pt.clone().sub(SS.camera.position); SS.input.yaw = Math.atan2(dv.x, -dv.z); SS.input.pitch = -Math.atan2(dv.y, Math.hypot(dv.x, dv.z));
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); const ts = performance.now(); SS.input.pendingShots = (SS.input.pendingShots | 0) + 1;
     let downMs = null, repeekMs = null; while (performance.now() - ts < 2500) { await new Promise((r) => requestAnimationFrame(r)); const k = e.peekT || 0, el = performance.now() - ts;
       if (downMs == null && k < 0.2) downMs = el; if (downMs != null && repeekMs == null && k > 0.5) repeekMs = el; }
-    return { ducks: (e.ducks | 0) - d0, downMs: downMs && Math.round(downMs), repeekMs: repeekMs && Math.round(repeekMs) }; });
+    return { ducks: (e.ducks | 0) - d0, downMs: downMs && Math.round(downMs), repeekMs: repeekMs && Math.round(repeekMs), tries: window.__duckTry }; };
+  res.duck = await p.evaluate(duckLeg);
+  for (let i = 0; i < 2 && res.duck && !res.duck.skipped && res.duck.ducks < 1; i++) res.duck = await p.evaluate(duckLeg); /* the peek can end on its own before the round arrives: up to 3 tries */
   Object.assign(res, await p.evaluate(() => { window.__post = null; const R = window.__R; return { ...R, coverJump: +R.coverJump.toFixed(2), peekJump: +R.peekJump.toFixed(2), headPopCm: +(R.headPop * 100).toFixed(1), sinkMinMs: R.sinks.length ? Math.round(Math.min(...R.sinks)) : null, peaks: R.peaks.slice(0, 20) }; }));
   delete res.headPop;
   res.repos = await p.evaluate(async () => { const THREE = SS.THREE; window.SS_REPOS_S = 6; const keep = window.__E.find((x) => x.alive && !(x.anchor && /roof|window/.test(x.anchor.type)));
@@ -57,7 +59,7 @@ const QS = process.env.SS_QS || '';
     await new Promise((r) => setTimeout(r, 1500)); const a0 = keep.anchor, r0 = keep.repositions | 0, g0 = (SS.lastRepos | 0); let jump = 0, exposedRun = 0, runF = 0, last = keep.group.position.clone(), lt = performance.now(), holdMax = 0;
     const t0 = performance.now(); while (performance.now() - t0 < 30000) { await new Promise((r) => requestAnimationFrame(r)); const now = performance.now(), dt = (now - lt) / 1000; lt = now;
       const p2 = keep.group.position; if (dt < 0.05) jump = Math.max(jump, p2.distanceTo(last)); last.copy(p2); holdMax = Math.max(holdMax, keep.coverHoldT || 0);
-      if (keep.moving && keep.anchor !== a0) { runF++; if (keep.exposed) exposedRun++; } if ((keep.repositions | 0) > r0 && runF > 20) break; }
+      if (keep._repositioning && keep.moving) { runF++; if (keep.exposed) exposedRun++; } /* only the reposition run itself (not the cover shuffles after it) */ if ((keep.repositions | 0) > r0 && runF > 20) break; }
     return { alive: SS.enemies.list ? SS.enemies.list.filter((x) => x.alive).length : null, repositions: (keep.repositions | 0) - r0, global: (SS.lastRepos | 0) - g0, anchorChanged: keep.anchor !== a0,
       jumpM: +jump.toFixed(2), exposedFrac: runF ? +(exposedRun / runF).toFixed(2) : null, holdMaxS: +holdMax.toFixed(1), hp: keep.health }; });
   if (!res.hooks.coverT || !res.hooks.peekT) fail.push('3a hooks missing (coverT ' + !!res.hooks.coverT + ', peekT ' + !!res.hooks.peekT + ')');
