@@ -39,7 +39,7 @@ let offline = null; { const r = require('child_process').spawnSync('node', [path
   if (!res.setup.bones) fail.push('fighter has no bones (art tier ' + res.setup.tier + ')');
   if (!res.setup.loco) fail.push('?loco=2 did not load fighter.loco meta (art.locoMeta missing)');
   // per-frame sampler: feet, leg/hip rotations, hit-volume offsets
-  await p.evaluate((LIM) => { const THREE = SS.THREE, e = window.__e, R0 = e.art || e.group; const B = Object.assign({}, e.bones); for (const n of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) B[n] = B[n] || R0.getObjectByName(n); /* art.js BONE_NAMES has no feet: look them up (harness threw silently -> 0 frames) */
+  await p.evaluate((LIM) => { const THREE = SS.THREE, e = window.__e, R0 = e.group; const B = Object.assign({}, e.bones); for (const n of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) B[n] = B[n] || R0.getObjectByName(n); /* art.js BONE_NAMES has no feet: look them up (harness threw silently -> 0 frames) */
     const legs = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'].filter((n) => B[n]);
     const segDist = (p, a, b) => { const ab = b.clone().sub(a), t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()))); return p.distanceTo(a.addScaledVector(ab, t)); };
     window.__S = null; window.__start = (name, setup) => { window.__S = { name, f: [], snap: 0, hv: { torso: 0, head: 0, limb: 0 }, lastQ: null, lastT: 0, wMax: 0, wMin: 9, wN: 0, diag: 0, gap: 9, legInTorso: 0 }; };

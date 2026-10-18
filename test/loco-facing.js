@@ -24,7 +24,7 @@ const QS = process.env.SS_QS || '';
   if (res.setup.hooks.length) fail.push('2b hooks missing on the fighter: ' + res.setup.hooks.join(','));
   const cases = [{ name: 'strafe', off: 0, vel: 90, dur: 3000 }, { name: 'turn120', off: 120, dur: 3500 }, { name: 'turn40', off: 40, dur: 2500 }, { name: 'turn-120', off: -120, dur: 3500 }];
   for (const C of cases) {
-    const r = await p.evaluate(async (C) => { const THREE = SS.THREE, e = window.__e, R0 = e.art || e.group, B = Object.assign({}, e.bones, { LeftFoot: e.bones.LeftFoot || R0.getObjectByName('LeftFoot'), RightFoot: e.bones.RightFoot || R0.getObjectByName('RightFoot') }), c = SS.camera.position; /* art.js bones have no feet */ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)), deg = (a) => a * 180 / Math.PI;
+    const r = await p.evaluate(async (C) => { const THREE = SS.THREE, e = window.__e, R0 = e.group, B = Object.assign({}, e.bones, { LeftFoot: e.bones.LeftFoot || R0.getObjectByName('LeftFoot'), RightFoot: e.bones.RightFoot || R0.getObjectByName('RightFoot') }), c = SS.camera.position; /* art.js bones have no feet */ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)), deg = (a) => a * 180 / Math.PI;
       SS.enemies.debugPose(e, c.x, c.z - 10, 'idle'); e.engaged = true; const bearing = Math.atan2(c.x - e.group.position.x, c.z - e.group.position.z); // yaw that faces the camera (+Z model forward)
       e.group.rotation.y = bearing - C.off * Math.PI / 180; if ('bodyYaw' in e) e.bodyYaw = e.group.rotation.y;
       if (C.vel == null) { e.pinned = false; e.staggerT = 0; e.path = null; e.phase = 'fire'; e.exposed = true; e.shootCd = 1e9; e.noFireUntilR = 1e15; } // debugPose pins + staggers = 2b facing off
