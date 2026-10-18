@@ -1,10 +1,10 @@
 #!/bin/bash
 # Test suites -> logs/suite-<tag>-<test>.log, summary in logs/suite.txt. One browser at a time via tools/run.sh, unless -j2.
-#   tools/suite.sh [-j2] fast [tests...]          logic tests in ?test=fast (tiny flat render, identical logic) on the Low tier
+#   tools/suite.sh [-j1] fast [tests...]          logic tests in ?test=fast on the Low tier (2 at a time by default; -j1 = serial)
 #   tools/suite.sh visual high|low [tests]        the visual/perf set on a real tier (releases and visual changes)
 #   tools/suite.sh release                        everything: fast set, then the FULL list on High and on Low
 #   tools/suite.sh high|low [tests...]            (legacy) the full list on one real tier
-# -j2 (opt-in, default off): 2 tests at once when the box is free - only our own harness browsers, never next to a
+# -j2 (default for fast since m1y): 2 tests at once when the box is free - only our own harness browsers, never next to a
 # foreign headless Chrome, never two tests on one port, the 2nd starts only with >= 40% idle CPU (tools/busy.sh).
 # SOLO tests (fps/timing-sensitive) always run alone.
 FAST_TESTS="fast-parity rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick waves-passive regen scope-switch scope-drag start-feedback m1v m1w m1x aim-reg cover-occl"
