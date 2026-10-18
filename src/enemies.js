@@ -1,6 +1,7 @@
 const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.search); // tests: no auto spawns
 import * as THREE from 'three';
 import { art, SPLIT_ANIMS } from './art.js';
+import { LOCO2, createLoco, updateLoco } from './locomotion.js';
 import { createRagdollSystem } from './ragdoll.js';
 
 // m1v tunables: wave-1 enemy damage multiplier (tester died at the first cover every run) and the cover grace period
@@ -422,30 +423,163 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Clip ground speeds (m/s) for stride matching: playback rate follows real speed so feet don't slide.
   const STRIDE = { walk: 1.4, jog: 3.0, run: 5.2, crouch: 1.1, strafe: 1.4 };
+  // Body frame matches the rig: forward is the group's +Z, right is the character's right (-X when facing +Z).
+  const _locoF = new THREE.Vector3(), _locoR = new THREE.Vector3();
+  function bodyFrame(enemy, dt) {
+    const g = enemy.group, p = g.position;
+    let fwd = 0, right = 0, turnRate = 0;
+    if (enemy._locoPos && dt > 1e-5) {
+      const dx = p.x - enemy._locoPos.x, dz = p.z - enemy._locoPos.z;
+      _locoF.set(0, 0, 1).applyQuaternion(g.quaternion);
+      _locoF.y = 0;
+      const fl = Math.hypot(_locoF.x, _locoF.z);
+      if (fl > 1e-6) { _locoF.x /= fl; _locoF.z /= fl; } else _locoF.set(0, 0, 1);
+      _locoR.set(-_locoF.z, 0, _locoF.x);
+      // A multi-metre jump is a cover reassignment, not a step. Leave it out of the gait.
+      if (Math.hypot(dx, dz) < 1.25) {
+        const inv = 1 / dt;
+        fwd = (dx * _locoF.x + dz * _locoF.z) * inv;
+        right = (dx * _locoR.x + dz * _locoR.z) * inv;
+      }
+      const dyaw = Math.atan2(Math.sin(g.rotation.y - enemy._locoYaw), Math.cos(g.rotation.y - enemy._locoYaw));
+      turnRate = dyaw / dt;
+    }
+    if (!enemy._locoPos) enemy._locoPos = new THREE.Vector3();
+    enemy._locoPos.copy(p);
+    enemy._locoYaw = g.rotation.y;
+    return { vel: { fwd, right }, turnRate };
+  }
+  // Stationary clip desiredAnim picks when the fighter is not moving.
+  function locoBase(enemy) {
+    const A = enemy.actions;
+    if (enemy.posture === 'crouch') return A.crouchIdle ? 'crouchIdle' : 'crouch';
+    if (enemy.posture === 'lean') return 'lean';
+    if (enemy.exposed && A.aim && enemy.phase !== 'relocate') return 'aim';
+    return 'idle';
+  }
+  function adoptLiveWeights(enemy) {
+    const W = enemy.locoW, A = enemy.actions;
+    if (!W || !A) return;
+    for (const name in W) {
+      const a = A[name];
+      if (!a || a.enabled === false || (a.isScheduled && !a.isScheduled())) W[name] = 0;
+      else W[name] = a.getEffectiveWeight ? (a.getEffectiveWeight() || 0) : 0;
+    }
+  }
+  // Ease managed clips out while a hit / death / forceAnim owns the mixer, so they do not stack on the override.
+  function parkBlend(enemy, dt, keep) {
+    const W = enemy.locoW, A = enemy.actions;
+    if (!W || !A) return;
+    const k = dt > 0 ? 1 - Math.exp(-10 * dt) : 1;
+    for (const name in W) {
+      const a = A[name];
+      if (name === keep || (a && a === enemy.currentAction)) {
+        if (a && a.getEffectiveWeight) W[name] = a.enabled === false ? 0 : (a.getEffectiveWeight() || 0);
+        continue;
+      }
+      let w = W[name] || 0;
+      w += (0 - w) * k;
+      if (w < 1e-3) w = 0;
+      W[name] = w;
+      if (!a) continue;
+      if (!(w > 0)) {
+        a.setEffectiveWeight(0);
+        if (a.isScheduled && a.isScheduled()) a.stop();
+        a.enabled = false;
+      } else {
+        a.enabled = true;
+        a.setEffectiveWeight(w);
+      }
+    }
+  }
+  function upperFromBlend(enemy) {
+    if (!enemy.actions.upper) return;
+    let uw = 0;
+    const W = enemy.locoW;
+    if (W) for (const n in W) if (SPLIT_ANIMS.has(n) && W[n] > 0) uw += W[n];
+    enemy.actions.upper.setEffectiveWeight(uw > 1 ? 1 : uw);
+  }
+  function noteDominant(enemy) {
+    if (enemy.hitPlaying || enemy.dying) return; // playHit / kill crossfade from the clip that is actually down
+    const W = enemy.locoW, A = enemy.actions;
+    if (!W || !A) return;
+    let best = null, bw = 0.05;
+    for (const name in W) if (W[name] > bw && A[name]) { bw = W[name]; best = A[name]; }
+    if (best) enemy.currentAction = best;
+  }
+  // ?loco=2 clip choice. Returns true when the blend layer owns this step (updateLoco already ran).
+  // Death, forceAnim, and the body of a hit return false so the caller keeps today's crossTo.
+  // The last 0.1 s of a hit returns true: the hit eases out and the blend eases back in.
+  function applyLoco(enemy, dt) {
+    const force = !!(enemy.forceAnim && enemy.actions[enemy.forceAnim]);
+    if (enemy.hitPlaying && !enemy.hitReturning && enemy.actions.hit) {
+      const hit = enemy.actions.hit;
+      const dur = hit.getClip().duration || 0;
+      const left = dur - hit.time;
+      if (hit.time > 0 && left <= 0.1) enemy.hitReturning = true;
+    }
+    const m = bodyFrame(enemy, dt);
+    enemy.loco.turnRate = m.turnRate;
+    const hold = enemy.dying || force || (enemy.hitPlaying && !enemy.hitReturning);
+    if (hold) {
+      // The override owns the pose, so don't run the weight blend. Keep locoVel on the
+      // measured velocity or a hit-stop would resume into the pre-hit gait.
+      const v = enemy.locoVel;
+      if (v) { v.fwd = m.vel.fwd; v.right = m.vel.right; v.speed = Math.hypot(m.vel.fwd, m.vel.right); }
+      return false;
+    }
+    if (enemy._locoHeld) {
+      adoptLiveWeights(enemy);
+      const a = enemy.currentAction;
+      const clip = a && a.getClip && a.getClip();
+      if (a && clip && clip.duration > 0 && a !== enemy.actions.hit && a !== enemy.actions.hitHead && a !== enemy.actions.death) {
+        const t = a.time || 0;
+        enemy.animPhase = ((t % clip.duration) + clip.duration) % clip.duration / clip.duration;
+      }
+      enemy._locoHeld = false;
+    }
+    const base = locoBase(enemy);
+    enemy.loco.base = base;
+    // Raw body-frame velocity (diagonals included). updateLoco eases speed; do not smooth again.
+    updateLoco(enemy, dt, { vel: m.vel, crouch: enemy.posture === 'crouch', base, turnRate: m.turnRate, tier: art.tier });
+    if (enemy.hitPlaying && enemy.hitReturning && enemy.actions.hit) {
+      const hit = enemy.actions.hit;
+      const dur = hit.getClip().duration || 0;
+      const left = dur - hit.time;
+      hit.setEffectiveWeight(left <= 0 ? 0 : Math.min(1, left / 0.1));
+    }
+    upperFromBlend(enemy);
+    noteDominant(enemy);
+    return true;
+  }
   function stepArt(enemy, dt) {
     _turnDt = dt;
     const name = desiredAnim(enemy);
     enemy.animState = name;
-    const ref = STRIDE[name];
-    const cur = enemy.actions[name];
-    if (cur && !enemy.hitPlaying) {
-      const ts = ref && enemy.moving ? Math.min(1.6, Math.max(0.6, (enemy.moveSpeed || ref) / ref)) : 1;
-      enemy.animTS = enemy.animTS == null ? ts : enemy.animTS + (ts - enemy.animTS) * Math.min(1, dt * 8);
-      cur.setEffectiveTimeScale(enemy.animTS);
-    }
-    if (enemy.hitPlaying) {
-      const hit = enemy.actions.hit;
-      const dur = hit.getClip().duration || 0;
-      const left = dur - hit.time;
-      if (!enemy.hitReturning && hit.time > 0 && left <= 0.1) {
-        enemy.hitReturning = true;
-        crossTo(enemy, enemy.actions[name] || enemy.actions.idle, 0.1);
+    const loco = !!(LOCO2 && enemy.loco && enemy.art && enemy.bones);
+    if (!(loco && applyLoco(enemy, dt))) {
+      const ref = STRIDE[name];
+      const cur = enemy.actions[name];
+      if (cur && !enemy.hitPlaying) {
+        const ts = ref && enemy.moving ? Math.min(1.6, Math.max(0.6, (enemy.moveSpeed || ref) / ref)) : 1;
+        enemy.animTS = enemy.animTS == null ? ts : enemy.animTS + (ts - enemy.animTS) * Math.min(1, dt * 8);
+        cur.setEffectiveTimeScale(enemy.animTS);
       }
-    } else {
-      const next = enemy.actions[name];
-      if (next && enemy.currentAction !== next) crossTo(enemy, next, 0.2);
+      if (enemy.hitPlaying) {
+        const hit = enemy.actions.hit;
+        const dur = hit.getClip().duration || 0;
+        const left = dur - hit.time;
+        if (!enemy.hitReturning && hit.time > 0 && left <= 0.1) {
+          enemy.hitReturning = true;
+          crossTo(enemy, enemy.actions[name] || enemy.actions.idle, 0.1);
+        }
+      } else {
+        const next = enemy.actions[name];
+        if (next && enemy.currentAction !== next) crossTo(enemy, next, 0.2);
+      }
+      if (enemy.actions.upper) enemy.actions.upper.setEffectiveWeight(SPLIT_ANIMS.has(name) ? 1 : 0); // stance arms only under legs-only clips
+      if (loco) { enemy._locoHeld = true; parkBlend(enemy, dt, (enemy.forceAnim && enemy.actions[enemy.forceAnim]) ? enemy.forceAnim : null); }
     }
-    if (enemy.actions.upper) enemy.actions.upper.setEffectiveWeight(SPLIT_ANIMS.has(name) ? 1 : 0); // stance arms only under legs-only clips
     // Rest-pose reset before the mixer: some clips (Combat_Stance has no Spine track) leave bones untouched, so the
     // procedural hunch/lean bends and the previous clip's values piled up on them every frame - the "bent, rifle over
     // the head" idle/aim pose. Bones the clip animates are overwritten by the mixer right after.
@@ -587,6 +721,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     inst.mixer.update(0);
     plantFeet(inst.root);
     try { fitHitVolumes(enemy, inst); } catch (err) { reportErr('hit fit', err); }
+    if (LOCO2) {
+      createLoco(enemy); // once: weights, locoVel, locoW. Pose already sampled above.
+      enemy.loco = { vel: enemy.locoVel, w: enemy.locoW, turnRate: 0, base: 'idle' };
+    }
   }
 
   // m1w item 6: fit the hit volumes to THIS model's skinned body (idle pose): every vertex goes to its dominant bone;
