@@ -82,6 +82,17 @@ function yawFromQuat(q) {
   return Math.atan2(_v.x, _v.z);
 }
 
+// Yaw of a bone relative to its OWN rest orientation: a rig whose hips bone axes are not world-aligned at rest (KayKit:
+// local +Z is not forward) read a constant ~90 deg heading, and the heading strip turned its strafes into forward runs.
+function yawRel(wq, restWq) { return yawFromQuat(_q.copy(wq).multiply(restWq.clone().invert())); }
+
+// Facing (heading) of the source actor: the SHOULDER line, not the hips. Strafes turn the pelvis toward the motion (KayKit
+// run strafes: hips 58 deg, chest 16 deg), so a hips-yaw heading strip rotated them into diagonal/forward runs.
+// KayKit clips are in place with a fixed root facing: heading 0.
+function facingYaw(root, kind) { if (kind === 'kay') return 0; const l = findBone(root, 'LeftArm'), r = findBone(root, 'RightArm'); if (!l || !r) return null;
+  const a = l.getWorldPosition(new THREE.Vector3()), b = r.getWorldPosition(new THREE.Vector3()); const dx = a.x - b.x, dz = a.z - b.z; // right->left shoulder
+  return Math.atan2(-dz, dx); } // forward = up x (L-R) : (x,z) = (-dz, dx) -> yaw atan2(fx, fz)
+
 function unwrap(yaws) {
   const out = [yaws[0] || 0];
   for (let i = 1; i < yaws.length; i++) {
@@ -299,7 +310,7 @@ function analyzeWindow(frames, i0, i1) {
     const yaw = uw[i - i0];
     const s = Math.sin(yaw), c = Math.cos(yaw);
     const fwd = vx * s + vz * c;
-    const right = vx * c - vz * s;
+    const right = vz * s - vx * c; // character's right is -X when facing +Z (was +X: CMU strafe L/R were swapped)
     fwds.push(fwd); rights.push(right);
     if (Math.hypot(fwd, right) > 0.08) headings.push(Math.atan2(right, fwd));
   }
@@ -335,7 +346,7 @@ function scoreTurn(s, sign) {
   return Math.abs(s.turnRate) / (1 + s.speed * 4) * Math.min(s.dur, 1.4);
 }
 
-function sampleSource(root, kind, poser, t0, t1, fps, scale) {
+function sampleSource(root, kind, poser, t0, t1, fps, scale, rest) {
   const dur = Math.max(0, t1 - t0);
   const steps = Math.max(2, Math.round(dur * fps) + 1);
   const frames = [];
@@ -346,7 +357,7 @@ function sampleSource(root, kind, poser, t0, t1, fps, scale) {
     frames.push({
       t: t - t0, srcT: t, world,
       hip: world.Hips.wp.clone().multiplyScalar(scale),
-      yaw: yawFromQuat(world.Hips.wq),
+      yaw: facingYaw(root, kind) ?? yawRel(world.Hips.wq, rest.Hips.wq),
       lfoot: world.LeftFoot.wp.clone().multiplyScalar(scale),
     });
   }
@@ -442,25 +453,24 @@ function applyToRig(rig, tgtLocalRest, tgtRestT, sample, i) {
   rig.updateMatrixWorld(true);
 }
 
+// Body velocity = minus the planted foot's velocity, from frame-to-frame differences of the SAME planted foot (the old
+// single line fit through alternating left/right foot positions read the feet's side offset as sideways speed).
 function supportVel(times, lPos, rPos, lY, rY, yaws) {
-  const n = times.length;
-  const ys = [];
+  const n = times.length, ys = [];
   for (let i = 0; i < n; i++) ys.push(Math.min(lY[i], rY[i]));
   const sorted = ys.slice().sort((a, b) => a - b);
-  const yCut = sorted[Math.max(0, Math.floor(n * 0.35))];
-  const ts = [], rights = [], fwds = [];
-  const uw = unwrap(yaws);
-  for (let i = 0; i < n; i++) {
-    if (ys[i] > yCut) continue;
-    const p = lY[i] <= rY[i] ? lPos[i] : rPos[i];
-    const s = Math.sin(uw[i]), c = Math.cos(uw[i]);
-    ts.push(times[i]);
-    fwds.push(p.x * s + p.z * c);
-    rights.push(p.x * c - p.z * s);
+  const yCut = sorted[Math.max(0, Math.floor(n * 0.25))];
+  const uw = unwrap(yaws); let sf = 0, sr = 0, st = 0;
+  for (let i = 1; i < n; i++) {
+    if (ys[i] > yCut || ys[i - 1] > yCut) continue;
+    const left = lY[i] <= rY[i], leftPrev = lY[i - 1] <= rY[i - 1]; if (left !== leftPrev) continue;
+    const p = left ? lPos[i] : rPos[i], q = left ? lPos[i - 1] : rPos[i - 1], dt = times[i] - times[i - 1]; if (dt <= 0) continue;
+    const dx = p.x - q.x, dz = p.z - q.z, s = Math.sin(uw[i]), c = Math.cos(uw[i]);
+    sf += dx * s + dz * c; sr += dx * c - dz * s; st += dt;
   }
-  if (ts.length < 4) return { fwd: 0, right: 0, speed: 0 };
-  const fwd = -fitLine(ts, fwds).b;
-  const right = -fitLine(ts, rights).b;
+  if (st <= 0) return { fwd: 0, right: 0, speed: 0 };
+  // facing +Z (Y up, right-handed) the character's right is -X: body velocity = -foot velocity, so right = +foot dx
+  const fwd = -sf / st, right = sr / st;
   return { fwd, right, speed: Math.hypot(fwd, right) };
 }
 
@@ -479,7 +489,7 @@ function measureTarget(rig, tgtLocalRest, tgtRestT, sample, velOverride) {
     lf.getWorldPosition(lp); rf.getWorldPosition(rp); lt.getWorldPosition(ltp); rt.getWorldPosition(rtp);
     minFoot = Math.min(minFoot, lp.y, rp.y, ltp.y, rtp.y);
     lY.push(lp.y); rY.push(rp.y); lXZ.push([lp.x, lp.z]); lPos.push(lp.clone()); rPos.push(rp.clone());
-    yaws.push(yawFromQuat(hips.getWorldQuaternion(_q)));
+    yaws.push(0); void hips; // output clips face +Z by construction (heading stripped by the shoulder facing): measure in that frame
     for (const name of ORDER) {
       const q = findBone(rig, name).quaternion.clone();
       if (prevQ[name]) maxDelta = Math.max(maxDelta, qAngle(prevQ[name], q) * 180 / Math.PI);
@@ -487,6 +497,7 @@ function measureTarget(rig, tgtLocalRest, tgtRestT, sample, velOverride) {
     }
   }
   const times = Array.from(sample.times);
+  if (process.env.LOCO_DBG) { const rg = (k) => (Math.max(...lPos.map((p) => p[k])) - Math.min(...lPos.map((p) => p[k]))).toFixed(2); console.log('   dbg footL range x', rg('x'), 'z', rg('z'), 'hipsYaw0', (yawFromQuat(findBone(rig, 'Hips').getWorldQuaternion(new THREE.Quaternion())) * 57.3).toFixed(0)); }
   const lock = supportVel(times, lPos, rPos, lY, rY, yaws);
   const fwd = velOverride ? velOverride.fwd : lock.fwd;
   const right = velOverride ? velOverride.right : lock.right;
@@ -655,7 +666,7 @@ function collectCmuFrames(spec) {
     const world = poseWorld(root, 'cmu');
     const hip = world.Hips.wp.clone().multiplyScalar(scale);
     const lf = world.LeftFoot.wp.clone().multiplyScalar(scale);
-    frames.push({ t, world, hip, yaw: yawFromQuat(world.Hips.wq), lfoot: lf });
+    frames.push({ t, world, hip, yaw: facingYaw(root, 'cmu') ?? yawRel(world.Hips.wq, rest.Hips.wq), lfoot: lf });
   }
   const times = frames.map((f) => f.t);
   const idx = contactsFrom(times, frames.map((f) => f.lfoot.y), frames.map((f) => [f.lfoot.x, f.lfoot.z]), { trim: 0.18, speedCut: 0.6, minSep: 0.45 });
@@ -686,9 +697,19 @@ function slideWindows(data, dur, step) {
   return out;
 }
 
-function retargetCmuSegment(data, seg, label, opts) {
+// Loop snap: move a window's end (+-0.25 s) to the frame whose leg pose (relative to the hips) best matches the start,
+// so the cycle closes on the same phase (sliding windows closed 13-35 deg apart and popped at the wrap).
+const LEGS = ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'];
+function legPoseErr(fa, fb) { let e = 0; const ia = fa.world.Hips.wq.clone().invert(), ib = fb.world.Hips.wq.clone().invert();
+  for (const n of LEGS) { if (!fa.world[n] || !fb.world[n]) continue; e = Math.max(e, qAngle(ia.clone().multiply(fa.world[n].wq), ib.clone().multiply(fb.world[n].wq))); } return e * 180 / Math.PI; }
+function snapLoop(data, seg) { const F = data.frames, dt = F[1].t - F[0].t, w = Math.round(0.25 / dt); let best = seg.i1, be = Infinity;
+  for (let j = Math.max(seg.i0 + 8, seg.i1 - w); j <= Math.min(F.length - 1, seg.i1 + w); j++) { const e = legPoseErr(F[seg.i0], F[j]); if (e < be) { be = e; best = j; } }
+  if (best === seg.i1) return { ...seg, snapErr: be }; const s2 = analyzeWindow(F, seg.i0, best); return s2 ? { ...seg, ...s2, snapErr: be } : { ...seg, snapErr: be }; }
+
+function retargetCmuSegment(data, seg0, label, opts) {
+  const seg = snapLoop(data, seg0);
   const t0 = data.frames[seg.i0].t, t1 = data.frames[seg.i1].t;
-  const srcFrames = sampleSource(data.root, 'cmu', data.poser, t0, t1, ANALYZE_FPS, data.scale);
+  const srcFrames = sampleSource(data.root, 'cmu', data.poser, t0, t1, ANALYZE_FPS, data.scale, data.rest);
   const { frames: posed, headingFit } = retargetFrames(srcFrames, data.rest, tgtRestWorld, data.C, tgtLocalRest);
   restoreRigBind();
   return packClip(label, posed, path.basename(data.file) + ` t=${t0.toFixed(2)}-${t1.toFixed(2)}`, headingFit, {
@@ -803,7 +824,7 @@ function retargetKay(clipName, outName) {
   const clip = kayAnims.get(clipName);
   if (!clip) throw new Error('missing KayKit clip ' + clipName);
   const poser = makePoser(kayRoot, clip);
-  const srcFrames = sampleSource(kayRoot, 'kay', poser, 0, clip.duration || 1 / FPS, ANALYZE_FPS, kayScale);
+  const srcFrames = sampleSource(kayRoot, 'kay', poser, 0, clip.duration || 1 / FPS, ANALYZE_FPS, kayScale, kayRest);
   const { frames: posed, headingFit } = retargetFrames(srcFrames, kayRest, tgtRestWorld, kayC, tgtLocalRest);
   restoreRigBind();
   return packClip(outName, posed, 'KayKit ' + clipName, headingFit, {});

@@ -1,5 +1,7 @@
 // Check fighter.loco.anim.glb on the Meshy rig (node, no browser).
-// Usage: node tools/loco-check.mjs
+// Foot-slide / pose-snap check. Per clip: maxΔ° = largest bone rotation between consecutive samples (pose snap / flip),
+// wrap° = last vs first frame per bone (loop seam snap), driftcm = planted-foot slide against the clip's meta velocity.
+// Usage: node tools/loco-check.mjs [--json]
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -16,6 +18,7 @@ const META = path.join(R, 'assets/models/fighter.loco.meta.json');
 const SAMPLES = 60;
 const MAX_FLIP = 40;
 const MAX_DRIFT = 5;
+const MAX_WRAP = 3; const JSON_OUT = process.argv.includes('--json'); const rows = [];
 
 await MeshoptDecoder.ready;
 const loader = new GLTFLoader();
@@ -160,9 +163,10 @@ for (const clip of animGltf.animations) {
   }
   const driftCm = drift * 100;
   const minYcm = minY * 100;
-  const ok = maxDelta <= MAX_FLIP && driftCm <= MAX_DRIFT;
+  let wrap = 0; for (const name of BONES) wrap = Math.max(wrap, qAngle(qs[0][name], qs[qs.length - 1][name])); const wrapDeg = wrap; // qAngle is in degrees
+  const ok = maxDelta <= MAX_FLIP && driftCm <= MAX_DRIFT && wrapDeg <= MAX_WRAP;
   if (!ok) fails += 1;
-  const mark = ok ? 'ok' : (maxDelta > MAX_FLIP ? 'FLIP' : 'DRIFT');
+  const mark = ok ? 'ok' : (maxDelta > MAX_FLIP ? 'FLIP' : wrapDeg > MAX_WRAP ? 'SNAP' : 'DRIFT'); rows.push({ clip: clip.name, maxDelta: +maxDelta.toFixed(1), wrapDeg: +wrapDeg.toFixed(1), driftCm: +driftCm.toFixed(1), ok });
   console.log(
     clip.name.padEnd(12), dur.toFixed(2).padStart(6), maxDelta.toFixed(1).padStart(8),
     driftCm.toFixed(2).padStart(8), minYcm.toFixed(1).padStart(8),
@@ -173,5 +177,7 @@ for (const clip of animGltf.animations) {
 restore();
 const bytes = fs.statSync(ANIM).size;
 console.log('\nfile', bytes, 'bytes', bytes > 600 * 1024 ? 'OVER 600KB' : 'size ok');
-console.log(fails ? `${fails} clip(s) failed` : 'all clips within flip/drift limits');
+console.log('wrap° per clip', rows.map((r) => r.clip + ' ' + r.wrapDeg).join(', '));
+if (JSON_OUT) console.log(JSON.stringify(rows));
+console.log(fails ? `${fails} clip(s) failed` : 'all clips within flip/snap/drift limits');
 if (fails) process.exitCode = 1;

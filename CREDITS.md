@@ -12,6 +12,8 @@ Sandstorm uses these third-party assets and libraries. Versions match `package.j
 | `asphalt_01` diffuse / normal / ARM | CC0 | https://polyhaven.com/a/asphalt_01 |
 | `dirty_concrete` diffuse / normal / ARM | CC0 | https://polyhaven.com/a/dirty_concrete |
 | Universal Animation Library, Godot Standard (`AnimationLibrary_Godot_Standard`, retargeted to `assets/models/fighter.quaternius.anim.glb`) | CC0 | https://quaternius.com/packs/universalanimationlibrary.html and https://quaternius.itch.io/universal-animation-library — Godot Standard glTF used from the pack (also published via https://github.com/Quaternius/quaternius.github.io) |
+| CMU Graphics Lab Motion Capture Database, subjects 16, 41 and 69 (walk/strafe/backpedal/turn-in-place BVH; retargeted into `assets/models/fighter.loco.anim.glb`) | Free for any use (CMU: "free for all uses"; please credit) | http://mocap.cs.cmu.edu/ — The data used in this project was obtained from mocap.cs.cmu.edu. The database was created with funding from NSF EIA-0196217. |
+| KayKit Character Animations 1.1 by Kay Lousberg (Rig_Medium MovementAdvanced: Running_Strafe_Left/Right, Walking_Backwards, Crouching; retargeted into `assets/models/fighter.loco.anim.glb`) | CC0 | https://kaylousberg.com/game-assets/character-animations-1-1 (www.kaylousberg.com) |
 
 Poly Haven downloads were resized to 512 webp. Quaternius clips were retargeted onto the Meshy fighter bones at build time (`tools/retarget-quaternius.mjs`). No Mixamo clips are used. Clips used: Walk_Loop, Jog_Fwd_Loop, Sprint_Loop, Crouch_Fwd_Loop, Crouch_Idle_Loop, Idle_Loop, Pistol_Aim_Neutral (aim + lean), Pistol_Shoot, Hit_Chest, Hit_Head, Death01 (all CC0).
 

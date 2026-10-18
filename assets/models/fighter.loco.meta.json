@@ -1,0 +1,83 @@
+{
+  "strafeL": {
+    "src": "69_42.bvh t=6.20-9.25",
+    "duration": 3.0506,
+    "fwd": -0.1055,
+    "right": -0.3735,
+    "speed": 0.3881,
+    "turnRate": 0.663,
+    "loopErr": 10.366
+  },
+  "strafeR": {
+    "src": "69_58.bvh t=0.23-2.37",
+    "duration": 2.1362,
+    "fwd": 0.0561,
+    "right": 0.5136,
+    "speed": 0.5166,
+    "turnRate": -2.22,
+    "loopErr": 9.638
+  },
+  "backWalk": {
+    "src": "69_50.bvh t=0.60-1.85",
+    "duration": 1.25,
+    "fwd": -0.5956,
+    "right": -0.281,
+    "speed": 0.6586,
+    "turnRate": -3.909,
+    "loopErr": 12.475
+  },
+  "turnL": {
+    "src": "69_17.bvh t=4.35-5.71",
+    "duration": 1.3513,
+    "fwd": 0,
+    "right": 0,
+    "speed": 0,
+    "turnRate": 84.686,
+    "loopErr": 21.771
+  },
+  "turnR": {
+    "src": "69_18.bvh t=2.67-4.13",
+    "duration": 1.4667,
+    "fwd": 0,
+    "right": 0,
+    "speed": 0,
+    "turnRate": -70.564,
+    "loopErr": 13.434
+  },
+  "runStrafeL": {
+    "src": "KayKit Running_Strafe_Left",
+    "duration": 0.8,
+    "fwd": 2.4837,
+    "right": -4.3632,
+    "speed": 5.0206,
+    "turnRate": 0,
+    "loopErr": 0.095
+  },
+  "runStrafeR": {
+    "src": "KayKit Running_Strafe_Right",
+    "duration": 0.8,
+    "fwd": 2.5178,
+    "right": 4.4174,
+    "speed": 5.0845,
+    "turnRate": 0,
+    "loopErr": 0.098
+  },
+  "backRun": {
+    "src": "KayKit Walking_Backwards",
+    "duration": 1.0667,
+    "fwd": -2.2619,
+    "right": 0,
+    "speed": 2.2619,
+    "turnRate": 0,
+    "loopErr": 0.019
+  },
+  "crouchWalk": {
+    "src": "KayKit Crouching",
+    "duration": 1.0667,
+    "fwd": 0.473,
+    "right": 0,
+    "speed": 0.473,
+    "turnRate": 0,
+    "loopErr": 0.019
+  }
+}
