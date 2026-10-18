@@ -1,20 +1,20 @@
 #!/bin/bash
 # Test suites -> logs/suite-<tag>-<test>.log, summary in logs/suite.txt. One browser at a time via tools/run.sh, unless -j2.
-#   tools/suite.sh [-j2] fast [tests...]          logic tests in ?test=fast (tiny flat render, identical logic) on the Low tier
-#   tools/suite.sh [-j2] logic [tests...]         logic tests in ?test=fast&norender (no GPU draw; matrices/LOD/LOS kept)
+#   tools/suite.sh [-j1] fast [tests...]          logic tests in ?test=fast on the Low tier (2 at a time by default; -j1 = serial)
 #   tools/suite.sh visual high|low [tests]        the visual/perf set on a real tier (releases and visual changes)
 #   tools/suite.sh release                        everything: fast set, then the FULL list on High and on Low
 #   tools/suite.sh high|low [tests...]            (legacy) the full list on one real tier
-# -j2 (opt-in, default off): 2 tests at once when the box is free - only our own harness browsers, never next to a
+# -j2 (default for fast since m1y): 2 tests at once when the box is free - only our own harness browsers, never next to a
 # foreign headless Chrome, never two tests on one port, the 2nd starts only with >= 40% idle CPU (tools/busy.sh).
 # SOLO tests (fps/timing-sensitive) always run alone.
-FAST_TESTS="fast-parity rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick waves-passive regen scope-switch scope-drag start-feedback m1v m1w m1x aim-reg"
-# no-render logic set: everything in FAST_TESTS that reads no pixels and no fps (fast-parity validates the mode itself)
-LOGIC_TESTS="rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit waves-passive regen scope-switch scope-drag m1w m1x aim-reg"
+FAST_TESTS="fast-parity rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick waves-passive regen scope-switch scope-drag start-feedback m1v m1w m1x aim-reg cover-occl"
+# tests that read no pixels/fps (safe 2-at-a-time)
+LOGIC_TESTS="rules-test hit-test fire-hold lowfps-hit waves restart waves-restart far-hit waves-passive regen scope-switch scope-drag m1w m1x aim-reg cover-occl"
 VISUAL_TESTS="art-shots kill-art title-layout stakes-shots ragdoll-shots feedback-shots m1 auto-tier"
-ALL_TESTS="rules-test hit-test art-shots kill-art m1 stakes-shots ragdoll-shots soak fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick feedback-shots waves-passive regen auto-tier title-layout scope-switch scope-drag start-feedback m1v m1w m1x aim-reg"
+ALL_TESTS="rules-test hit-test art-shots kill-art m1 stakes-shots ragdoll-shots soak fire-hold lowfps-hit waves restart waves-restart far-hit quality-pick feedback-shots waves-passive regen auto-tier title-layout scope-switch scope-drag start-feedback m1v m1w m1x aim-reg cover-occl"
 SOLO=" quality-pick auto-tier start-feedback m1v fast-parity soak "
-PAR=1; if [ "$1" = "-j2" ]; then PAR=2; shift; fi
+# m1y (App PM): -j2 is the default for fast runs; -j1 forces serial. visual/release/tier runs stay serial.
+PAR=2; if [ "$1" = "-j2" ]; then shift; elif [ "$1" = "-j1" ]; then PAR=1; shift; fi; case "$1" in fast) ;; *) PAR=1 ;; esac
 one() { local tag=$1 qs=$2 extra=$3 t=$4 s0=$(date +%s)
   SS_PAR=$PAR SS_QS="$qs" SS_EXTRA="$extra" tools/run.sh 900 node test/$t.js > logs/suite-$tag-$t.log 2>&1; local c=$?
   echo "$(date +%T) $tag $t exit=$c $(( $(date +%s) - s0 ))s $(grep -E 'PASS|FAIL' logs/suite-$tag-$t.log | tail -1 | cut -c1-120)" >> logs/suite.txt; }
@@ -38,9 +38,8 @@ run() { local tag=$1 qs=$2 extra=$3; shift 3
 M=$1; shift
 case "$M" in
   fast) run fast "&q=low&test=fast" "&test=fast" ${*:-$FAST_TESTS} ;;
-  logic) run logic "&q=low&test=fast&norender" "&test=fast&norender" ${*:-$LOGIC_TESTS} ;;
   visual) Q=$1; shift; run "$Q" "&q=$Q" "" ${*:-$VISUAL_TESTS} ;;
   release) run fast "&q=low&test=fast" "&test=fast" $FAST_TESTS; run high "&q=high" "" $ALL_TESTS; run low "&q=low" "" $ALL_TESTS ;;
   high|low) run "$M" "&q=$M" "" ${*:-$ALL_TESTS} ;;
-  *) echo "usage: tools/suite.sh [-j2] fast|logic|visual high|low|release|high|low [tests...]" >&2; exit 2 ;;
+  *) echo "usage: tools/suite.sh [-j2] fast|visual high|low|release|high|low [tests...]" >&2; exit 2 ;;
 esac

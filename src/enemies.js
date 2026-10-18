@@ -942,7 +942,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // m1w item 7: engaged fights were too lethal (a lone fighter took the player 100% -> ~5% in ~20 s). Incoming gunfire
   // is capped at DMG_CAP_HPS hp per second (token bucket, accrues on the slower of real and game time, holds one full
   // hit). A hit the bucket cannot pay for becomes a near miss (tracer/crack still), so the lone-enemy kill takes >= ~30 s.
-  const LOW_HP_CHANCE = 0.3; // m1x: hit-chance floor once a hit would be lethal and the player is exposed
+  const LOW_HP_CHANCE = 0.3, LOW_HP_SLIVER = 6; // m1x: hit-chance floor once a hit would be lethal and the player is exposed
   const DMG_CAP_HPS = 2.8, DMG_CAP_BURST = 22; let dmgBucket = DMG_CAP_BURST, dmgBucketR = 0, dmgBucketSim = 0;
   function dmgBudget(nowS, simS) { if (dmgBucketR) dmgBucket = Math.min(DMG_CAP_BURST, dmgBucket + DMG_CAP_HPS * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
   // m1v: warning for fire from outside the view - edge flash on the shooter's side + a supersonic crack
@@ -993,6 +993,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const dmgAmt0 = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1) * (window.SS && window.SS.input && window.SS.input.cover ? 0.6 : 1);
     const lowHp = !!(player && player.alive && player.health <= dmgAmt0 && !(window.SS && window.SS.input && window.SS.input.cover));
     if (lowHp) chance = Math.max(chance, LOW_HP_CHANCE);
+    // m1y: at a sliver (< LOW_HP_SLIVER hp) a seen, exposed player's next hit lands with >= 0.6 chance; in game time the
+    // fire cadence slows at ~1 fps (sim dt capped), so the old floor still left a ~20 s wall-clock sliver at 1 fps.
+    if (lowHp && player.health < LOW_HP_SLIVER) chance = Math.max(chance, 0.6);
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap && simS - (lastPlayerHitSim || -99) >= gap; // spacing holds in BOTH real and game time

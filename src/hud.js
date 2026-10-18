@@ -13,6 +13,7 @@ export function createHud() {
   healthWrap.id = 'health';
   const healthFill = document.createElement('div');
   healthWrap.appendChild(healthFill);
+  const healthNum = document.createElement('span'); healthNum.id = 'health-num'; healthWrap.appendChild(healthNum); // m1y: the real HP as a number when low
 
   const ammoEl = document.createElement('div');
   ammoEl.id = 'ammo';
@@ -89,6 +90,7 @@ export function createHud() {
   function applyHealth() {
     const h = Math.max(0, Math.min(100, health));
     healthFill.style.width = h + '%';
+    healthNum.textContent = h > 0 && h < 30 ? String(Math.ceil(h)) : '';
   }
 
   // m1s: every hit shows a marker, a kill a distinct one (red, larger), and each stays up for a minimum time AND at

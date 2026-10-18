@@ -18,18 +18,18 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
     if (calm) await p.evaluate(() => { SS.walking = false; SS.player.health = 1e6; }); await p.waitForTimeout(1500); return { p, ctx }; }
   const shots = (p) => p.evaluate(() => SS.weapon.shotsFired);
-  if (want('A') || want('B') || want('C') || want('D')) { const { p, ctx } = await start(true);
+  if (want('A') || want('B') || want('C') || want('D') || want('F') || want('G') || want('H')) { const { p, ctx } = await start(true);
     await p.evaluate(() => { window.__freezeCam = true; SS.weapon.ammo = 30; SS.weapon.reserve = 200; });
     // A: drop a kit 7 m ahead, take its screen spot as drawn, click there ~1 s later (fly-in started at 0.6 s)
     if (want('A')) { res.A = [];
-      for (const lateMs of [900, 1700]) { const pos = await p.evaluate(() => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 7; v.z -= Math.cos(y) * 7; v.y = 0;
-          window.__slowMs = 200; SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0;
-          const it = SS.stakes.items[SS.stakes.items.length - 1]; const w = it.g.position.clone(); w.y = 0.45; w.applyMatrix4(SS.lastVP); /* the drop is clamped to the street */ return [(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight]; });
+      for (const [slow, lateMs] of [[200, 900], [200, 1700], [1000, 1500], [1000, 3200]]) { const pos = await p.evaluate((slow) => { const c = SS.camera, y = SS.input.yaw; const v = c.position.clone(); v.x += Math.sin(y) * 7; v.z -= Math.cos(y) * 7; v.y = 0;
+          window.__slowMs = slow; SS.stakes.drop('health', v); SS.player.health = 50; window.__f0 = SS.weapon.shotsFired; window.__a0 = SS.weapon.ammo; window.__k0 = SS.pickupsTaken | 0;
+          const it = SS.stakes.items[SS.stakes.items.length - 1]; const w = it.g.position.clone(); w.y = 0.45; w.applyMatrix4(SS.lastVP); /* the drop is clamped to the street */ return [(w.x + 1) / 2 * innerWidth, (1 - w.y) / 2 * innerHeight]; }, slow);
         await p.waitForTimeout(lateMs); const state = await p.evaluate((pos) => ({ items: SS.stakes.items.length, fly: SS.stakes.items.length ? +(SS.stakes.items[0].fly || 0).toFixed(2) : null, dry: SS.stakes.pickAt(pos[0], pos[1], true) }), pos);
         await p.mouse.click(pos[0], pos[1]); await p.waitForTimeout(1800);
         const r = await p.evaluate(() => ({ fired: SS.weapon.shotsFired - window.__f0, ammo: [window.__a0, SS.weapon.ammo], taken: (SS.pickupsTaken | 0) - window.__k0, tapped: SS.pickupsTapped | 0, late: SS.pickupsLateTaps | 0 }));
-        Object.assign(r, { lateMs, pos: pos.map(Math.round), atClick: state }); res.A.push(r);
-        if (r.fired !== 0) fail.push('A: a click on the medkit ' + lateMs + ' ms after it was drawn FIRED ' + r.fired + ' ' + JSON.stringify(r));
+        Object.assign(r, { fps: Math.round(1000 / slow), lateMs, pos: pos.map(Math.round), atClick: state }); res.A.push(r);
+        if (r.fired !== 0) fail.push('A: a click on the medkit (' + Math.round(1000 / slow) + ' fps) ' + lateMs + ' ms after it was drawn FIRED ' + r.fired + ' ' + JSON.stringify(r));
         if (r.taken < 1) fail.push('A: the medkit was not collected ' + JSON.stringify(r));
         await p.evaluate(() => { window.__slowMs = 0; SS.stakes.reset(); }); await p.waitForTimeout(400); }
       // control: a click well away from any drop still fires one round
@@ -53,6 +53,30 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     // D: a still hold at 5 fps still auto-fires (feel)
     if (want('D')) { await p.evaluate(() => { window.__slowMs = 200; SS.weapon.ammo = 30; }); await p.waitForTimeout(600); const f0 = await shots(p); await p.mouse.move(420, 200); await p.mouse.down(); await p.waitForTimeout(1600); await p.mouse.up(); await p.waitForTimeout(800);
       res.D = { fired: (await shots(p)) - f0 }; await p.evaluate(() => { window.__slowMs = 0; }); if (res.D.fired < 3) fail.push('D: a 1.6 s still hold at 5 fps fired only ' + res.D.fired); }
+    // H (m1y: a full-screen HUD SVG swallowed canvas clicks): with the damage arc, edge warning, low-HP glow, radio and
+    // banners all showing, every point of the play area hit-tests to the canvas or a real control
+    if (want('H')) { res.H = await p.evaluate(() => { SS.player.health = 1e6; const hud = SS.hud; try { hud.damageDirection(0.7); hud.damageVignette(1); hud.callout && hud.callout('test line'); hud.radio && hud.radio('Contact reported ahead. Stay sharp.'); hud.banner && hud.banner('CONTACT'); hud.hitMarker && hud.hitMarker('hit'); } catch (_) {}
+        document.getElementById('edge-warn') && document.getElementById('edge-warn').classList.add('show'); document.getElementById('lowhp') && document.getElementById('lowhp').classList.add('on');
+        const bad = {}; let n = 0; for (let x = 10; x < innerWidth; x += 24) for (let y = 10; y < innerHeight; y += 24) { const el = document.elementFromPoint(x, y); if (!el || el.tagName === 'CANVAS' || el.closest('[data-ctl]')) continue; const k = (el.id || el.tagName) + '.' + (el.getAttribute('class') || ''); bad[k] = (bad[k] | 0) + 1; n++; }
+        document.getElementById('edge-warn') && document.getElementById('edge-warn').classList.remove('show'); return { n, bad }; });
+      if (res.H.n) fail.push('H: ' + res.H.n + ' play-area points hit a HUD element instead of the canvas ' + JSON.stringify(res.H.bad)); }
+    // G (m1y, tester at ~1 fps: a fast 300 px drag turned ~20 px): a fast drag (one 300 px jump / three 100 px moves) at 1 fps turns ~1:1
+    if (want('G')) { res.G = []; const cdp = await ctx.newCDPSession(p);
+      for (const steps of [1, 3]) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; }); await p.waitForTimeout(2200); const y0 = await p.evaluate(() => SS.input.yaw);
+        const x = 250, y = 200; await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+        for (let i = 1; i <= steps; i++) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + Math.round(300 * i / steps), y, button: 'left', buttons: 1 });
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 300, y, button: 'left', clickCount: 1 }); await p.waitForTimeout(5000);
+        const r = await p.evaluate((y0) => ({ dyawPx: +(Math.abs(SS.input.yaw - y0) / ((70 * Math.PI / 180) / Math.max(200, innerHeight))).toFixed(0) }), y0); r.steps = steps; res.G.push(r);
+        if (r.dyawPx < 300 * 0.7 || r.dyawPx > 300 * 1.3) fail.push('G: a fast 300 px drag (' + steps + ' move' + (steps > 1 ? 's' : '') + ') at 1 fps turned ' + r.dyawPx + ' px'); }
+      await p.evaluate(() => { window.__slowMs = 0; }); }
+    // F (m1y): a click held back by a reload at ~1 fps expires by event time instead of firing seconds later (mid-drag)
+    if (want('F')) { await p.evaluate(() => { SS.input.scope = false; window.__slowMs = 1000; SS.weapon.ammo = 10; SS.weapon.reserve = 200; SS.input.reloadPressed = true; });
+      const f0 = await shots(p); await p.mouse.click(260, 140); const rl = await p.evaluate(() => !!SS.weapon.reloading || SS.weapon.ammo === 30); // reload is 2 s real time (~2 frames here)
+      await p.waitForFunction(() => !SS.weapon.reloading, null, { timeout: 40000, polling: 300 }).catch(() => {}); await p.waitForTimeout(2500);
+      res.F = await p.evaluate((f0) => ({ fired: SS.weapon.shotsFired - f0, expired: SS.input.tapsExpired | 0, ammo: SS.weapon.ammo }), f0); res.F.reloadingAtClick = rl;
+      { const g0 = await shots(p); await p.mouse.click(260, 140); await p.waitForTimeout(4000); res.F.plainClick1fps = (await shots(p)) - g0; if (res.F.plainClick1fps !== 1) fail.push('F: a plain click at 1 fps fired ' + res.F.plainClick1fps + ' (want 1)'); }
+      await p.evaluate(() => { window.__slowMs = 0; });
+      if (rl && res.F.fired) fail.push('F: a click made during a reload at 1 fps fired ' + res.F.fired + ' round(s) after the reload ' + JSON.stringify(res.F)); if (!rl && !res.F.expired) fail.push('F: not exercised (no reload seen, no click expired) ' + JSON.stringify(res.F)); }
     await ctx.close(); }
   // E: pacing, real spawns (no calm)
   if (want('E')) { const { p, ctx } = await start(false);

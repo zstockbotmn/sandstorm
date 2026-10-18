@@ -9,7 +9,7 @@ export function createPlayer(camera, input, hud) {
   player.damage = function damage(amount, fromPosition) {
     if (!player.alive) return;
     const dmg = Math.max(0, amount || 0);
-    player.health = Math.max(0, player.health - dmg);
+    player.health = Math.max(0, player.health - dmg); if (player.health < 1) player.health = 0; // m1y: < 1 hp is dead (an 'empty' bar that stayed alive)
     if (dmg >= 20 && window.SS && window.SS.scoreSys && window.SS.scoreSys.breakStreak) window.SS.scoreSys.breakStreak();
     if (window.SS) window.SS.health = player.health;
     if (hud) {
