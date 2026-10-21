@@ -217,8 +217,9 @@ export function createSetPieces({ scene, camera, player, hud }) {
   }
   function debugRpg() { return launchNow((window.SS && window.SS.simTime) || 0); }
   function debugTruck() { return truck.debugTruck(); }
+  function truckProbe() { return truck.probe(); }
   function debugAmbient(kind) { return ambient.debugAmbient(kind); }
   function trailStats() { let live = 0, vis = 0, op = 0, near = 1e9, far = 0; for (const q of puffs) { if (q.life > 0) live++; if (q.mesh.visible) { vis++; op = Math.max(op, q.mat.opacity); const d = q.mesh.position.distanceTo(camera.position); near = Math.min(near, d); far = Math.max(far, d); } } return { live, vis, op: +op.toFixed(2), near: +near.toFixed(1), far: +far.toFixed(1), inScene: !!puffs[0].mesh.parent }; }
   function probe(dist) { const f = new THREE.Vector3(); camera.getWorldDirection(f); const q = puffs[0]; q.life = 99; q.mesh.visible = true; q.mesh.position.copy(camera.getWorldPosition(new THREE.Vector3())).addScaledVector(f, dist || 4); q.mesh.scale.setScalar(1.5); q.mat.opacity = 0.85; q.mesh.lookAt(camera.position); return { pos: q.mesh.position.toArray().map((v) => +v.toFixed(1)), depthTest: q.mat.depthTest, layers: q.mesh.layers.mask, camLayers: camera.layers.mask, ro: q.mesh.renderOrder, parent: q.mesh.parent && q.mesh.parent.type }; }
-  return { update, debugRpg, debugTruck, debugAmbient, state, trailStats, probe };
+  return { update, debugRpg, debugTruck, truckProbe, debugAmbient, state, trailStats, probe };
 }

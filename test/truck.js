@@ -20,7 +20,7 @@ const [tier = 'low', out = 'logs/a10/truck'] = process.argv.slice(2); fs.mkdirSy
     res.wait = await p.evaluate(async () => { const t0 = performance.now(); while (!(SS.truckMoment && SS.truckMoment.count > 0) && performance.now() - t0 < 400000) { SS.input.scope = false; if (SS.player.health < 60) SS.player.health = 100; await new Promise((r) => setTimeout(r, 100)); }
       return { ok: !!(SS.truckMoment && SS.truckMoment.count > 0), sim: +(SS.simTime || 0).toFixed(1), ducked: !!SS.input.cover }; });
     if (!res.wait.ok) fail.push('no truck within the wait');
-    else { res.shots = [await shot('1tell')]; await p.waitForTimeout(500); res.shots.push(await shot('2approach'));
+    else { res.probe = [await p.evaluate(() => SS.setpieces.truckProbe())]; res.shots = [await shot('1tell')]; await p.waitForTimeout(500); res.probe.push(await p.evaluate(() => SS.setpieces.truckProbe())); res.shots.push(await shot('2approach'));
       await p.waitForFunction(() => SS.truckMoment.last && SS.truckMoment.last.crashR, null, { timeout: 30000 }); res.shots.push(await shot('3crash'));
       await p.waitForFunction(() => SS.truckMoment.last && SS.truckMoment.last.fighters > 0, null, { timeout: 20000 }).catch(() => {}); await p.waitForTimeout(1500); res.shots.push(await shot('4bailout'));
       res.truck = await p.evaluate(() => { const L = SS.truckMoment.last, w = SS.world, B = new SS.THREE.Box3(); const g = SS.scene ? null : null;

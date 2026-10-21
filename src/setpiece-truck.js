@@ -28,6 +28,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     const kenney = art.done && art.get && art.get('truck_mil') ? art.staticInstance('truck_mil') : null;
     if (kenney) {
       art.fitToBox(kenney, 2.3, 2.5, 5.6, { keepAspect: true, alignLong: true });
+      kenney.rotation.y += Math.PI; // A10: the Kenney flatbed's cab faces -z; turn it so the cab (and the lamps) lead toward the player
       kenney.name = 'truck_mil'; kenney.traverse((o) => { if (o.isMesh) o.castShadow = true; });
       g.add(kenney); model = 'kenney';
     } else {
@@ -41,8 +42,8 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     const gMat = new THREE.MeshBasicMaterial({ map: tex, color: 0xfff0b0, transparent: true, opacity: 0.7, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide });
     const geo = new THREE.PlaneGeometry(1, 1), glows = [];
     for (const x of [-0.85, 0.85]) {
-      const s = new THREE.Mesh(sph, lampMat); s.position.set(x, 1.0, 2.62); s.frustumCulled = false; g.add(s);
-      const m = new THREE.Mesh(geo, gMat); m.position.set(x, 1.0, 2.78); m.scale.setScalar(1.4); m.frustumCulled = false; m.renderOrder = 2; g.add(m); glows.push(m);
+      const s = new THREE.Mesh(sph, lampMat); s.position.set(x, 0.95, 2.6); s.frustumCulled = false; g.add(s);
+      const m = new THREE.Mesh(geo, gMat); m.position.set(x, 0.95, 3.1); /* A10: in front of the bumper (at 2.78 the cab hid them) */ m.scale.setScalar(1.4); m.frustumCulled = false; m.renderOrder = 2; g.add(m); glows.push(m);
     }
     let spot = null;
     if (window.SS && window.SS.quality === 'high') {
@@ -146,5 +147,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt < 8)) start(sim); // A10: shared set-piece gap
   }
   function debugTruck() { return start((window.SS && window.SS.simTime) || 0); }
-  return { update, debugTruck, state };
+  function probe() { if (!run) return null; const v = run.g.position.clone(), w = new THREE.Vector3(); run.g.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(run.g); v.project(camera); let vis = true; for (let q = run.g; q; q = q.parent) if (!q.visible) vis = false;
+    return { pos: run.g.position.toArray().map((x) => +x.toFixed(1)), cam: camera.position.toArray().map((x) => +x.toFixed(1)), ndc: [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(3)], size: box.getSize(w).toArray().map((x) => +x.toFixed(1)), vis, inScene: !!run.g.parent, phase: run.phase, kids: run.g.children.length, fogD: scene.fog && scene.fog.density }; }
+  return { update, debugTruck, state, probe };
 }
