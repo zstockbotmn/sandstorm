@@ -19,7 +19,10 @@ const QS = process.env.SS_QS || '&q=low', RUNS = +(process.env.SS_RUNS || 2), MI
       const t0 = performance.now(); while (!(SS.enemyShots > 0) && performance.now() - t0 < 240000) await new Promise((ok) => setTimeout(ok, 100));
       if (SS.fx && SS.fx.nearMiss) { const nm = SS.fx.nearMiss; SS.fx.nearMiss = function (...a) { near++; return nm.apply(this, a); }; }
       const s0 = SS.simTime, shots0 = SS.enemyShots | 0, hits0 = hits; let th = null;
-      let exp = 0, n = 0; while (SS.simTime - s0 < FIGHT_S && performance.now() - t0 < 600000) { const ph = (SS.simTime - s0) % 5; if (SS.input) SS.input.scope = ph < 3; /* a player who aims out 3 s of every 5 (scope pops out of cover), ducked the rest */ th = SS.threat || th; n++; if (SS.input && !SS.input.cover) exp++; await new Promise((ok) => setTimeout(ok, 200)); }
+      let exp = 0, n = 0; while (SS.simTime - s0 < FIGHT_S && performance.now() - t0 < 600000) { const ph = (SS.simTime - s0) % 5; if (SS.input) SS.input.scope = ph < 3; /* a player who aims out 3 s of every 5 (scope pops out of cover), ducked the rest */
+        if (SS.input && SS.input.scope && SS.enemies && SS.enemies.list) { /* ...and, scoped, looks at the nearest live fighter (off-view fire never damages: m1v) */ const c = SS.camera.position; let best = null, bd = 1e9;
+          for (const e of SS.enemies.list) { if (!e || !e.alive || e.dying) continue; const d = e.group.position.distanceTo(c); if (d < bd) { bd = d; best = e; } }
+          if (best) { const dx = best.group.position.x - c.x, dz = best.group.position.z - c.z; SS.input.yaw = Math.atan2(dx, -dz); SS.input.pitch = -Math.atan2(best.group.position.y + 1.3 - c.y, Math.hypot(dx, dz)); } } th = SS.threat || th; n++; if (SS.input && !SS.input.cover) exp++; await new Promise((ok) => setTimeout(ok, 200)); }
       if (SS.input) SS.input.scope = false;
       const g = SS.simTime - s0;
       // A6 phase 2 (ducked, 20 game-s): incoming fire must still be felt in cover (near misses at the cover line / overhead,
@@ -36,7 +39,7 @@ const QS = process.env.SS_QS || '&q=low', RUNS = +(process.env.SS_RUNS || 2), MI
         minAlive = Math.min(minAlive, SS.enemies && SS.enemies.list ? SS.enemies.list.filter((e) => e.alive).length : 99); await new Promise((ok) => setTimeout(ok, 100)); }
       const badCues = (SS.hitLog || []).filter((h) => !(h.cues && h.cues.flash && h.cues.dir && h.cues.flinch && h.cues.sound)).length;
       const regen = { gameS: +(SS.simTime - s3).toFixed(1), fightRegen: +((SS.fightRegen || 0) - r0).toFixed(1), hp: +pl.health.toFixed(1), drops, silent, badCues, enemiesAliveMin: minAlive, alive: pl.alive };
-      return { duck, regen, firstDmgS: first == null ? null : +(first - s0).toFixed(1), gameS: +g.toFixed(1), shotsPer10: +(((SS.enemyShots | 0) - shots0) / g * 10).toFixed(1), hits: hits - hits0, nearMisses: near, exposedFrac: +(exp / Math.max(1, n)).toFixed(2), threat: th }; }, FIGHT_S);
+      return { duck, regen, firstDmgS: first == null ? null : +(first - s0).toFixed(1), gameS: +g.toFixed(1), shotsPer10: +(((SS.enemyShots | 0) - shots0) / g * 10).toFixed(1), hits: hits - hits0, nearMisses: near, exposedFrac: +(exp / Math.max(1, n)).toFixed(2), threat: th, gates: { blind: SS.blindHitsBlocked | 0, fresh: SS.freshBlocked | 0, cap: SS.dmgCapBlocked | 0, grace: SS.graceBlocked | 0, offView: SS.offViewShots | 0, silentSkips: (SS.enemies && SS.enemies.list || []).reduce((a, e) => a + (e.silentSkips | 0), 0) } }; }, FIGHT_S);
     r.run = run; r.errs = errs; res.push(r); console.log(JSON.stringify(r)); await ctx.close();
     if (r.firstDmgS == null || r.firstDmgS > 20) fail.push('run ' + run + ': first damage ' + r.firstDmgS + ' game-s'); if (r.shotsPer10 < MIN) fail.push('run ' + run + ': ' + r.shotsPer10 + ' shots / 10 s');
     if (!r.nearMisses) fail.push('run ' + run + ': no near misses');

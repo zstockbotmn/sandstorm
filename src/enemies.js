@@ -1980,7 +1980,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const c = camera.position, ux0 = _muzzle.x - c.x, uz0 = _muzzle.z - c.z, ul = Math.hypot(ux0, uz0) || 1, ux = ux0 / ul, uz = uz0 / ul; // toward the shooter
     const sx = -uz, sz = ux, side = Math.random() < 0.5 ? -1 : 1, r = Math.random();
     let mode;
-    if (r < 0.45) { mode = 'lip'; _aim.set(c.x + ux * 0.7 + sx * side * Math.random() * 0.6, c.y - 0.12 - Math.random() * 0.2, c.z + uz * 0.7 + sz * side * Math.random() * 0.6); }
+    const sb = SSx.cover && SSx.cover.surface; // the cover's box (sandbags / car / crate) while in cover
+    if (r < 0.45) { mode = 'lip';
+      if (sb && sb.max.y > 0.3) _aim.set(Math.max(sb.min.x + 0.1, Math.min(sb.max.x - 0.1, c.x + sx * side * Math.random() * 0.7)), sb.max.y - 0.04 - Math.random() * 0.18, (sb.min.z + sb.max.z) / 2);
+      else _aim.set(c.x + ux * 0.7 + sx * side * Math.random() * 0.6, c.y - 0.3 - Math.random() * 0.3, c.z + uz * 0.7 + sz * side * Math.random() * 0.6); }
     else if (r < 0.75) { mode = 'over'; _aim.set(c.x + sx * side * (0.2 + Math.random() * 0.5), c.y + 0.3 + Math.random() * 0.4, c.z + sz * side * (0.2 + Math.random() * 0.5)); }
     else { mode = 'wall'; _aim.set(c.x + sx * side * (1.0 + Math.random() * 0.8), c.y - 0.3 + Math.random() * 0.9, c.z + sz * side * (1.0 + Math.random() * 0.8)); }
     if (SSx) (SSx.coverMiss || (SSx.coverMiss = { lip: 0, over: 0, wall: 0 }))[mode]++;
@@ -1992,6 +1995,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (mode !== 'lip' && h.distance < toAim - 0.3) continue; // over / wall: only what is beyond the player's cover line
       _supN.set(0, 1, 0); if (h.face) { _supN.copy(h.face.normal).transformDirection(h.object.matrixWorld); if (_supN.dot(_supD) > 0) _supN.negate(); }
       return { point: _supP.copy(h.point), normal: _supN, object: h.object }; }
+    // lip round with no mesh hit (merged / union cover boxes): the aim point is on the cover's top edge, so the chips fly there
+    if (mode === 'lip' && sb && sb.max.y > 0.3) { if (SSx) SSx.coverLipFallback = (SSx.coverLipFallback | 0) + 1; return { point: _supP.copy(_aim), normal: _supN.copy(_supD).negate(), object: null }; }
     return null;
   }
   function enemyShoot(enemy) {
@@ -2051,7 +2056,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (tS - lastShotSim > 15) fightSim0 = tS; lastShotSim = tS;
     const dryS = tS - Math.max(fightSim0, lastPlayerHitSim != null ? lastPlayerHitSim : -99);
     const ducked = !!(window.SS && window.SS.input && window.SS.input.cover);
-    if (dryS > 5) chance = Math.max(chance, Math.min(ducked ? 0.14 : 0.45, 0.06 + 0.035 * (dryS - 5)));
+    if (dryS > 3) chance = Math.max(chance, Math.min(ducked ? 0.14 : 0.45, 0.08 + 0.045 * (dryS - 3))); // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
     if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3) };
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
