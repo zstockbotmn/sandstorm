@@ -2598,7 +2598,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function beginFire(enemy) {
     if (LOCO2 && qName() !== 'ultra-low' && !enemy._peekArm) armPeek(enemy);
-    enemy.phase = 'fire';
+    enemy.phase = 'fire'; enemy._peekWaitT = 0;
     let hold = 0.5 + Math.random() * 0.65;
     if (LOCO2 && enemy._fireScale > 0) hold *= enemy._fireScale; // ±30% around today's fire window
     enemy.phaseT = hold;
@@ -2614,12 +2614,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.posture = crouchPeek(enemy) ? 'crouch' : 'lean';
     enemy.exposed = true;
     facePlayer(enemy);
-    enemy.phaseT -= dt;
+    // A5 tester (enemies felt passive; test/passive.js: 23.5 vs 49 shots per game-min on main): the loco=2 peek rise + settle
+    // (~0.5-0.8 s) ran on the same 0.35-1.5 s fire-window clock, so many peeks ended with 0-1 rounds. The window now starts
+    // when the first round may go (as on main); the wait itself is capped at 1.2 s so a stuck rise cannot hold the phase.
+    const waiting = !!(LOCO2 && enemy._peekArm && !enemy._peekFired && (!enemy._settleRoll || (enemy.settleT || 0) > 0));
+    if (waiting && (enemy._peekWaitT = (enemy._peekWaitT || 0) + dt) < 1.2) { /* fire window clock held */ } else enemy.phaseT -= dt;
+    if (!waiting) enemy._peekWaitT = 0;
     if ((enemy.suppressT || 0) > 0) enemy.suppressT = Math.max(0, enemy.suppressT - dt);
     if (player.alive && window.SS.running) {
       const slow = (enemy.suppressT || 0) > 0 ? 0.55 : 1;
       // First round of this peek only: no shot until the rise is full and settleT has run out.
-      const waiting = !!(LOCO2 && enemy._peekArm && !enemy._peekFired && (!enemy._settleRoll || (enemy.settleT || 0) > 0));
       if (waiting) enemy.shootCd = Math.max(enemy.shootCd || 0, enemy._settleRoll ? (enemy.settleT || 0) : 0.05);
       else enemy.shootCd -= dt * slow;
       if (!waiting && enemy.shootCd <= 0) {
