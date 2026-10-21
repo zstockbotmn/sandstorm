@@ -108,7 +108,7 @@ let setpieces = null;
 if (SP5) { setpieces = createSetPieces({ scene, camera, player, hud }); window.SS.setpieces = setpieces; }
 // A11: in debug, a small tag names what is FORCED (?rpg=1 / ?truck=1 / ?press=0 / SS.pressForce) so screenshots say so
 if (/[?&]debug\b/.test(location.search)) { const tag = document.createElement('div'); tag.id = 'dbg-forced';
-  tag.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:calc(52% + env(safe-area-inset-top));z-index:31;pointer-events:none;font:10px/1.3 monospace;color:#ffd27a;background:rgba(60,20,0,.6);padding:2px 5px;border-radius:3px;display:none';
+  tag.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:calc(6px + env(safe-area-inset-top));z-index:31;pointer-events:none;font:10px/1.3 monospace;color:#ffd27a;background:rgba(60,20,0,.6);padding:2px 5px;border-radius:3px;display:none';
   document.body.appendChild(tag); const q = location.search;
   const upd = () => { const f = []; if (/[?&]rpg=1\b/.test(q)) f.push('rpg=1'); if (/[?&]truck=1\b/.test(q)) f.push('truck=1'); if (/[?&]press=0\b/.test(q)) f.push('press=0'); if (window.SS.pressForce != null) f.push('press=' + window.SS.pressForce);
     if (!SP5) f.length = 0; tag.textContent = f.length ? 'FORCED ' + f.join(' ') + (window.SS.pressureP != null ? ' · p ' + window.SS.pressureP : '') : ''; tag.style.display = f.length ? 'block' : 'none'; };
