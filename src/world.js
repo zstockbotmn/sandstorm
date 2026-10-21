@@ -19,6 +19,8 @@ function windowMaterial() {
   }
   return winMat;
 }
+let WIN_TABLE = null;
+if (BLD4 && typeof fetch !== 'undefined') fetch('assets/models/windows.json').then((r) => (r.ok ? r.json() : null)).then((j) => { WIN_TABLE = j || {}; }).catch(() => { WIN_TABLE = {}; });
 
 const DRAW_AHEAD = Q.drawAhead;  // segments wholly beyond this (fogged out anyway) are not drawn
 const DRAW_BEHIND = 20;
@@ -479,6 +481,31 @@ export function createWorld(scene, seed) {
     const spanZ = Math.max(0.5, box.max.z - box.min.z);
     const doorZ = box.min.z + (0.12 + rng() * 0.76) * spanZ;
     doors.push(doorZ);
+    if (seg._wins && WIN_TABLE && WIN_TABLE[name] && Array.isArray(WIN_TABLE[name].windows)) {
+      const spec = WIN_TABLE[name];
+      const f = spec.face;
+      const fn = new THREE.Vector3(f === '+X' ? 1 : f === '-X' ? -1 : 0, 0, f === '+Z' ? 1 : f === '-Z' ? -1 : 0).transformDirection(model.matrixWorld);
+      if (fn.dot(new THREE.Vector3(-side, 0, 0)) < 0.7) {
+        if (typeof window !== 'undefined' && window.SS) window.SS.bld4Skip = name;
+      } else {
+        for (let i = 0; i < spec.windows.length; i++) {
+          const wi = spec.windows[i];
+          const centre = new THREE.Vector3(wi.c[0], wi.c[1], wi.c[2]).applyMatrix4(model.matrixWorld);
+          centre.x += side * (wi.depth || 0) * s - side * 0.03; // c is on the bbox face plane; the dark window sits depth (model units) behind it
+          const ww = wi.w * s, wh = wi.h * s * yMul;
+          if (centre.y < 0.8) continue;
+          if (centre.y < 3 && Math.abs(centre.z - doorZ) < 0.8 + ww / 2) continue;
+          if (LOWQ && !ULTRA && centre.y > 7) continue;
+          if (ULTRA && centre.y > 4) continue;
+          _rc.set(new THREE.Vector3(centre.x - side * 1.5, centre.y, centre.z), new THREE.Vector3(side, 0, 0));
+          _rc.far = 1.5;
+          const hh = _rc.intersectObject(model, true)[0];
+          if (hh && hh.distance < 1.5 - 0.03 - 0.25) continue;
+          seg._wins.push({ pos: centre, normal: new THREE.Vector3(-side, 0, 0), w: ww, h: wh, room: Math.floor(seg._wrng() * 8), lit: seg._wrng() < 0.3 ? 0.6 + 0.4 * seg._wrng() : 0 });
+          seg._artWinN = (seg._artWinN | 0) + 1;
+        }
+      }
+    }
     seg.coverPoints.push({
       pos: new THREE.Vector3(facadeX - side * 0.4, 1.2, doorZ),
       type: 'door',
@@ -553,7 +580,7 @@ export function createWorld(scene, seed) {
     while (seg.group.children.length) { const ch = seg.group.children[0]; if (ch.userData.ownGeo && ch.geometry) ch.geometry.dispose(); seg.group.remove(ch); }
 
     const rng = mulberry32((seed ^ Math.imul(seg.gen + 1, 0x9e3779b1) ^ Math.imul(seg.id + 1, 0x85ebca6b)) >>> 0);
-    if (BLD4) { seg._wins = []; seg._wrng = mulberry32((seed ^ Math.imul(seg.gen + 11, 0x2c1b3c6d) ^ Math.imul(seg.id + 5, 0x297a2d39)) >>> 0); } else seg._wins = null;
+    if (BLD4) { seg._wins = []; seg._artWinN = 0; seg._wrng = mulberry32((seed ^ Math.imul(seg.gen + 11, 0x2c1b3c6d) ^ Math.imul(seg.id + 5, 0x297a2d39)) >>> 0); } else seg._wins = null;
     const oz = seg.originZ;
 
     addBox(seg, matRoad, 0, -0.05, oz - SEG_LEN / 2, 10, 0.1, SEG_LEN, { cast: false });
@@ -576,9 +603,9 @@ export function createWorld(scene, seed) {
     seg._winN = seg._wins ? seg._wins.length : 0;
     seg._wins = null;
     if (BLD4 && typeof window !== 'undefined' && window.SS) {
-      let w = 0, m = 0;
-      for (const s of segments) if (s._winN) { w += s._winN; m++; }
-      window.SS.bld4 = { windows: w, meshes: m, mode: ULTRA ? 'flat' : 'interior' };
+      let w = 0, m = 0, aw = 0;
+      for (const s of segments) { if (s._winN) { w += s._winN; m++; } aw += s._artWinN | 0; }
+      window.SS.bld4 = { windows: w, meshes: m, mode: ULTRA ? 'flat' : 'interior', artWindows: aw };
     }
 
     const cars = 1 + (rng() * 3) | 0;
