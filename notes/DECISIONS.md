@@ -26,3 +26,18 @@
 - Choice: our own ~120-line interior-mapping ShaderMaterial (unlit, one texture fetch, single-image "projected room" form: back wall plus perspective-squashed floor, ceiling and side walls in one atlas cell), drawn on window quads as one InstancedMesh per street segment (one draw call), with a per-window room/lit/curtain seed as instance attributes. The 4x2 room atlas (512x256) is painted at boot on a canvas in a desert palette (plaster, tiles, rugs, shelves, a back doorway, curtains, two shuttered/dark rooms), so there is nothing to download and no licence to track.
 - Fallbacks: Low uses the same shader (it is one fetch); Ultra-low draws the atlas cell flat with MeshBasicMaterial. Enterable rooms (4c) are a few real box rooms with box colliders; the far skyline (4d) gets a shader window grid, merged roofline shapes and per-box colour on its existing merged geometry (no extra draw calls).
 - Rejected: three-fenestra (MIT, good, but a MeshStandardMaterial subclass with a PBR front layer, heavier per pixel on iPhone than we need, and its starter rooms are modern offices), cubemap interiors such as mohsenheydari/three-interior-mapping and emirhanyener/three-interior-plane (MIT; 5-6 fetches or a cubemap per room style), and CC0 atlases (Poly Haven and ambientCG have no interior-mapping atlases; their interior HDRIs are MBs each).
+
+## Step 5 tool choice: set pieces + pacing (Oct 21, 1:10 PM ET, behind ?sp=5)
+- Choice: no new library and no new paid or login-gated assets. Set pieces (RPG strike first, then a truck moment) are our own
+  module `src/setpiece.js`: a few meshes (rocket = small cylinder + cone; launch flash and smoke trail = our own sprite pool,
+  same idea as the step-3 puffs), driven by the existing fx3 `blast` (shake + muffle), `impact` (dust + debris) and HUD cues.
+  Audio is WebAudio synth in `audio.js` (whoosh = filtered noise sweep, boom = noise burst + low sine thump, engine roar =
+  detuned sawtooth through a lowpass); Kenney CC0 only if a sample is ever needed (decision #3: no Freesound). The truck
+  reuses the Kenney Car Kit flatbed already in assets (CC0). Pacing = a small director inside the same module (ambient events
+  in quiet stretches, pressure curve read by enemies.js), no state-machine or behaviour-tree library.
+- Rules (decision #4 + App PM A8 ruling): every set-piece hit has >= ~1 s of visual + audio tell before damage, blast damage
+  is capped (30) and never takes the player below 5 HP in one blast, and it is the only damage (besides a flanker) that
+  reaches a ducked player.
+- Rejected: three.quarks / three-nebula (size, overdraw on iPhone; the sprite pool covers trails), Howler.js (we already have
+  a WebAudio graph with the muffle filter), Yuka (steering/FSM library: more than a timer-driven director needs), any paid
+  SFX pack or Freesound.
