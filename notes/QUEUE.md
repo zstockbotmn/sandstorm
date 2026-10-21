@@ -64,4 +64,6 @@ Pressure while ducked = suppression (cracks, cover-lip dust/chips, shake).
 Also from the A7 test: cover-lip/wall-behind impacts and shake not seen (hold >= 2 frames/250 ms); visible arc wedge + flinch;
 full-screen flash ~60%; Low wall dust still a pale 25 px puff (check the Low path, game-time lifetime; verify by screenshot at 15 m);
 a small ducked/exposed HUD indicator. Tester feel sessions: Ultra-low (~40 fps) + one short Low visual pass.
+STATUS 12:40 PM ET: all 5 items coded + pushed (b1ad6a1..HEAD). threat Low PASS (before SS.cover fix), walldust15 Low PASS, a8-hud Low PASS.
+Remaining: rerun threat Low + Ultra-low and fx3 Low on the SS.cover build, rebuild 8850 as 'preview A8', report + tester checklist.
 Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, perf) and the art-building rooms follow-up.
