@@ -19,7 +19,7 @@ export function createAmbient({ scene, camera, hud }) {
   const tex = roundTex(), geo = new THREE.PlaneGeometry(1, 1);
   const counts = { fire: 0, radio: 0, dog: 0, door: 0, heli: 0 }, pub = { counts, last: null };
   const state = { phase: 'idle', kind: null, t: 0, dur: 0 };
-  let ev = null, wait = 7 + Math.random() * 7, lastBurst = -1e9, prev = '', seenRun = null;
+  let ev = null, wait = 7 + Math.random() * 7, lastBurst = -1e9, lastLive = -1e9, prev = '', seenRun = null, eligible = false;
   const rnd = (a, b) => a + Math.random() * (b - a), side = () => (Math.random() < 0.5 ? -1 : 1);
   const clip = () => (window.SS && window.SS.audio) || null;
   const dist = (p) => { if (!p) return 0; const c = camera.position; return Math.hypot(p.x - c.x, (p.y || 0) - c.y, p.z - c.z); };
@@ -85,7 +85,7 @@ export function createAmbient({ scene, camera, hud }) {
   function begin(kind, sim) {
     if (ev) endEv();
     ev = kind === 'fire' ? startFire() : kind === 'dog' ? startDog() : kind === 'heli' ? startHeli() : kind === 'door' ? startDoor() : startRadio();
-    publish(kind, sim, ev.pos); wait = rnd(7, 14); return pub.last;
+    publish(kind, sim, ev.pos); wait = rnd(5, 8); return pub.last; // A11: 5-8 s apart so a 15-25 s calm gets 2-3 events
   }
   function step(dt) {
     ev.t += dt; state.t = ev.t;
@@ -117,7 +117,7 @@ export function createAmbient({ scene, camera, hud }) {
     const id = (window.SS && window.SS.runs) || 0;
     if (seenRun == null) { seenRun = id; return; }
     if (id === seenRun) return;
-    seenRun = id; lastBurst = -1e9; prev = ''; wait = rnd(7, 14);
+    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; prev = ''; wait = rnd(7, 14);
     counts.fire = counts.radio = counts.dog = counts.door = counts.heli = 0; pub.last = null;
     if (window.SS) window.SS.ambient = pub; endEv();
   }
@@ -127,7 +127,13 @@ export function createAmbient({ scene, camera, hud }) {
     if (SS.bursting) lastBurst = sim;
     if (!SS.running) return;
     if (ev) step(dt);
-    if (ev || !SS.running || SS.bursting || liveEnemy() || sim - lastBurst < 6) return;
+    // A11 (tester: no ambience at all): SS.bursting is only the 8-14 s spawn window, the fight runs on after it, and the old
+    // rule (>= 6 s after bursting AND a 7-14 s countdown) never fit the ~5 s gaps. Now: quiet = no live enemy for >= 1.5 s;
+    // the first event comes 2-3.5 s into the calm, then every 5-8 s; none starts in the last 2.5 s before the next contact.
+    if (liveEnemy() || SS.bursting) { lastLive = sim; eligible = false; }
+    if (ev || !SS.running || SS.bursting || sim - lastLive < 1.5) return;
+    if (!eligible) { eligible = true; wait = Math.min(wait, rnd(2, 3.5)); }
+    if (SS.calmUntil != null && sim < SS.calmUntil && SS.calmUntil - sim < 2.5) return;
     wait -= dt; if (wait > 0) return; begin(pick(), sim);
   }
   function debugAmbient(kind) { return KINDS.indexOf(kind) < 0 ? null : begin(kind, (window.SS && window.SS.simTime) || 0); }

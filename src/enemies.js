@@ -251,6 +251,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const x = (waveClears - 2) / 8;
     return x < 0 ? 0 : x > 1 ? 1 : x;
   }
+  let calmUntil = -1e9; // A11: game-time floor for the post-wave calm
   let breatherTo = 6;          // no spawns until the player has walked this far (breather after WAVE CLEARED)
   let prevHold = false;       // edge-detect walk resume -> WAVE CLEARED
   let displayEngaged = 0;     // stable ENEMIES HUD: only rises on new engage, falls on death
@@ -2969,7 +2970,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // m1u: the next wave waits (up to 8 s past its distance) for out-of-combat regen to bring the player to >= 90 hp
       if (dNow >= breatherTo && waveClears > 0 && !waveActive && alive === 0) { regenWaitT += dt; } else regenWaitT = 0;
       const healthy = !window.SS || waveClears === 0 || (window.SS.health == null ? 100 : window.SS.health) >= 90 || regenWaitT > 8;
-      if (phaseT <= 0 && dNow >= breatherTo && (burstIndex > 0 || quietRunT >= FIRST_CONTACT_S) && !waveActive && alive === 0 && truckPending === 0 && healthy) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
+      if (phaseT <= 0 && dNow >= breatherTo && (window.SS ? (window.SS.simTime || 0) : 0) >= calmUntil && (burstIndex > 0 || quietRunT >= FIRST_CONTACT_S) && !waveActive && alive === 0 && truckPending === 0 && healthy) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
         phase = 'burst';
         burstIndex += 1;
         if (window.SS) window.SS.bursting = true;
@@ -3165,7 +3166,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (waveDone) waveOpen = false;
     if (running && waveDone && window.SS.hud && window.SS.hud.banner) {
       waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing'); try { squadCall('Clear! Moving up.'); } catch (_) {} // tester m1q: clear cue when the walk resumes
-      breatherTo = window.SS.distance + (10 - 2 * pressureP()) + Math.random() * 5; phase = 'quiet'; phaseT = 0; // tester: short 10-15 m breather window.SS.bursting = false;
+      breatherTo = window.SS.distance + (10 - 2 * pressureP()) + Math.random() * 5; phase = 'quiet'; phaseT = 0;
+      // A11 (tester: gaps were ~5 s walks, no ambience): a real calm after every cleared wave - 15-25 game-s before the next
+      // contact, NOT shortened by the 5e pressure curve (only the distance part is). The ambient director fills it.
+      calmUntil = (window.SS.simTime || 0) + 15 + Math.random() * 10; window.SS.calmUntil = calmUntil; // tester: short 10-15 m breather window.SS.bursting = false;
     }
     prevHold = hold;
     if (window.SS && window.SS.hud && window.SS.hud.setNext) window.SS.hud.setNext(running && !hold && waveClears > 0 ? breatherTo - window.SS.distance : 0);
@@ -3234,6 +3238,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     phase = 'quiet';
     phaseT = 0;
+    calmUntil = -1e9; if (window.SS) window.SS.calmUntil = null;
     breatherTo = FIRST_WAVE_AT; // first wave at the same distance every run (tester: 6/8/12 m)
     quietCap = 0;
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
