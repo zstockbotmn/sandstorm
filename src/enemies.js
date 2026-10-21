@@ -1999,6 +1999,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (mode === 'lip' && sb && sb.max.y > 0.3) { if (SSx) SSx.coverLipFallback = (SSx.coverLipFallback | 0) + 1; return { point: _supP.copy(_aim), normal: _supN.copy(_supD).negate(), object: null }; }
     return null;
   }
+  // A8 / App PM ruling: ducked behind solid cover = NO direct hits from the front arc (shooter within FRONT_ARC_DEG of the
+  // cover's facing, seen from the player). Damage while ducked only from a flanker with a clear line, after a FLANKED tell
+  // (cue + arc toward it) that has run FLANK_TELL_S in both real and game time. The tell re-arms after FLANK_RESET_S of quiet.
+  const FRONT_ARC_DEG = 60, FRONT_ARC_COS = Math.cos(FRONT_ARC_DEG * Math.PI / 180), FLANK_TELL_S = 1.5, FLANK_RESET_S = 5;
+  function coverFacing(out) { const SSx = window.SS, c = camera.position, sb = SSx && SSx.cover && SSx.cover.surface; out.x = 0; out.z = -1;
+    if (sb) { const qx = Math.max(sb.min.x, Math.min(sb.max.x, c.x)), qz = Math.max(sb.min.z, Math.min(sb.max.z, c.z)), l = Math.hypot(qx - c.x, qz - c.z); if (l > 0.05) { out.x = (qx - c.x) / l; out.z = (qz - c.z) / l; } }
+    return out; }
+  const _cf = { x: 0, z: -1 };
+  function inFrontArc(pos) { coverFacing(_cf); const c = camera.position, tx = pos.x - c.x, tz = pos.z - c.z, tl = Math.hypot(tx, tz) || 1; return (tx * _cf.x + tz * _cf.z) / tl >= FRONT_ARC_COS; }
+  api.inFrontArc = inFrontArc; api.FLANK_TELL_S = FLANK_TELL_S;
+  function flankCue(enemy) { const SSx = window.SS; if (!SSx) return; const c = camera.position, p = enemy.group.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = p.x - c.x, dz = p.z - c.z;
+    const ang = Math.atan2(dx * Math.cos(yaw) + dz * Math.sin(yaw), dx * Math.sin(yaw) + dz * -Math.cos(yaw));
+    if (SSx.hud && SSx.hud.flanked) SSx.hud.flanked(ang); else if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(ang);
+    if (SSx.audio && SSx.audio.crack) SSx.audio.crack(p);
+    const L = SSx.flankLog || (SSx.flankLog = []); L.push({ tellSim: +(SSx.simTime || 0).toFixed(2), firstHitSim: null, id: enemy.id }); if (L.length > 20) L.shift(); enemy._flankRec = L[L.length - 1]; }
   function enemyShoot(enemy) {
     { const nR = performance.now() / 1000, nS = window.SS ? (window.SS.simTime || 0) : 0; if (enemy.noFireUntilR > nR || enemy.noFireUntilSim > nS) { enemy.shootCd = Math.max(enemy.shootCd || 0, 0.1); return; } } // just relocated: let the player see them first
     // m1u: a balcony/window/roof shooter fires only while visibly present (a tracer from an empty balcony otherwise)
@@ -2016,13 +2031,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
       _muzzle.copy(enemy.muzzleLocal).applyMatrix4(enemy.group.matrixWorld);
     }
     const dist = _muzzle.distanceTo(camera.position);
+    const duckedA8 = !!(window.SS && window.SS.input && window.SS.input.cover);
+    let flankShot = false, flankReady = false;
+    if (duckedA8 && !inFrontArc(enemy.group.position)) { flankShot = true;
+      const fS = window.SS.simTime || 0, fR = performance.now() / 1000;
+      if (!(enemy._flankTellSim > -1e8) || fS - (enemy._flankLastSim == null ? -99 : enemy._flankLastSim) > FLANK_RESET_S) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); }
+      enemy._flankLastSim = fS; flankReady = fS - enemy._flankTellSim >= FLANK_TELL_S && fR - enemy._flankTellR >= FLANK_TELL_S; }
+    if (flankShot) { enemy.group.getWorldPosition(_losP); _losP.y += 1.25; if (!clearToEye(_losP)) { flankReady = false; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; } }
+    const flankHit = flankShot && flankReady;
     // Fix 7 (tester: slightly easier): ~20% lower base accuracy; each enemy's first 3 shots at first contact are mostly
     // misses (sighting-in), so the player gets a beat to react. Damage per hit is unchanged (~5 hits to kill).
     let chance = (0.42 - dist * 0.006) * (0.55 + 0.7 * diff) * 0.8;
     enemy.shotsTaken = (enemy.shotsTaken | 0) + 1;
     if (enemy.shotsTaken <= 3) chance *= 0.35 + 0.2 * (enemy.shotsTaken - 1);
     enemy.engaged = true; // shooting engages: the walk halts until this enemy is dead
-    if (window.SS && window.SS.input && window.SS.input.cover) chance *= 0.3; // ducked in cover
+    if (duckedA8 && !flankShot) chance *= 0.3; // ducked in cover (front arc: misses only, see the A8 gate below)
     chance *= 1 + PRESSURE_HIT * pressure;
     // Early soften: first ~120 m / first bursts are less deadly
     const prog = window.SS ? window.SS.distance : 0;
@@ -2041,8 +2064,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // the low early hit chance. Once one hit would be lethal and the player is exposed (not ducked), a seen shooter's hit
     // chance is at least LOW_HP_CHANCE and the lethal hit only needs the HP that is left in the bucket: low HP resolves
     // within a few seconds of real fire (death, or survive by ducking into cover / killing the shooter).
-    const dmgAmt0 = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1) * (window.SS && window.SS.input && window.SS.input.cover ? 0.6 : 1);
-    const lowHp = !!(player && player.alive && player.health <= dmgAmt0 && !(window.SS && window.SS.input && window.SS.input.cover));
+    const dmgAmt0 = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1) * (duckedA8 && !flankShot ? 0.6 : 1);
+    const lowHp = !!(player && player.alive && player.health <= dmgAmt0 && (!duckedA8 || flankHit));
     if (lowHp) chance = Math.max(chance, LOW_HP_CHANCE);
     // m1y: at a sliver (< LOW_HP_SLIVER hp) a seen, exposed player's next hit lands with >= 0.6 chance; in game time the
     // fire cadence slows at ~1 fps (sim dt capped), so the old floor still left a ~20 s wall-clock sliver at 1 fps.
@@ -2056,19 +2079,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (tS - lastShotSim > 15) fightSim0 = tS; lastShotSim = tS;
     const dryS = tS - Math.max(fightSim0, lastPlayerHitSim != null ? lastPlayerHitSim : -99);
     const ducked = !!(window.SS && window.SS.input && window.SS.input.cover);
-    if (dryS > 3) chance = Math.max(chance, Math.min(ducked ? 0.14 : 0.45, 0.08 + 0.045 * (dryS - 3))); // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
-    if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3) };
+    if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : 0.45, 0.08 + 0.045 * (dryS - 3))); // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
+    if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3), ducked, flankShot, flankReady };
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap && simS - (lastPlayerHitSim || -99) >= gap; // spacing holds in BOTH real and game time
     // m1v grace: no damage for COVER_GRACE_S (real time) after first reaching cover in a run
+    if (hit && ducked && !flankShot) { hit = false; if (window.SS) window.SS.frontArcBlocked = (window.SS.frontArcBlocked | 0) + 1; } // A8: solid cover stops the front arc
+    if (hit && flankShot && !flankReady) { hit = false; if (window.SS) window.SS.flankTellBlocked = (window.SS.flankTellBlocked | 0) + 1; } // A8: the FLANKED tell runs first
     if (hit && window.SS && window.SS.coverGraceUntil && performance.now() < window.SS.coverGraceUntil) { hit = false; window.SS.graceBlocked = (window.SS.graceBlocked | 0) + 1; }
-    if (offView) { hit = false; enemy.offViewShots = (enemy.offViewShots | 0) + 1; if (window.SS) window.SS.offViewShots = (window.SS.offViewShots | 0) + 1; warnFrom(enemy.group.position); }
+    if (offView && !flankHit) { hit = false; enemy.offViewShots = (enemy.offViewShots | 0) + 1; if (window.SS) window.SS.offViewShots = (window.SS.offViewShots | 0) + 1; warnFrom(enemy.group.position); }
     // m1t: no hits from out of the player's sight (tester: 6 min of hits from a fighter hidden behind a far burned car).
     // far-hit: the shooter must have been continuously visible for SEEN_BEFORE_HIT_S (no first-frame hits from a peek/relocation)
     const needSeen = nowS - (enemy.movedR || -99) < 3 ? SEEN_BEFORE_HIT_S : SEEN_PEEK_S; // full hold right after a relocation, a short one for peeks from known cover
-    if (hit && needSeen > 0 && !(enemy.seenSinceR && nowS - enemy.seenSinceR >= needSeen && simS - (enemy.seenSinceSim || 0) >= needSeen)) { hit = false; enemy.freshBlocked = (enemy.freshBlocked | 0) + 1; if (window.SS) window.SS.freshBlocked = (window.SS.freshBlocked | 0) + 1; }
-    if (hit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
+    if (hit && !flankHit && needSeen > 0 && !(enemy.seenSinceR && nowS - enemy.seenSinceR >= needSeen && simS - (enemy.seenSinceSim || 0) >= needSeen)) { hit = false; enemy.freshBlocked = (enemy.freshBlocked | 0) + 1; if (window.SS) window.SS.freshBlocked = (window.SS.freshBlocked | 0) + 1; }
+    if (hit && !flankHit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
     const dmgAmt = dmgAmt0, dmgCost = lowHp ? Math.min(dmgAmt, Math.max(1, player.health)) : dmgAmt;
     if (dmgBudget(nowS, simS) < dmgCost - 1e-6 && hit) { hit = false; if (window.SS) window.SS.dmgCapBlocked = (window.SS.dmgCapBlocked | 0) + 1; } // m1w: incoming damage-per-second cap
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
@@ -2084,7 +2109,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       }
     }
     // m1w: an off-view shot's tracer ends in front of the player on the shooter's side, so it streaks in from that edge
-    if (offView) { const yw = window.SS && window.SS.input ? window.SS.input.yaw : 0, fx = Math.sin(yw), fz = -Math.cos(yw), sx = Math.cos(yw), sz = Math.sin(yw);
+    if (offView && !hit) { const yw = window.SS && window.SS.input ? window.SS.input.yaw : 0, fx = Math.sin(yw), fz = -Math.cos(yw), sx = Math.cos(yw), sz = Math.sin(yw);
       const side = Math.sign((_muzzle.x - camera.position.x) * sx + (_muzzle.z - camera.position.z) * sz) || 1;
       _aim.set(camera.position.x + fx * 3.2 + sx * side * 0.9, camera.position.y - 0.15, camera.position.z + fz * 3.2 + sz * side * 0.9); if (window.SS) window.SS.offViewTracers = (window.SS.offViewTracers | 0) + 1; }
     // A6 tester (ducked = silence): rounds at a covered player still arrive. Misses go at the cover lip (chips + dust on the
@@ -2102,8 +2127,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (hit) {
       const amount = dmgAmt; // m1v: softer first wave (opening only); cover softening (x0.6) included
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
-      if (!playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
-      dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, 'gun'); // cover also softens hits (x0.6, in dmgAmt)
+      if (!flankHit && !playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
+      if (flankHit && enemy._flankRec && enemy._flankRec.firstHitSim == null) enemy._flankRec.firstHitSim = +(simS).toFixed(2);
+      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) window.SS.flankHits = (window.SS.flankHits | 0) + 1; }
+      dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, flankHit ? 'flank' : 'gun'); // cover also softens hits (x0.6, in dmgAmt)
     } else if (window.SS && window.SS.fx) {
       if (coverImpact && window.SS.fx.impact) { window.SS.fx.impact(coverImpact.point, coverImpact.normal, coverImpact.object); window.SS.coverImpacts = (window.SS.coverImpacts | 0) + 1; }
       // Miss: closest point of the tracer segment to the eye. Under 1.5 m is a near miss (no change to aim or damage).
