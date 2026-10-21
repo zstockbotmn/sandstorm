@@ -15,6 +15,7 @@ import { createFx3 } from './fx3.js';
 import { createPost3 } from './post3.js';
 import { createStakes } from './stakes.js';
 import { createCover } from './cover.js';
+import { createSetPieces } from './setpiece.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { preloadRapier } from './ragdoll.js';
@@ -102,6 +103,9 @@ function clearFxPos() {
   fxPx = 0; fxPy = 0;
 }
 if (FX3) { fx = createFx3({ camera, audio, scene }); window.SS.fx = fx; post3 = createPost3({ renderer }); }
+const SP5 = /[?&]sp=5\b/.test(location.search);
+let setpieces = null;
+if (SP5) { setpieces = createSetPieces({ scene, camera, player, hud }); window.SS.setpieces = setpieces; }
 window.SS.renderer = renderer; // headless shots read info.render.triangles
 
 const priorHit = weapon.onHit;
@@ -192,6 +196,7 @@ function simStep(dt) {
   if (arms) { try { arms.update(weapon.reloadProgress()); } catch (err) { console.warn('arms', err); arms = null; } }
   player.update(step);
   if (!frozen) enemies.update(step);
+  if (setpieces && !frozen) { try { setpieces.update(step); } catch (e) { console.warn('setpiece', e); } }
   if (!frozen && window.SS.running) stakes.update(step);
   score.setDistance(window.SS.distance);
   audio.update(step);
