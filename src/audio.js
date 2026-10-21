@@ -331,7 +331,8 @@ export function createAudio() {
     end.stop(et + 0.07);
   }
 
-  function bark() {
+  function bark(pos) {
+    if (pos) return barkAt(pos); // positional set-piece bark; the body below stays the no-arg distant chatter
     if (!ctx) return;
     const p = panNode((Math.random() * 2 - 1) * 0.7);
     const g = ctx.createGain();
@@ -676,5 +677,64 @@ export function createAudio() {
     }, delay);
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, engine, boom, thump, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
+  // Quiet distant one-shots. Peak gain into spat()'s pan is <= 0.25; spat applies the 10/d attenuation.
+  function door(pos) {
+    if (!ctx) return;
+    const { d, p } = spat(pos); alog('door', Math.round(d) + 'm');
+    const t = ctx.currentTime, buf = noiseBuffer(0.08);
+    for (let i = 0; i < 2; i++) {
+      const t0 = t + i * 0.09, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = buf; f.type = 'lowpass'; f.frequency.value = 300; f.Q.value = 0.707;
+      g.gain.setValueAtTime(0.22, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07);
+      src.connect(f); f.connect(g); g.connect(p); src.start(t0); src.stop(t0 + 0.08);
+    }
+  }
+
+  function barkAt(pos) {
+    if (!ctx) return;
+    const { d, p } = spat(pos); alog('bark', Math.round(d) + 'm');
+    const t = ctx.currentTime, buf = noiseBuffer(0.1);
+    for (let i = 0; i < 2; i++) {
+      const t0 = t + i * 0.15;
+      const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = buf; f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 1.4;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.12, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+      src.connect(f); f.connect(g); g.connect(p); src.start(t0); src.stop(t0 + 0.1);
+      const o = ctx.createOscillator(), og = ctx.createGain();
+      o.type = 'square'; o.frequency.setValueAtTime(450, t0); o.frequency.exponentialRampToValueAtTime(300, t0 + 0.1);
+      og.gain.setValueAtTime(0.0001, t0); og.gain.linearRampToValueAtTime(0.08, t0 + 0.008); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
+      o.connect(og); og.connect(p); o.start(t0); o.stop(t0 + 0.12);
+    }
+  }
+
+  function heli(pos, dur = 8) {
+    if (!ctx) return;
+    const { d, p } = spat(pos); alog('heli', Math.round(d) + 'm');
+    const t = ctx.currentTime, len = Math.max(0.3, +dur || 8);
+    const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), amp = ctx.createGain(), g = ctx.createGain();
+    src.buffer = noiseBuffer(1); src.loop = true; f.type = 'lowpass'; f.frequency.value = 280; f.Q.value = 0.707;
+    amp.gain.value = 0.55;
+    const lfo = ctx.createOscillator(), depth = ctx.createGain();
+    lfo.frequency.value = 11; depth.gain.value = 0.4; lfo.connect(depth); depth.connect(amp.gain);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.22, t + len * 0.25); g.gain.linearRampToValueAtTime(0, t + len);
+    src.connect(f); f.connect(amp); amp.connect(g); g.connect(p);
+    src.start(t); src.stop(t + len + 0.02); lfo.start(t); lfo.stop(t + len + 0.02);
+  }
+
+  function crackle(pos, dur = 8) {
+    if (!ctx) return;
+    const { d, p } = spat(pos); alog('crackle', Math.round(d) + 'm');
+    const t = ctx.currentTime, len = Math.max(0.4, +dur || 8), buf = noiseBuffer(0.04);
+    const n = Math.max(4, Math.min(18, (len * 1.3) | 0)), slot = len / n;
+    for (let i = 0; i < n; i++) {
+      const t0 = t + i * slot + Math.random() * Math.min(0.04, slot * 0.35);
+      const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = buf; f.type = 'bandpass'; f.frequency.value = 4000; f.Q.value = 4;
+      const peak = 0.04 + Math.random() * 0.06;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(peak, t0 + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.024);
+      src.connect(f); f.connect(g); g.connect(p); src.start(t0); src.stop(t0 + 0.03);
+    }
+  }
+
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, engine, boom, thump, door, bark, heli, crackle, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
 }

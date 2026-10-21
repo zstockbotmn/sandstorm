@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createTruckMoment } from './setpiece-truck.js';
+import { createAmbient } from './setpiece-ambient.js';
 
 const FLIGHT_S = 1.1, FLIGHT_MS = 900, PUFF_N = 72, PUFF_LIFE = 2.6, PUFF_STEP = 0.35; // A9: thicker, longer trail (reads at 24-38 m on Low)
 
@@ -17,6 +18,7 @@ function roundTex() {
 
 export function createSetPieces({ scene, camera, player, hud }) {
   const truck = createTruckMoment({ scene, camera, player, hud });
+  const ambient = createAmbient({ scene, camera, hud });
   const tex = roundTex(), geo = new THREE.PlaneGeometry(1, 1);
   const puff = (color, opacity) => new THREE.MeshBasicMaterial({
     map: tex, color, transparent: true, opacity, side: THREE.DoubleSide,
@@ -183,6 +185,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     if (flying) stepFlight(sim);
     stepVfx(dt || 0);
     truck.update(dt || 0, sim);
+    ambient.update(dt || 0, sim);
     const waveOn = !!(SS.running && player.alive && bursting && ((SS.engaged | 0) > 0));
     if (flying || !waveOn || firedWave || sim - waveT < 6) return;
     if (truck.state.phase === 'drive' || truck.state.phase === 'crash') return; // 5c: never an RPG on top of the truck tell
@@ -191,7 +194,8 @@ export function createSetPieces({ scene, camera, player, hud }) {
   }
   function debugRpg() { return launchNow((window.SS && window.SS.simTime) || 0); }
   function debugTruck() { return truck.debugTruck(); }
+  function debugAmbient(kind) { return ambient.debugAmbient(kind); }
   function trailStats() { let live = 0, vis = 0, op = 0, near = 1e9, far = 0; for (const q of puffs) { if (q.life > 0) live++; if (q.mesh.visible) { vis++; op = Math.max(op, q.mat.opacity); const d = q.mesh.position.distanceTo(camera.position); near = Math.min(near, d); far = Math.max(far, d); } } return { live, vis, op: +op.toFixed(2), near: +near.toFixed(1), far: +far.toFixed(1), inScene: !!puffs[0].mesh.parent }; }
   function probe(dist) { const f = new THREE.Vector3(); camera.getWorldDirection(f); const q = puffs[0]; q.life = 99; q.mesh.visible = true; q.mesh.position.copy(camera.getWorldPosition(new THREE.Vector3())).addScaledVector(f, dist || 4); q.mesh.scale.setScalar(1.5); q.mat.opacity = 0.85; q.mesh.lookAt(camera.position); return { pos: q.mesh.position.toArray().map((v) => +v.toFixed(1)), depthTest: q.mat.depthTest, layers: q.mesh.layers.mask, camLayers: camera.layers.mask, ro: q.mesh.renderOrder, parent: q.mesh.parent && q.mesh.parent.type }; }
-  return { update, debugRpg, debugTruck, state, trailStats, probe };
+  return { update, debugRpg, debugTruck, debugAmbient, state, trailStats, probe };
 }

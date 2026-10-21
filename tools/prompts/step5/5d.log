@@ -1,0 +1,15 @@
+I'll read the set-piece and audio files first so the ambient director matches their style and only runs behind `?sp=5`.The director only runs in quiet time behind `?sp=5`. I'll add the ambient module and the quiet distant sounds, matching the existing set-piece and `spat` style.The ambient file is 196 lines, over the ~170 limit. I'll tighten it without changing the behavior.Quiet-stretch ambience is in place behind `?sp=5`. Without that flag, `createSetPieces` never runs, so nothing in the world or the audio changes.
+
+The director in `src/setpiece-ambient.js` (136 lines) fires one event every 7–14 game-seconds, only while the run is live, nothing is bursting, and no enemy is alive, and only once 6 game-seconds have passed since bursting was last true. An event holds the director until it ends, and the same kind never plays twice in a row. All five are far (nothing inside 40 m) and none of them shake, muffle, call out, warn, or deal damage:
+
+- **fire** — 6–10 flickering orange/yellow sprites and 6 rising smoke puffs on a distant building, 10–14 s, with `crackle` if it exists.
+- **radio** — one of 12 chatter lines through `hud.radio(line, 3200)`.
+- **dog** — a dark box silhouette trotting across the street 50–80 m ahead, with `bark` if it exists.
+- **door** — a slam 45–70 m to one side, sound only.
+- **heli** — a small silhouette crossing the sky 150–220 m ahead, with `heli` if it exists.
+
+`window.SS.ambient` keeps `counts` for all five kinds and `last` as `{ kind, sim, dist }`. `debugAmbient` is on the set-piece object.
+
+`src/audio.js` adds `door`, `bark(pos)`, `heli`, and `crackle` through `spat`, each logged with distance and peaking at or below 0.25 before distance falloff. The old no-argument chatter `bark()` is unchanged.
+
+`node --check` passed on `src/setpiece-ambient.js`, `src/setpiece.js`, and `src/audio.js`. No tests, browser, or commit.
