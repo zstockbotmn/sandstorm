@@ -116,6 +116,7 @@ function difficulty() {
 }
 
 export function createEnemies(scene, camera, world, weapon, player) {
+  const SP5 = /[?&]sp=5\b/.test(location.search), PRESS = SP5 && !/[?&]press=0\b/.test(location.search); // 5e: ?press=0 = kill switch for the pressure curve
   const root = new THREE.Group();
   scene.add(root);
   const ragdolls = createRagdollSystem(scene);
@@ -243,6 +244,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const losRay = new THREE.Raycaster(); const _ep = new THREE.Vector3(), _ed = new THREE.Vector3();
   let stallT = 0, standT = 0, graceT = 0, runT = 0, pressure = 0;
   let waveClears = 0;
+  // sp=5 only: 0 through wave 3 (waveClears <= 2), 1 from wave 11 (waveClears >= 10). 0 otherwise.
+  function pressureP() {
+    if (!PRESS) return 0;
+    if (window.SS && window.SS.pressForce != null) return Math.max(0, Math.min(1, +window.SS.pressForce || 0)); // tests
+    const x = (waveClears - 2) / 8;
+    return x < 0 ? 0 : x > 1 ? 1 : x;
+  }
   let breatherTo = 6;          // no spawns until the player has walked this far (breather after WAVE CLEARED)
   let prevHold = false;       // edge-detect walk resume -> WAVE CLEARED
   let displayEngaged = 0;     // stable ENEMIES HUD: only rises on new engage, falls on death
@@ -2004,13 +2012,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // (cue + arc toward it) that has run FLANK_TELL_S in both real and game time. The tell re-arms after FLANK_RESET_S of quiet.
   const FRONT_ARC_DEG = 60, FRONT_ARC_COS = Math.cos(FRONT_ARC_DEG * Math.PI / 180), FLANK_TELL_S = 1.5, FLANK_RESET_S = 5;
   let duckSinceSim = null, lastFlankSim = -1e9;
-  const FLANK_AFTER_S = 9, FLANK_GAP_S = 18;
+  function FLANK_AFTER_S() { return 9 - 3 * pressureP(); }
+  function FLANK_GAP_S() { return 18 - 6 * pressureP(); }
   function flankTick() {
     const SSx = window.SS; if (!SSx || !SSx.running) return;
     const t = SSx.simTime || 0, ducked = !!(SSx.input && SSx.input.cover);
     if (!ducked) { duckSinceSim = null; return; }
     if (duckSinceSim == null) duckSinceSim = t;
-    if (t - duckSinceSim < FLANK_AFTER_S || t - lastFlankSim < FLANK_GAP_S) return;
+    if (t - duckSinceSim < FLANK_AFTER_S() || t - lastFlankSim < FLANK_GAP_S()) return;
     if (list.some((f) => f.alive && f._flankMove && f.phase === 'relocate')) return;
     let e = null, bd = 1e9; const cam = camera.position;
     for (const f of list) {
@@ -2031,7 +2040,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!spot) {
       const side = Math.sign(e.group.position.x) || 1;
       spot = { pos: new THREE.Vector3(side * 5.6, 0, cam.z + 1.5), type: 'wall' };
-      if (inFrontArc(spot.pos) || !clearToEye(_losP.set(spot.pos.x - side * 0.3, 1.25, spot.pos.z))) { lastFlankSim = t - FLANK_GAP_S + 3; return; }
+      if (inFrontArc(spot.pos) || !clearToEye(_losP.set(spot.pos.x - side * 0.3, 1.25, spot.pos.z))) { lastFlankSim = t - FLANK_GAP_S() + 3; return; }
     }
     e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, spot);
     e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; lastFlankSim = t; squadCall('Flanking!');
@@ -2116,7 +2125,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (tS - lastShotSim > 15) fightSim0 = tS; lastShotSim = tS;
     const dryS = tS - Math.max(fightSim0, lastPlayerHitSim != null ? lastPlayerHitSim : -99);
     const ducked = !!(window.SS && window.SS.input && window.SS.input.cover);
-    if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : 0.5, 0.1 + 0.05 * (dryS - 3))); // A8: ducking now blocks the front arc outright, so the exposed ramp is a bit steeper (0.10 + 0.05/s, cap 0.5) // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
+    const pEx = pressureP();
+    const slope = 0.05 + 0.02 * pEx, exposedCap = 0.5 + 0.12 * pEx;
+    if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : exposedCap, 0.10 + slope * (dryS - 3))); // A8: ducking now blocks the front arc outright, so the exposed ramp is a bit steeper (0.10 + slope/s, cap 0.5+0.12p) // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
     if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3), ducked, flankShot, flankReady };
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
@@ -2744,6 +2755,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff) * 1.2; // fix 7: ~20% slower fire
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
+        if (!(window.SS && window.SS.input && window.SS.input.cover)) cd *= 1 - 0.25 * pressureP(); // 5e: more rounds at an EXPOSED player later in the run (same damage per hit)
         enemy.shootCd = cd;
       }
     }
@@ -2792,6 +2804,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         let cd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff) * 1.2;
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
+        if (!(window.SS && window.SS.input && window.SS.input.cover)) cd *= 1 - 0.25 * pressureP(); // 5e: more rounds at an EXPOSED player later in the run (same damage per hit)
         enemy.shootCd = cd;
       }
     }
@@ -2873,7 +2886,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // or not); after 12 s camping it is certain. Shared set-piece spacing: none within 8 game-s of an RPG / truck (SS.setPieceAt).
     const spGap = window.SS && window.SS.setPieceAt != null ? (window.SS.simTime || 0) - window.SS.setPieceAt : 1e9;
     if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, nadeThisWave, spGap: +Math.min(spGap, 999).toFixed(1) };
-    if (waveActive && !nadeThisWave && campT > 5 && burstIndex >= 3 && spGap >= 8 && (campT > 12 || Math.random() < dt * 0.35)) {
+    const pN = pressureP(); // 5e: camping is punished sooner later in the run (5 -> 3.5 s, certain at 12 -> 9 s); the shared 8 s set-piece gap still holds
+    if (waveActive && !nadeThisWave && campT > 5 - 1.5 * pN && burstIndex >= 3 && spGap >= 8 && (campT > 12 - 3 * pN || Math.random() < dt * 0.35)) {
       let th = null, bd = 36; for (const e of list) { if (!e.alive || e.group.position.y >= 0.5) continue; const dd = e.group.position.distanceTo(camera.position); if (dd < bd) { bd = dd; th = e; } }
       if (th) { nadeThisWave = true; campT = 0; throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
     }
@@ -2926,6 +2940,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function update(dt) {
+    if (window.SS) window.SS.pressureP = +pressureP().toFixed(2);
     if (HITS2) { try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {} }
     updateGrenades(dt); updateTruck(dt);
     const diff = difficulty();
@@ -2957,9 +2972,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const early = burstIndex <= 2 || (window.SS && window.SS.distance < 120);
         // Tester: 2-3 enemies per wave; the last one of a 3-wave (or 1 in 2 of 2-waves) is a visible flanker.
         // Step D: escalating waves (2, 2, 3, 3, then 3-4) + a reinforcement truck (+2) every 4th wave.
-        burstCap = burstIndex <= 2 ? 2 : burstIndex <= 4 ? 3 : (Math.random() < 0.5 ? 4 : 3);
+        const truckWave = !WAVE_ONE && burstIndex >= 4 && burstIndex % 4 === 0; // A4 tester (enemies=1): ENEMIES 3 = 1 + the every-4th-wave truck's 2; debug single waves get no truck
+        const pW = pressureP();
+        burstCap = burstIndex <= 2 ? 2 : burstIndex <= 4 ? 3 : ((pW >= 0.5 && !truckWave) ? /* 5e: bigger waves later, never on a reinforcement-truck wave (the set-piece truck is once, at wave 3, p = 0) */ (Math.random() < 0.5 + 0.4 * pW ? 4 : 3) : (Math.random() < 0.5 ? 4 : 3));
         if (WAVE_ONE) burstCap = 1;
-        waveOpen = true; waveSpawned = 0; const truckWave = !WAVE_ONE && burstIndex >= 4 && burstIndex % 4 === 0; // A4 tester (enemies=1): ENEMIES 3 = 1 + the every-4th-wave truck's 2; debug single waves get no truck
+        waveOpen = true; waveSpawned = 0;
         waveTotal = burstCap + (truckWave ? 2 : 0); if (window.SS) window.SS.waveTotal = waveTotal;
         if (truckWave) startTruck();
         burstSpawned = 0; roofWave = Math.random() < 0.5;
@@ -3138,7 +3155,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (waveDone) waveOpen = false;
     if (running && waveDone && window.SS.hud && window.SS.hud.banner) {
       waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing'); try { squadCall('Clear! Moving up.'); } catch (_) {} // tester m1q: clear cue when the walk resumes
-      breatherTo = window.SS.distance + 10 + Math.random() * 5; phase = 'quiet'; phaseT = 0; // tester: short 10-15 m breather window.SS.bursting = false;
+      breatherTo = window.SS.distance + (10 - 2 * pressureP()) + Math.random() * 5; phase = 'quiet'; phaseT = 0; // tester: short 10-15 m breather window.SS.bursting = false;
     }
     prevHold = hold;
     if (window.SS && window.SS.hud && window.SS.hud.setNext) window.SS.hud.setNext(running && !hold && waveClears > 0 ? breatherTo - window.SS.distance : 0);
