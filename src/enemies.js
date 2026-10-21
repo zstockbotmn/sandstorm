@@ -3151,6 +3151,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
           const hx = Math.abs(m.scale.x) * 0.5 + 0.3, hz = Math.abs(m.scale.z) * 0.5 + 0.3, dx = gp.x - pp.x, dz = gp.z - pp.z;
           if (Math.abs(dx) >= hx || Math.abs(dz) >= hz) continue; const ox = hx - Math.abs(dx), oz = hz - Math.abs(dz);
           if (ox < oz) gp.x += Math.sign(dx || 1) * Math.min(ox, 3 * dt + 0.02); else gp.z += Math.sign(dz || 1) * Math.min(oz, 3 * dt + 0.02); } } }
+    // A12 tester (p1_w3g_6: a fighter's arm and face filled the screen while IN COVER): personal space round the camera.
+    // Live ground fighters are pushed out to 2.4 m (horizontal); anything still inside 1.0 m (pinned / mid-transition) is
+    // hidden until it leaves, so the near plane never cuts through a body.
+    { const cp = camera.position;
+      for (let i = 0; i < list.length; i++) { const e = list[i]; if (!e.alive) { e._nearHidden = false; continue; } const gp = e.group.position, dx = gp.x - cp.x, dz = gp.z - cp.z, d = Math.hypot(dx, dz);
+        const elev = e.anchor && isElevated(e.anchor.type);
+        if (e.alive && !e.dying && !e.pinned && !elev && d < 2.4) { const k = Math.min(2.4 - d, 4 * dt + 0.05) / Math.max(d, 1e-3); gp.x += (d > 1e-3 ? dx : 1) * k; gp.z += (d > 1e-3 ? dz : 0) * k; if (window.SS) window.SS.nearCamPush = (window.SS.nearCamPush | 0) + 1; }
+        const hide = !elev && Math.hypot(gp.x - cp.x, gp.z - cp.z) < 1.0 && Math.abs(gp.y - cp.y) < 2.2;
+        if (hide && e.group.visible) { e.group.visible = false; e._nearHidden = true; } else if (!hide && e._nearHidden) { e.group.visible = true; e._nearHidden = false; } } }
     if (window.SS) { let mn = 99; for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) { const a = list[i], b = list[j]; if (!a.alive || !b.alive) continue; const pa = a.group.position, pb = b.group.position; if (Math.abs(pa.y - pb.y) > 1) continue; mn = Math.min(mn, Math.hypot(pa.x - pb.x, pa.z - pb.z)); } window.SS.minEnemyGap = mn; }
 
     if (hold) waveActive = true;
