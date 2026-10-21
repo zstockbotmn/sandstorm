@@ -3241,6 +3241,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return spawnOne(behavior || undefined);
   };
   api.killAll = killAll;
+  // 5c: a fighter placed at a set-piece wreck runs from there to its cover like the reinforcement-truck dismount
+  api.dismount = (e) => { if (!e) return; try { e.engaged = waveActive; e.path = pathOnto(e, e.anchor); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.moveKind = 'run'; e.exposed = true; e.goal = e.path && e.path[0]; e.fromTruck = true; } catch (err) { reportErr('setpiece dismount', err); } };
 
   return api;
 }

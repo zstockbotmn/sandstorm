@@ -643,6 +643,27 @@ export function createAudio() {
     // (no muffle here: fx.blast already calls muffle with its own strength; a second, weaker call overrode it)
   }
 
+  function engine(pos, dur = 1.6) {
+    if (!ctx) return;
+    const { d, p } = spat(pos); alog('engine roar', Math.round(d) + 'm');
+    const t = ctx.currentTime, len = Math.max(0.2, dur || 1.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.15, t);
+    g.gain.linearRampToValueAtTime(0.6, t + len);
+    g.gain.linearRampToValueAtTime(0, t + len + 0.1);
+    g.connect(p);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(55, t);
+    o.frequency.exponentialRampToValueAtTime(110, t + len);
+    o.connect(g); o.start(t); o.stop(t + len + 0.12);
+    const src = ctx.createBufferSource(), f = ctx.createBiquadFilter();
+    src.buffer = noiseBuffer(len + 0.12); f.type = 'lowpass';
+    f.frequency.setValueAtTime(600, t);
+    f.frequency.exponentialRampToValueAtTime(1800, t + len);
+    src.connect(f); f.connect(g); src.start(t); src.stop(t + len + 0.12);
+  }
+
   function thump(pos) {
     if (!ctx) return;
     const { d, p } = spat(pos); alog('launch thump', Math.round(d) + 'm');
@@ -655,5 +676,5 @@ export function createAudio() {
     }, delay);
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, boom, thump, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, engine, boom, thump, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
 }
