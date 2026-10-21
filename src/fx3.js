@@ -153,7 +153,7 @@ export function createFx3({ camera, audio, scene }) {
     const base = hex != null ? hex : 0xc9b38a;
     for (let i = 0; i < N; i++) {
       const spd = 0.6 + Math.random() * 0.6;
-      emit(point, d.x * spd, d.y * spd + 0.4, d.z * spd, 0.6 + Math.random() * 0.3, 0.15, 0.6, -0.6, sandCol(base));
+      emit(point, d.x * spd, d.y * spd + 0.4, d.z * spd, 0.6 + Math.random() * 0.3, 0.25, 0.9, -0.6, sandCol(base)); // A5 shots: 0.15-0.6 m read as specks past 10 m
     }
     publish();
   }
@@ -323,8 +323,9 @@ export function createFx3({ camera, audio, scene }) {
     let n = +near;
     if (!(n >= 0)) n = 0; else if (n > 1) n = 1;
     ensureSky();
-    const x = (Math.random() * 2 - 1) * 25;
-    const y = 3 + Math.random() * 15;
+    // over the street corridor and above the rooflines (~11 m): at x +-25 / y 3-18 most flashes were hidden behind facades (A5 shots)
+    const x = (Math.random() < 0.5 ? -1 : 1) * (1.5 + Math.random() * 9);
+    const y = 10 + Math.random() * 12;
     const z = camera.position.z - (120 - 90 * n);
     const slot = grab(flashParts);
     if (!slot.on) flashLive++;
