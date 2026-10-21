@@ -152,8 +152,9 @@ export function createFx3({ camera, audio, scene }) {
     const d = nrm(normal);
     const base = hex != null ? hex : 0xc9b38a;
     for (let i = 0; i < N; i++) {
-      const spd = 0.6 + Math.random() * 0.6;
-      emit(point, d.x * spd, d.y * spd + 0.4, d.z * spd, 0.6 + Math.random() * 0.3, 0.25, 0.9, -0.6, sandCol(base)); // A5 shots: 0.15-0.6 m read as specks past 10 m
+      const spd = 0.5 + Math.random() * 0.6, r = () => (Math.random() * 2 - 1) * 0.35;
+      // A5 tester: Low puffs did not read at 10-20 m. 0.35 -> 1.3 m, 0.8-1.5 s, drag + slow sink (see updatePuffs), shrink at the end
+      emit(point, (d.x + r()) * spd, (d.y + r()) * spd + 0.35, (d.z + r()) * spd, 0.8 + Math.random() * 0.7, 0.35, 1.3, -0.3, sandCol(base));
     }
     publish();
   }
@@ -163,9 +164,9 @@ export function createFx3({ camera, audio, scene }) {
     const d = nrm(normal);
     cc.setHex(0x5a4a3a);
     for (let i = 0; i < N; i++) {
-      const spd = 2 + Math.random();
-      const sz = 0.04 + Math.random() * 0.03;
-      emit(point, d.x * spd, d.y * spd, d.z * spd, 0.5, sz, sz, -9.8, cc);
+      const spd = 2.2 + Math.random() * 1.6, r = () => (Math.random() * 2 - 1) * 0.6;
+      const sz = 0.07 + Math.random() * 0.07; // chunks: 7-14 cm (4-7 cm were sub-pixel at 15 m), bounce once on the street
+      emit(point, (d.x + r()) * spd, (d.y + r()) * spd + 1.2, (d.z + r()) * spd, 0.8 + Math.random() * 0.4, sz, sz, -9.8, cc);
     }
     publish();
   }
@@ -186,11 +187,18 @@ export function createFx3({ camera, audio, scene }) {
   function impact(point, normal, surface) {
     if (!point || poolCap() <= 0) return;
     const dustN = take(6);
-    const debN = take(4);
-    if (!dustN && !debN) return;
+    const debN = take(5);
+    const wall = normal && Math.abs(normal.y || 0) < 0.5;
+    const cloudN = wall ? take(1) : 0;
+    if (!dustN && !debN && !cloudN) return;
     const col = plasterish(surface) ? 0xd8cfc0 : 0xc9b38a;
     if (dustN) dust(point, normal, dustN, col);
     if (debN) debris(point, normal, debN);
+    if (cloudN) { // wall hit: one big slow cloud that hangs on the facade and sinks (not just a spark)
+      const d = nrm(normal);
+      emit(vv.set(point.x + d.x * 0.15, point.y, point.z + d.z * 0.15), d.x * 0.35, 0.05, d.z * 0.35, 1.3 + Math.random() * 0.3, 0.6, 1.9, -0.15, sandCol(col));
+      publish();
+    }
   }
   function puffFrame() {
     try { return (window.SS && window.SS.frameN != null) ? (window.SS.frameN | 0) : null; } catch (e) { return null; }
@@ -222,7 +230,9 @@ export function createFx3({ camera, audio, scene }) {
       if (fn == null) p.seen++;
       else if (p.mark !== fn) { p.seen++; p.mark = fn; }
       p.vel.y += p.grav * pd;
+      if (p.grav > -5) { const k = Math.max(0, 1 - 1.6 * pd); p.vel.x *= k; p.vel.y *= k; p.vel.z *= k; } // dust: air drag
       p.pos.x += p.vel.x * pd; p.pos.y += p.vel.y * pd; p.pos.z += p.vel.z * pd;
+      if (p.grav <= -5 && p.pos.y < 0.03 && p.vel.y < 0) { p.pos.y = 0.03; p.vel.y *= -0.3; p.vel.x *= 0.5; p.vel.z *= 0.5; } // chunk bounce
       p.life -= pd;
       if (p.life <= 0 && p.seen >= 2) {
         p.on = false; live--;
@@ -230,7 +240,8 @@ export function createFx3({ camera, audio, scene }) {
         continue;
       }
       const u = p.max > 0 ? 1 - Math.max(p.life, 0) / p.max : 1;
-      const s = p.size0 + (p.size1 - p.size0) * Math.min(1, Math.max(0, u));
+      let s = p.size0 + (p.size1 - p.size0) * Math.min(1, Math.max(0, u));
+      if (p.grav > -5 && u > 0.8) s *= Math.max(0, (1 - u) / 0.2); // no alpha per instance: shrink out instead of popping
       mesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(s, s, s)));
     }
     mesh.instanceMatrix.needsUpdate = true;
@@ -245,7 +256,7 @@ export function createFx3({ camera, audio, scene }) {
 // +-4.5 deg of the street axis (the corridor that stays open to 150 m), elevation 9-17 deg (clear of the street end and the
 // rooflines), 60-150 m out; size scaled with distance to ~30 px, plus a 2.6x soft glow. Spots that a world ray finds blocked
 // are re-rolled (3 tries). Tracers start at the same far distance on one side of the corridor and run across it.
-const SKY_N = 6, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.157, SKY_EL1 = 0.297, TR_MIN_D = 40;
+const SKY_N = 12, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.157, SKY_EL1 = 0.297, TR_MIN_D = 40;
   let skyInited = false, glowMesh = null, hemi = null, hemiBase = 0, hemiT = 0, flashMesh = null, tracerMesh = null, flashParts = null, tracerParts = null;
   let flashLive = 0, tracerLive = 0;
   function ensureSky() {
@@ -283,7 +294,7 @@ const SKY_N = 6, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.157
     ss.set(0, 0, 0); qq.identity();
     for (let i = 0; i < SKY_N; i++) {
       flashParts[i] = { i, on: false, pos: new THREE.Vector3(), life: 0, size: 1, seen: 0, mark: -1 };
-      tracerParts[i] = { i, on: false, pos: new THREE.Vector3(), dir: new THREE.Vector3(), life: 0, len: 6, w: 0.5, seen: 0, mark: -1 };
+      tracerParts[i] = { i, on: false, pos: new THREE.Vector3(), dir: new THREE.Vector3(), life: 0, len: 6, w: 0.5, speed: TR_SPEED, seen: 0, mark: -1 };
       flashMesh.setMatrixAt(i, m4.compose(vv.set(0, 0, 0), qq, ss)); glowMesh.setMatrixAt(i, m4);
       tracerMesh.setMatrixAt(i, m4);
     }
@@ -389,14 +400,17 @@ const SKY_N = 6, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.157
       const td = dz * (0.9 + Math.random() * 0.25);
       // start just outside one edge of the corridor, run across it (mostly sideways, a little toward/away, slight drop)
       t.pos.set(side * Math.tan(SKY_AZ * 1.2) * td, c.y + Math.tan(SKY_EL0 + Math.random() * 0.08) * td, c.z - td);
-      t.dir.set(-side, -0.04 - Math.random() * 0.05, (Math.random() * 2 - 1) * 0.3).normalize();
-      t.len = td * 0.08; t.w = Math.max(0.35, td * TR_W_K); // ~25 px long, >= 1.5 px wide
-      t.life = Math.min(0.35, (2 * Math.tan(SKY_AZ * 1.2) * td) / TR_SPEED);
+      // A5 tester: tracers showed for one frame. Visible 0.4-0.6 s: the streak's speed is set so it crosses the open corridor
+      // in its life (far rounds read slow, as they would), with a longer streak (~35-45 px)
+      t.dir.set(-side, -0.04 - Math.random() * 0.05, (Math.random() * 2 - 1) * 0.45).normalize();
+      t.len = td * (0.11 + Math.random() * 0.04); t.w = Math.max(0.35, td * TR_W_K);
+      t.life = 0.4 + Math.random() * 0.2;
+      t.speed = (2 * Math.tan(SKY_AZ * 1.2) * td) / Math.max(0.2, Math.abs(t.dir.x)) / t.life;
       writeTracer(t);
       tracerMesh.instanceMatrix.needsUpdate = true;
       tracerMesh.visible = true;
       dbg.skyline.tracers++;
-      dbg.skyline.lastTracer = { start: project(t.pos, 0), end: project(_fp.copy(t.dir).multiplyScalar(TR_SPEED * t.life).add(t.pos), 0) };
+      dbg.skyline.lastTracer = { start: project(t.pos, 0), end: project(_fp.copy(t.dir).multiplyScalar(t.speed * t.life).add(t.pos), 0), life: +t.life.toFixed(2) };
     }
   }
   function writeFlash(p, k) {
@@ -425,11 +439,11 @@ const SKY_N = 6, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.157
       if (flashLive === 0) flashMesh.visible = glowMesh.visible = false;
     }
     if (tracerLive > 0) {
-      const step = TR_SPEED * pd;
       for (let i = 0; i < SKY_N; i++) {
         const p = tracerParts[i];
         if (!p.on) continue;
         noteSeen(p, fn);
+        const step = p.speed * pd;
         p.pos.x += p.dir.x * step; p.pos.y += p.dir.y * step; p.pos.z += p.dir.z * step;
         p.life -= pd;
         if ((p.life <= 0 && p.seen >= 2) || (camera && p.pos.distanceToSquared(camera.position) < TR_MIN_D * TR_MIN_D)) { // never near the camera

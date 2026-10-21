@@ -1,3 +1,19 @@
+// A5 tester: the box has no audio sink, so sound events are logged (SS.audioLog, last 30) and with ?debug shown on screen
+// (last 6 lines). Repeats of the same kind fold into one line with a count (footsteps would flood it otherwise).
+const ALOG_ON = typeof location !== 'undefined' && /[?&]debug\b/.test(location.search);
+let alogEl = null;
+function alog(kind, detail) {
+  if (typeof window === 'undefined' || !window.SS) return;
+  const L = window.SS.audioLog || (window.SS.audioLog = []);
+  const t = +(window.SS.simTime || 0).toFixed(1), last = L[L.length - 1];
+  if (last && last.kind === kind && last.detail === detail) { last.n++; last.t = t; }
+  else { L.push({ t, kind, detail: detail || '', n: 1 }); if (L.length > 30) L.shift(); }
+  if (!ALOG_ON || typeof document === 'undefined') return;
+  if (!alogEl) { alogEl = document.createElement('div'); alogEl.id = 'dbg-audiolog';
+    alogEl.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:31;pointer-events:none;font:11px/1.35 monospace;color:#ffe9b0;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;white-space:pre;max-width:46vw';
+    document.body.appendChild(alogEl); }
+  alogEl.textContent = 'SOUND\n' + L.slice(-6).map((e) => e.t.toFixed(1) + 's ' + e.kind + (e.detail ? ' ' + e.detail : '') + (e.n > 1 ? ' x' + e.n : '')).join('\n');
+}
 export function createAudio() {
   let ctx = null;
   let master = null;
@@ -8,7 +24,7 @@ export function createAudio() {
   const FX3 = (() => { try { return /[?&]fx=3(?:&|$)/.test(location.search); } catch (e) { return false; } })();
   let lp = null;
   let muff = null; // scheduled dip: { t0, wall, f0, f1, rec }
-  let fx3Steps = 0, fx3Dist = 0, fx3Pan = 0.15, stepBuf = null;
+  let fx3LogRate = 0, fx3Steps = 0, fx3Dist = 0, fx3Pan = 0.15, stepBuf = null;
   let fx3Exert = 0, fx3CoverPrev = null, fx3Effort = 0, fx3Breaths = 0, fx3Heart = 0;
   let nextBreathT = 0, nextBeatT = 0, breathBuf = null;
   function go() { live = true; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0.75, t + 0.25); } }
@@ -208,7 +224,9 @@ export function createAudio() {
     };
     if (FX3 && n >= 0) {
       window.SS.fx && window.SS.fx.skylineShot && window.SS.fx.skylineShot(near);
-      setTimeout(() => { if (!(window.SS && window.SS.running)) return; play(); }, (0.8 - 0.5 * near) * 1000);
+      const delay = Math.round((0.8 - 0.5 * near) * 1000);
+      alog('distant flash', 'sound in ' + delay + ' ms');
+      setTimeout(() => { if (!(window.SS && window.SS.running)) return; play(); alog('distant shot heard', '+' + delay + ' ms'); }, delay);
       return;
     }
     play();
@@ -385,6 +403,7 @@ export function createAudio() {
     try {
       if (!ensureMuffle()) return;
       const s = Math.max(0, Math.min(1, +strength || 0));
+      alog('blast muffle', s.toFixed(2));
       const t = ctx.currentTime;
       const f0 = Math.max(30, muff ? muffFreqAt(muffElapsed()) : (lp.frequency.value || 20000));
       const f1 = Math.max(30, 300 + 900 * (1 - s));
@@ -442,6 +461,7 @@ export function createAudio() {
     out.connect(master);
     src.start();
     fx3Steps++;
+    alog('footstep');
   }
 
   function fx3Noise(when, stop, freq, q, env) {
@@ -524,6 +544,7 @@ export function createAudio() {
         let voices = 0; // at most two new source nodes per update; a late clock snaps forward (no hitch backlog)
         if (E >= 0.15) {
           const rate = 14 + 20 * E;
+          if (Math.abs(rate - (fx3LogRate || 0)) >= 3) { fx3LogRate = rate; alog('breath', Math.round(rate) + '/min'); }
           fx3Breaths = rate;
           if (nextBreathT < now) nextBreathT = now;
           if (master && voices + 2 <= 2 && nextBreathT <= horizon) {
@@ -531,9 +552,10 @@ export function createAudio() {
             nextBreathT += 60 / rate;
             voices += 2;
           }
-        } else { fx3Breaths = 0; nextBreathT = 0; }
+        } else { if (fx3LogRate) { fx3LogRate = 0; alog('breath', 'calm'); } fx3Breaths = 0; nextBreathT = 0; }
         if (hp != null && hp < 25) {
           const bpm = 70 + 50 * Math.max(0, Math.min(1, (25 - hp) / 20));
+          if (!fx3Heart) alog('heartbeat', 'on ' + Math.round(bpm) + ' bpm');
           fx3Heart = bpm;
           if (nextBeatT < now) nextBeatT = now;
           if (master && voices + 2 <= 2 && nextBeatT <= horizon) {
@@ -541,7 +563,7 @@ export function createAudio() {
             nextBeatT += 60 / bpm;
             voices += 2;
           }
-        } else { fx3Heart = 0; nextBeatT = 0; }
+        } else { if (fx3Heart) alog('heartbeat', 'off'); fx3Heart = 0; nextBeatT = 0; }
       }
       window.SS.fx3Audio = Object.assign(window.SS.fx3Audio || {}, fx3State());
     }
@@ -564,8 +586,10 @@ export function createAudio() {
     }
     distantT -= dt;
     const appr = window.SS.approachForce != null ? window.SS.approachForce : window.SS.approach; // approachForce: test hook (fx3 skyline) // m1x: opening approach, gunfire up ahead getting closer (synth, short volleys)
-    if (appr != null && appr > 0) { approachT -= dt; if (approachT <= 0) { approachT = 2.6 - 1.6 * appr + Math.random() * 1.2;
-      const nShots = 1 + Math.floor(Math.random() * (1 + 3 * appr)); for (let i = 0; i < nShots; i++) setTimeout(() => distantShot(appr), i * (90 + Math.random() * 70));
+    if (appr != null && appr > 0) { approachT -= dt; if (approachT <= 0) {
+      // A5 tester: ~10 game-s of build-up showed one tracer frame; with ?fx=3 a burst every 0.6-1.2 s, 2-5 rounds (bursts)
+      approachT = FX3 ? 0.6 + Math.random() * 0.6 : 2.6 - 1.6 * appr + Math.random() * 1.2;
+      const nShots = FX3 ? 2 + Math.floor(Math.random() * (2 + 2 * appr)) : 1 + Math.floor(Math.random() * (1 + 3 * appr)); for (let i = 0; i < nShots; i++) setTimeout(() => distantShot(appr), i * (90 + Math.random() * 70));
       window.SS.approachShots = (window.SS.approachShots | 0) + nShots; } distantT = Math.max(distantT, 3); }
     else if (distantT <= 0) {
       distantT = 6 + Math.random() * 10;
