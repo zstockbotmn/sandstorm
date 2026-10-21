@@ -208,7 +208,20 @@ function simStep(dt) {
 
 // Adaptive resolution: every 2 s, if fps < 40 drop the render scale 15% (floor 0.6); if fps > 56 for 6 s, step back up.
 // A8 tester (Ultra-low 'very blurry'): Ultra-low ran at 0.4 x and stepped down to 0.22 x CSS px on slow frames. Floor: 0.75 x CSS px on every tier.
-const DPR_FLOOR = FAST ? 0 : 0.75; // test=fast keeps its tiny render
+// A10 (tester: Ultra-low 0.8-1.3 fps in play vs 3-6 in A8 = 3.5x the pixels of the old 0.4): Ultra-low renders at 0.6 x CSS px,
+// and only if it holds < 20 fps for 4 s does it step to 0.5 (back to 0.6 after 8 s > 30 fps). Other tiers keep the 0.75 floor.
+// ?pr=X (tests / perf probes) pins the pixel ratio.
+const PR_URL = (() => { const m = /[?&]pr=([0-9.]+)/.exec(location.search); const v = m ? +m[1] : 0; return v > 0.1 && v <= 3 ? v : 0; })();
+let ultraPR = 0.6, ultraLowT = 0, ultraHighT = 0;
+const prFloor = () => (FAST ? 0 : window.SS && window.SS.quality === 'ultra-low' ? 0.5 : 0.75);
+function targetPR() { if (PR_URL) return PR_URL; if (window.SS && window.SS.quality === 'ultra-low' && !FAST) return ultraPR; return Math.max(prFloor(), baseDPR() * resScale); }
+function applyPR() { const v = targetPR(); if (Math.abs(renderer.getPixelRatio() - v) > 1e-3) { renderer.setPixelRatio(v); renderer.setSize(window.innerWidth, window.innerHeight); post.setSize(window.innerWidth, window.innerHeight); } window.SS.pr = +v.toFixed(2); }
+let prPinned = false;
+function ultraAdapt(raw) { if (PR_URL || prPinned || FAST || window.SS.quality !== 'ultra-low' || !window.SS.running || !(raw > 0)) return; const fps = 1 / raw;
+  if (fps < 20) { ultraLowT += raw; ultraHighT = 0; } else if (fps > 30) { ultraHighT += raw; ultraLowT = 0; } else { ultraLowT = ultraHighT = 0; }
+  if (ultraPR > 0.5 && ultraLowT > 4) { ultraPR = 0.5; ultraLowT = 0; applyPR(); window.SS.ultraPRSteps = (window.SS.ultraPRSteps | 0) + 1; }
+  else if (ultraPR < 0.6 && ultraHighT > 8) { ultraPR = 0.6; ultraHighT = 0; applyPR(); } }
+window.SS.setPR = (v) => { prPinned = true; ultraPR = v; applyPR(); return window.SS.pr; }; // perf probes (Ultra-low only)
 function baseDPR() { return Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5) * Q.res; }
 let resScale = 1, fpsN = 0, fpsT = 0, goodT = 0;
 function adaptRes(raw) {
@@ -227,7 +240,7 @@ function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
   if (!window.SS.running && document.body.classList.contains('starting')) { last = 0; return; } // m1v: let 'Starting...' present (no GPU work until the run is live)
   const raw = last ? (now - last) / 1000 : 0; const tFrame = performance.now();
   last = now;
-  adaptRes(raw); if (window.SS.autoLowTick) window.SS.autoLowTick(Math.min(raw, 1));
+  adaptRes(raw); ultraAdapt(raw); if (window.SS.autoLowTick) window.SS.autoLowTick(Math.min(raw, 1));
   if (raw > 0.25 && window.SS && window.SS.running) (window.SS.hitches = window.SS.hitches || []).push([Math.round(now), Math.round(raw * 1000), window.SS.engaged | 0]);
   // Catch up when frames are late (software GL): up to 4 x 50 ms so fire/walk still advance.
   const steps = raw > 0 ? Math.min(4, Math.max(1, Math.ceil(raw / 0.05))) : 1;
@@ -262,7 +275,7 @@ function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.max(DPR_FLOOR, baseDPR() * resScale));
+  renderer.setPixelRatio(targetPR());
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
 }
@@ -476,7 +489,7 @@ function ultraTrim() { let hid = 0; const keep = new Set(world.colliders || []);
   window.SS.ultraHidden = (window.SS.ultraHidden | 0) + hid; }
 // Auto Low: software WebGL at start (unless ?q=high), or fps < 25 for 3 s mid-run. Applied live, no reload.
 onLow(() => {
-  renderer.setPixelRatio(Math.max(DPR_FLOOR, baseDPR() * resScale)); renderer.setSize(window.innerWidth, window.innerHeight); post.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(targetPR()); renderer.setSize(window.innerWidth, window.innerHeight); post.setSize(window.innerWidth, window.innerHeight); window.SS.pr = +targetPR().toFixed(2);
   if (world.sun) world.sun.castShadow = false; renderer.shadowMap.enabled = false;
   scene.traverse((o) => { if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m.needsUpdate = true; });
   if (scene.fog && scene.fog.density != null) scene.fog.density = Q.fog;

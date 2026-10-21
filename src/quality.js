@@ -51,7 +51,7 @@ export function onLow(fn) { lowHooks.push(fn); }
 // Ultra-low: Low still under 10 fps -> half resolution, 60 m draw distance (fewer buildings), thicker fog.
 export let ULTRA = false;
 export function goUltra(reason) {
-  if (ULTRA) return false; ULTRA = true; try { if (!EXPLICIT && !PICKED && !PICK_NOW) localStorage.setItem(KEY, 'ultra-low'); } catch (e) {} Object.assign(Q, LOW, { res: 0.75 /* A8: was 0.4 (blurry); DPR floor 0.75 in main.js */, drawAhead: 60, fog: 0.03, far: 200, lodNear: 10, lodNearProp: 6 } /* view distance as before: the m1o cut (fog .035, far 85) hid fighters in the haze (m1p stall) */);
+  if (ULTRA) return false; ULTRA = true; try { if (!EXPLICIT && !PICKED && !PICK_NOW) localStorage.setItem(KEY, 'ultra-low'); } catch (e) {} Object.assign(Q, LOW, { res: 0.6 /* A10: 0.6 (A8 0.75 cost ~3.5x the pixels of 0.4; main.js renders Ultra-low at 0.6, 0.5 if < 20 fps) */, drawAhead: 60, fog: 0.03, far: 200, lodNear: 10, lodNearProp: 6 } /* view distance as before: the m1o cut (fog .035, far 85) hid fighters in the haze (m1p stall) */);
   if (typeof window !== 'undefined' && window.SS) { window.SS.quality = 'ultra-low'; window.SS.autoLow = reason; }
   for (const f of lowHooks) { try { f(reason); } catch (e) { console.warn('goUltra', e); } }
   return true;

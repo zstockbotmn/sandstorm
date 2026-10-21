@@ -219,8 +219,11 @@ export function createFx3({ camera, audio, scene }) {
     const ultra = qName() === 'ultra-low', near = camera ? camera.position.distanceTo(point) < 4 : false;
     if (ultra) { // A8: Ultra-low = 3-4 dark chips only (cheap), bigger so they read at 0.75 x resolution
       const n = take(4); if (!n) return; const d = nrm(normal); cc.setHex(0x3a3028); emitRDur = 700; emitMinF = 2;
-      for (let i = 0; i < n; i++) { const spd = 2 + Math.random() * 1.5, r = () => (Math.random() * 2 - 1) * 0.6, sz = 0.14 + Math.random() * 0.1;
-        emit(point, (d.x + r()) * spd, (d.y + r()) * spd + 1.2, (d.z + r()) * spd, 0.7 + Math.random() * 0.3, sz, sz, -9.8, cc); }
+      // A10 (tester: big dark blobs mid-screen): chips size with distance (~6-10 px at any range: 0.035-0.14 m), spawn ON the
+      // hit point (tiny jitter), fly slower when near so they stay on the cover edge, and fall with gravity -12
+      const cd = camera ? camera.position.distanceTo(point) : 8, k = Math.max(0.25, Math.min(1, cd / 8));
+      for (let i = 0; i < n; i++) { const spd = (1.2 + Math.random() * 1.2) * k, r = () => (Math.random() * 2 - 1) * 0.5, sz = (0.1 + Math.random() * 0.05) * k + 0.01;
+        emit(vv.set(point.x + (Math.random() - 0.5) * 0.04, point.y + 0.02, point.z + (Math.random() - 0.5) * 0.04), (d.x + r()) * spd, (d.y + r()) * spd + 1.0 * k, (d.z + r()) * spd, 0.55 + Math.random() * 0.25, sz, sz, -12, cc); }
       emitRDur = 0; emitMinF = 2; publish(); return; }
     const dustN = take(near ? 2 : wall ? 4 : 6);
     const debN = take(near ? 6 : 5); // chips stay: they are what reads at the cover lip

@@ -13,7 +13,8 @@
   <div id="start">
     <h1>Sandstorm</h1>
     <button id="play" type="button">Play</button>
-    <button id="quality" type="button" class="quality-btn">Quality: High</button>
+    <button id="quality" type="button" class="quality-btn">Quality</button>
+    <script>/* A10: label from ?q / saved tier before first paint (was a 'High' flash); main.js relabels once loaded */(function(){try{var b=document.getElementById('quality'),m=/[?&]q=([a-z_-]+)/i.exec(location.search),v=m?m[1].toLowerCase().replace(/_/g,'-'):null;if(v==='ultralow'||v==='ultra'||v==='ul')v='ultra-low';if(v!=='ultra-low'&&v!=='low'&&v!=='high')v=null;if(!v){var l=localStorage.getItem('ss.quality');if(l==='ultra-low'||l==='low'||l==='high')v=l;}if(v)b.textContent='Quality: '+(v==='ultra-low'?'Ultra-low':v==='low'?'Low':'High');}catch(e){}})();</script>
     <p id="best">Best: 0</p>
     <p id="loading">Loading street…</p>
   </div>
