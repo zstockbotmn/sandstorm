@@ -132,6 +132,7 @@ window.SS.debug = {
 };
 
 const SPEED = 3.0; // a bit faster between fights
+window.SS.walkSpeed = SPEED;
 const BASE_FOV = 70;
 const SCOPE_FOV = 28; // ~2.5x
 let fov = BASE_FOV;

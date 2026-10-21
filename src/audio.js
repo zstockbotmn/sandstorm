@@ -8,6 +8,7 @@ export function createAudio() {
   const FX3 = (() => { try { return /[?&]fx=3(?:&|$)/.test(location.search); } catch (e) { return false; } })();
   let lp = null;
   let muff = null; // scheduled dip: { t0, wall, f0, f1, rec }
+  let fx3Steps = 0, fx3Dist = 0, fx3Pan = 0.15, stepBuf = null;
   function go() { live = true; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0.75, t + 0.25); } }
   function hush() { live = false; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + 0.05); } } // m1u: Restart is silent until its first frame
   let chatterT = 10;
@@ -264,7 +265,7 @@ export function createAudio() {
     for (let i = 0; i < bursts; i++) {
       const when = 0.06 + i * (0.09 + Math.random() * 0.08);
       const src = ctx.createBufferSource();
-      src.buffer = noiseBuffer(0.07);
+      src.buffer = stepBuf || (stepBuf = noiseBuffer(0.07)); // one shared buffer (no per-step allocation)
       const f = ctx.createBiquadFilter();
       f.type = 'bandpass';
       f.frequency.value = 900 + Math.random() * 800;
@@ -407,7 +408,46 @@ export function createAudio() {
     return Math.max(0, Math.min(1, 1 - n));
   }
 
+  function gravelStep() {
+    if (!ctx || !master) return;
+    const src = ctx.createBufferSource();
+    src.buffer = stepBuf || (stepBuf = noiseBuffer(0.07)); // one shared buffer (no per-step allocation)
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 1800;
+    const g = ctx.createGain();
+    g.gain.value = 0.035 * (0.8 + 0.4 * Math.random());
+    src.connect(f);
+    f.connect(g);
+    let out = g;
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = fx3Pan;
+      fx3Pan = -fx3Pan;
+      g.connect(p);
+      out = p;
+    }
+    out.connect(master);
+    src.start();
+    fx3Steps++;
+  }
+
+  function fx3State() { return { steps: fx3Steps }; }
+
   function update(dt) {
+    if (FX3 && window.SS) {
+      if (ctx && window.SS.walking && window.SS.running && !(window.SS.input && window.SS.input.state && window.SS.input.state.cover)) {
+        fx3Dist += (window.SS.walkSpeed || 1.4) * dt;
+        let n = 0;
+        while (n < 2 && fx3Dist >= 0.72) { // a 1 fps hitch must not dump a burst of steps
+          fx3Dist -= 0.72;
+          n++;
+          gravelStep();
+        }
+        if (n === 2) fx3Dist = 0;
+      }
+      window.SS.fx3Audio = Object.assign(window.SS.fx3Audio || {}, { steps: fx3Steps });
+    }
     if (!ctx || !unlocked) return;
     const running = !!(window.SS && window.SS.running);
     const bursting = !!(window.SS && window.SS.bursting);
@@ -436,5 +476,5 @@ export function createAudio() {
     }
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel };
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State };
 }
