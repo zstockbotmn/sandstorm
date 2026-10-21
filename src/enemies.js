@@ -29,6 +29,7 @@ const _look = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
 const _aim = new THREE.Vector3();
 const _near = new THREE.Vector3();
+const _supRc = new THREE.Raycaster(), _supD = new THREE.Vector3(), _supN = new THREE.Vector3(), _supP = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
 const _wA = new THREE.Vector3();
 const _wB = new THREE.Vector3();
@@ -1974,6 +1975,25 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function warnFrom(pos) { const SSx = window.SS; if (!SSx) return; const c = camera.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = pos.x - c.x, dz = pos.z - c.z;
     const fwd = dx * Math.sin(yaw) + dz * -Math.cos(yaw), right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
     if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(Math.atan2(right, fwd)); if (SSx.audio && SSx.audio.crack) SSx.audio.crack(pos); }
+  function coverMiss() {
+    const SSx = window.SS, w = SSx && SSx.world; if (!w) return null;
+    const c = camera.position, ux0 = _muzzle.x - c.x, uz0 = _muzzle.z - c.z, ul = Math.hypot(ux0, uz0) || 1, ux = ux0 / ul, uz = uz0 / ul; // toward the shooter
+    const sx = -uz, sz = ux, side = Math.random() < 0.5 ? -1 : 1, r = Math.random();
+    let mode;
+    if (r < 0.45) { mode = 'lip'; _aim.set(c.x + ux * 0.7 + sx * side * Math.random() * 0.6, c.y - 0.12 - Math.random() * 0.2, c.z + uz * 0.7 + sz * side * Math.random() * 0.6); }
+    else if (r < 0.75) { mode = 'over'; _aim.set(c.x + sx * side * (0.2 + Math.random() * 0.5), c.y + 0.3 + Math.random() * 0.4, c.z + sz * side * (0.2 + Math.random() * 0.5)); }
+    else { mode = 'wall'; _aim.set(c.x + sx * side * (1.0 + Math.random() * 0.8), c.y - 0.3 + Math.random() * 0.9, c.z + sz * side * (1.0 + Math.random() * 0.8)); }
+    if (SSx) (SSx.coverMiss || (SSx.coverMiss = { lip: 0, over: 0, wall: 0 }))[mode]++;
+    _supD.subVectors(_aim, _muzzle); const toAim = _supD.length(); if (toAim < 1e-3) return null; _supD.divideScalar(toAim);
+    _supRc.set(_muzzle, _supD); _supRc.far = toAim + (mode === 'lip' ? 0.6 : 14); // over / wall rounds fly on into what is behind
+    const list = w.shotList ? w.shotList() : w.colliders; if (!list || !list.length) return null;
+    const hh = _supRc.intersectObjects(list, false);
+    for (const h of hh) { if (h.distance < 1.0) continue; // the shooter's own cover right at the muzzle
+      if (mode !== 'lip' && h.distance < toAim - 0.3) continue; // over / wall: only what is beyond the player's cover line
+      _supN.set(0, 1, 0); if (h.face) { _supN.copy(h.face.normal).transformDirection(h.object.matrixWorld); if (_supN.dot(_supD) > 0) _supN.negate(); }
+      return { point: _supP.copy(h.point), normal: _supN, object: h.object }; }
+    return null;
+  }
   function enemyShoot(enemy) {
     { const nR = performance.now() / 1000, nS = window.SS ? (window.SS.simTime || 0) : 0; if (enemy.noFireUntilR > nR || enemy.noFireUntilSim > nS) { enemy.shootCd = Math.max(enemy.shootCd || 0, 0.1); return; } } // just relocated: let the player see them first
     // m1u: a balcony/window/roof shooter fires only while visibly present (a tracer from an empty balcony otherwise)
@@ -2062,8 +2082,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (offView) { const yw = window.SS && window.SS.input ? window.SS.input.yaw : 0, fx = Math.sin(yw), fz = -Math.cos(yw), sx = Math.cos(yw), sz = Math.sin(yw);
       const side = Math.sign((_muzzle.x - camera.position.x) * sx + (_muzzle.z - camera.position.z) * sz) || 1;
       _aim.set(camera.position.x + fx * 3.2 + sx * side * 0.9, camera.position.y - 0.15, camera.position.z + fz * 3.2 + sz * side * 0.9); if (window.SS) window.SS.offViewTracers = (window.SS.offViewTracers | 0) + 1; }
+    // A6 tester (ducked = silence): rounds at a covered player still arrive. Misses go at the cover lip (chips + dust on the
+    // sandbags), just over it (crack overhead -> the near-miss path below), or into the wall beside / behind the player.
+    // Hit chance is unchanged; this only places the misses. coverImpact = where the round stops on the world, if anywhere.
+    let coverImpact = null;
+    if (!hit && !offView && ducked) coverImpact = coverMiss();
     muzzleFlash(_muzzle);
-    tracer(_muzzle, _aim, offView);
+    tracer(_muzzle, coverImpact ? coverImpact.point : _aim, offView);
     if (window.SS && window.SS.audio) window.SS.audio.enemyShot(_muzzle);
     enemy.rounds = (enemy.rounds || 0) + 1;
     if (enemy.rounds >= 6) {
@@ -2073,8 +2098,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const amount = dmgAmt; // m1v: softer first wave (opening only); cover softening (x0.6) included
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
-      dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle); // cover also softens hits (x0.6, in dmgAmt)
+      dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, 'gun'); // cover also softens hits (x0.6, in dmgAmt)
     } else if (window.SS && window.SS.fx) {
+      if (coverImpact && window.SS.fx.impact) { window.SS.fx.impact(coverImpact.point, coverImpact.normal, coverImpact.object); window.SS.coverImpacts = (window.SS.coverImpacts | 0) + 1; }
       // Miss: closest point of the tracer segment to the eye. Under 1.5 m is a near miss (no change to aim or damage).
       const ax = _muzzle.x, ay = _muzzle.y, az = _muzzle.z, bx = _aim.x, by = _aim.y, bz = _aim.z;
       const px = camera.position.x, py = camera.position.y, pz = camera.position.z;
@@ -2782,7 +2808,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       else if (n.ring && n.t < n.fuse) { n.ring.visible = Math.floor(n.t * 6) % 2 === 0; }
       if (n.landed && n.t >= n.fuse) { if (n.ring) { scene.remove(n.ring); n.ring = null; }
         for (let j = 0; j < 4; j++) muzzleFlash(n.m.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)));
-        const d = n.m.position.distanceTo(camera.position.clone().setY(n.m.position.y)); if (d < 3.5) player.damage(35 * (1 - d / 4.5), n.m.position);
+        const d = n.m.position.distanceTo(camera.position.clone().setY(n.m.position.y)); if (d < 3.5) player.damage(35 * (1 - d / 4.5), n.m.position, 'grenade');
         if (window.SS && window.SS.fx) window.SS.fx.blast(n.m.position);
         if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);
         scene.remove(n.m); nades.splice(i, 1); } }

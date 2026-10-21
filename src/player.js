@@ -1,4 +1,9 @@
 const REGEN_DELAY_MS = 3000, REGEN_RATE = 22; // hp/s out of combat
+// A6 tester (HP sat at 5 for ~8 min with enemies alive): regen was switched off for the whole fight (engaged or in cover),
+// not reset by unseen hits. Standing rule: health regenerates after time without damage, fights included. Mid-fight it
+// starts after FIGHT_DELAY_S game-s (and >= 3 s real) without damage and refills FIGHT_RATE hp per game-s, on the game clock
+// so a slow box (game ~10x slower than real) cannot make it free. Out of combat it stays fast (real time).
+const FIGHT_DELAY_S = 6, FIGHT_RATE = 4;
 export function createPlayer(camera, input, hud) {
   const player = {
     health: 100,
@@ -6,9 +11,10 @@ export function createPlayer(camera, input, hud) {
   };
   let regenDelay = 0;
 
-  player.damage = function damage(amount, fromPosition) {
+  player.damage = function damage(amount, fromPosition, source) {
     if (!player.alive) return;
     const dmg = Math.max(0, amount || 0);
+    const hp0 = player.health;
     player.health = Math.max(0, player.health - dmg); if (player.health < 1) player.health = 0; // m1y: < 1 hp is dead (an 'empty' bar that stayed alive)
     if (dmg >= 20 && window.SS && window.SS.scoreSys && window.SS.scoreSys.breakStreak) window.SS.scoreSys.breakStreak();
     if (window.SS) window.SS.health = player.health;
@@ -24,7 +30,18 @@ export function createPlayer(camera, input, hud) {
         hud.damageDirection(Math.atan2(right, forward));
       }
     }
-    regenDelay = 5; lastHitT = performance.now(); // regen starts REGEN_DELAY_MS after the last hit
+    regenDelay = 5; lastHitT = performance.now(); lastHitSim = window.SS ? (window.SS.simTime || 0) : 0; // regen restarts after the delay
+    // A6: every HP drop has a visible + audible cue: edge pulse + red flash (damageVignette), arc toward the shooter
+    // (damageDirection), camera flinch, hit sound event. SS.hitLog records them so tests can check nothing drops silently.
+    const SS = window.SS;
+    if (SS && dmg > 0) {
+      if (SS.fx && SS.fx.kick) SS.fx.kick('hit', Math.min(1.4, 0.6 + dmg / 25));
+      if (SS.audio && SS.audio.hurt) SS.audio.hurt(fromPosition, dmg);
+      const L = SS.hitLog || (SS.hitLog = []);
+      L.push({ t: +(SS.simTime || 0).toFixed(2), hp0: +hp0.toFixed(1), hp: +player.health.toFixed(1), src: source || 'unknown',
+        cues: { flash: !!hud, dir: !!(hud && camera), flinch: !!(SS.fx && SS.fx.kick), sound: !!(SS.audio && SS.audio.hurt) } });
+      if (L.length > 40) L.shift();
+    }
     if (player.health <= 0) {
       player.alive = false;
       if (window.SS) {
@@ -38,16 +55,22 @@ export function createPlayer(camera, input, hud) {
   // m1u (Zack's rule): health regenerates after a while without taking damage. Runs on REAL time (sim dt is capped at
   // low fps, which made regen crawl) and only out of combat; out of combat it refills fast enough to be full or near
   // full by the next contact (a 10-15 m walk between waves is only ~4-5 s).
-  let lastHitT = -1e9, lastUpd = 0;
+  let lastHitT = -1e9, lastUpd = 0, lastHitSim = -1e9, lastSim = null;
   player.lastHitT = () => lastHitT;
   player.update = function update() {
     const now = performance.now(); const rdt = lastUpd ? Math.min(0.5, (now - lastUpd) / 1000) : 0; lastUpd = now;
+    const sim = window.SS ? (window.SS.simTime || 0) : 0; const sdt = lastSim == null ? 0 : Math.max(0, Math.min(0.5, sim - lastSim)); lastSim = sim;
     if (!player.alive || player.health >= 100) return;
     const engaged = !!(window.SS && (window.SS.engaged | 0) > 0);
     const fighting = engaged || !!(window.SS && window.SS.cover && window.SS.cover.state !== 'none');
-    if (fighting) return;
     if (now - lastHitT < REGEN_DELAY_MS) return;
-    player.health = Math.min(100, player.health + REGEN_RATE * rdt);
+    let add;
+    if (fighting) { if (sim - lastHitSim < FIGHT_DELAY_S) return; add = FIGHT_RATE * sdt; }
+    else add = REGEN_RATE * rdt;
+    if (!(add > 0)) return;
+    const h0 = player.health;
+    player.health = Math.min(100, player.health + add);
+    if (window.SS && fighting) { window.SS.fightRegen = +((window.SS.fightRegen || 0) + (player.health - h0)).toFixed(2); }
     if (window.SS) window.SS.health = player.health;
     if (hud) hud.setHealth(player.health);
   };
@@ -55,7 +78,7 @@ export function createPlayer(camera, input, hud) {
   player.reset = function reset() {
     player.health = 100;
     player.alive = true;
-    regenDelay = 0; lastHitT = -1e9; lastUpd = 0;
+    regenDelay = 0; lastHitT = -1e9; lastUpd = 0; lastHitSim = -1e9; lastSim = null;
     if (window.SS) window.SS.health = 100;
     if (hud) hud.setHealth(100);
   };

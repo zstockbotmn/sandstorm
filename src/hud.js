@@ -108,14 +108,23 @@ export function createHud() {
     if (!hudRaf) hudRaf = requestAnimationFrame(markerTick);
   }
 
+  // A6 tester (HP 23 -> 12 with no cue seen): at ~1 fps the 0.55 s fade and the 0.9 s arc showed for 0-1 painted frames.
+  // Every hit now holds the red edge pulse + a short full-screen red flash for >= 3 painted frames AND >= 250 ms real time
+  // before fading, and the arc toward the shooter for >= 6 frames / 1.3 s.
+  const flash = document.createElement('div'); flash.id = 'hit-flash';
+  flash.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;background:rgba(220,20,10,.32)';
+  root.appendChild(flash);
+  let vigFrames = 0, vigAt = 0, vigRaf = 0, vigA = 0;
+  function vigTick() { if (window.SS && window.SS.hudFreeze) { vigRaf = requestAnimationFrame(vigTick); return; } vigFrames -= 1;
+    if (vigFrames > 0 || performance.now() < vigAt) { vigRaf = requestAnimationFrame(vigTick); return; }
+    vignette.style.transition = 'opacity 0.55s linear'; vignette.style.opacity = '0';
+    flash.style.transition = 'opacity 0.35s linear'; flash.style.opacity = '0'; vigRaf = 0; }
   function damageVignette(amount) {
     const a = Math.max(0.6, Math.min(1, amount == null ? 1 : amount));
-    vignette.style.transition = 'none';
-    vignette.style.opacity = String(a);
-    requestAnimationFrame(() => {
-      vignette.style.transition = 'opacity 0.55s linear';
-      vignette.style.opacity = '0';
-    });
+    vignette.style.transition = 'none'; vignette.style.opacity = String(a);
+    flash.style.transition = 'none'; flash.style.opacity = String(Math.min(1, 0.55 + 0.45 * a));
+    vigA = a; vigFrames = 3; vigAt = performance.now() + 250; hud.flashCount = (hud.flashCount | 0) + 1;
+    if (!vigRaf) vigRaf = requestAnimationFrame(vigTick);
   }
 
   // m1t: red arc (plus arrow) toward the shooter, held >= 700 ms real time AND >= 2 painted frames, then fades.
@@ -123,7 +132,7 @@ export function createHud() {
   function dirTick() { if (window.SS && window.SS.hudFreeze) { dirRaf = requestAnimationFrame(dirTick); return; } dirFrames -= 1; if (dirFrames <= 0 && performance.now() >= dirHideAt) { dir.classList.remove('show'); dirRaf = 0; return; } dirRaf = requestAnimationFrame(dirTick); }
   function damageDirection(angle) {
     hud.dirPoint = edgePath(dirSvg, dirPath, angle, 0.3, 12); dir.style.transform = 'none'; dir.classList.add('show'); dir.style.opacity = '';
-    dirHideAt = performance.now() + 900; dirFrames = 3; hud.dirCount = (hud.dirCount | 0) + 1; hud.dirAngle = angle;
+    dirHideAt = performance.now() + 1300; dirFrames = 6; hud.dirCount = (hud.dirCount | 0) + 1; hud.dirAngle = angle;
     if (!dirRaf) dirRaf = requestAnimationFrame(dirTick);
   }
 

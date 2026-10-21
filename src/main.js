@@ -515,7 +515,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     if (a && b) pt = a.getWorldPosition(new THREE.Vector3()).lerp(b.getWorldPosition(new THREE.Vector3()), 0.5); else pt = best.group.position.clone().setY(zone === 'legL' ? 0.6 : zone === 'armL' ? 1.3 : 1.1);
     best.health = Math.max(best.health, 80); best.takeHit(spec[0], pt); window.SS.lastDebugHit = { zone, got: best.lastHitZone || null }; return best; };
   // A5 tester: H / HURT = -30 HP through the normal damage path (vignette, regen delay), never below 5 (no debug deaths)
-  window.SS.debugHurt = () => { const pl = window.SS.player; if (!pl || !pl.alive) return null; const n = Math.max(0, Math.min(30, pl.health - 5)); if (n > 0) pl.damage(n); return pl.health; };
+  window.SS.debugHurt = () => { const pl = window.SS.player; if (!pl || !pl.alive) return null; const n = Math.max(0, Math.min(30, pl.health - 5)); if (n > 0) pl.damage(n, null, 'debug'); return pl.health; };
   window.SS.debugMoveNearest = () => { const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9;
     for (const e of L) { if (!e.alive || e.dying) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }
     const r = best && window.SS.enemies.debugMove ? window.SS.enemies.debugMove(best) : null; window.SS.lastDebugMove = r; return r; };

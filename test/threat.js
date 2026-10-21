@@ -8,7 +8,7 @@ const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', 
 const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(PORT);
 const QS = process.env.SS_QS || '&q=low', RUNS = +(process.env.SS_RUNS || 2), MIN = +(process.env.SS_MIN_SHOTS || 4), FIGHT_S = 30;
-(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 900000 });
+(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 1500000 });
   const fail = [], res = [];
   for (let run = 0; run < RUNS; run++) {
     const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }), p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e).slice(0, 160)));
@@ -21,9 +21,27 @@ const QS = process.env.SS_QS || '&q=low', RUNS = +(process.env.SS_RUNS || 2), MI
       const s0 = SS.simTime, shots0 = SS.enemyShots | 0, hits0 = hits; let th = null;
       let exp = 0, n = 0; while (SS.simTime - s0 < FIGHT_S && performance.now() - t0 < 600000) { const ph = (SS.simTime - s0) % 5; if (SS.input) SS.input.scope = ph < 3; /* a player who aims out 3 s of every 5 (scope pops out of cover), ducked the rest */ th = SS.threat || th; n++; if (SS.input && !SS.input.cover) exp++; await new Promise((ok) => setTimeout(ok, 200)); }
       if (SS.input) SS.input.scope = false;
-      const g = SS.simTime - s0; return { firstDmgS: first == null ? null : +(first - s0).toFixed(1), gameS: +g.toFixed(1), shotsPer10: +(((SS.enemyShots | 0) - shots0) / g * 10).toFixed(1), hits: hits - hits0, nearMisses: near, exposedFrac: +(exp / Math.max(1, n)).toFixed(2), threat: th }; }, FIGHT_S);
+      const g = SS.simTime - s0;
+      // A6 phase 2 (ducked, 20 game-s): incoming fire must still be felt in cover (near misses at the cover line / overhead,
+      // impacts on the lip or the wall behind). Phase 3 (25 game-s, still ducked, wave alive): no top-up; HP set to 40 via
+      // the debug hurt path must regenerate mid-fight, and EVERY HP drop (polled) must come with a hitLog cue entry.
+      pl.damage = orig; const c0 = SS.coverNearMisses | 0, i0 = SS.coverImpacts | 0, sh2 = SS.enemyShots | 0, s2 = SS.simTime; let duckN = 0, duckK = 0;
+      while (SS.simTime - s2 < 20 && performance.now() - t0 < 800000 && pl.alive) { if (SS.input) SS.input.scope = false; duckN++; if (SS.input && SS.input.cover) duckK++; await new Promise((ok) => setTimeout(ok, 200)); }
+      const g2 = Math.max(0.1, SS.simTime - s2);
+      const duck = { gameS: +g2.toFixed(1), shots: (SS.enemyShots | 0) - sh2, nearPer10: +(((SS.coverNearMisses | 0) - c0) / g2 * 10).toFixed(2), impacts: (SS.coverImpacts | 0) - i0, duckedFrac: +(duckK / Math.max(1, duckN)).toFixed(2), mix: SS.coverMiss || null };
+      while (pl.health > 45 && pl.alive) SS.debugHurt(); if (pl.health < 40 && pl.alive) pl.health = 40; else if (pl.alive) { pl.damage(pl.health - 40, null, 'test'); }
+      const s3 = SS.simTime, r0 = SS.fightRegen || 0; let lastHp = pl.health, lastLog = (SS.hitLog || []).length, silent = 0, drops = 0, minAlive = 99;
+      while (SS.simTime - s3 < 25 && performance.now() - t0 < 1000000 && pl.alive) { if (SS.input) SS.input.scope = false;
+        const L = (SS.hitLog || []).length, hp = pl.health; if (hp < lastHp - 0.01) { drops++; if (L === lastLog) silent++; } lastHp = hp; lastLog = L;
+        minAlive = Math.min(minAlive, SS.enemies && SS.enemies.list ? SS.enemies.list.filter((e) => e.alive).length : 99); await new Promise((ok) => setTimeout(ok, 100)); }
+      const badCues = (SS.hitLog || []).filter((h) => !(h.cues && h.cues.flash && h.cues.dir && h.cues.flinch && h.cues.sound)).length;
+      const regen = { gameS: +(SS.simTime - s3).toFixed(1), fightRegen: +((SS.fightRegen || 0) - r0).toFixed(1), hp: +pl.health.toFixed(1), drops, silent, badCues, enemiesAliveMin: minAlive, alive: pl.alive };
+      return { duck, regen, firstDmgS: first == null ? null : +(first - s0).toFixed(1), gameS: +g.toFixed(1), shotsPer10: +(((SS.enemyShots | 0) - shots0) / g * 10).toFixed(1), hits: hits - hits0, nearMisses: near, exposedFrac: +(exp / Math.max(1, n)).toFixed(2), threat: th }; }, FIGHT_S);
     r.run = run; r.errs = errs; res.push(r); console.log(JSON.stringify(r)); await ctx.close();
     if (r.firstDmgS == null || r.firstDmgS > 20) fail.push('run ' + run + ': first damage ' + r.firstDmgS + ' game-s'); if (r.shotsPer10 < MIN) fail.push('run ' + run + ': ' + r.shotsPer10 + ' shots / 10 s');
-    if (!r.nearMisses) fail.push('run ' + run + ': no near misses'); if (errs.length) fail.push('run ' + run + ' errors ' + errs.join(' | '));
+    if (!r.nearMisses) fail.push('run ' + run + ': no near misses');
+    if (r.duck.shots > 0 && !(r.duck.nearPer10 > 0)) fail.push('run ' + run + ': ducked, ' + r.duck.shots + ' rounds fired but no near misses');
+    if (r.regen.alive && !(r.regen.fightRegen > 0)) fail.push('run ' + run + ': no mid-wave regen (' + JSON.stringify(r.regen) + ')');
+    if (r.regen.silent || r.regen.badCues) fail.push('run ' + run + ': HP drops without a cue (silent ' + r.regen.silent + ', bad cues ' + r.regen.badCues + ')'); if (errs.length) fail.push('run ' + run + ' errors ' + errs.join(' | '));
   }
   await b.close(); srv.close(); console.log(fail.length ? 'THREAT FAIL ' + fail.join(' ; ') : 'THREAT PASS'); process.exit(fail.length ? 1 : 0); })();

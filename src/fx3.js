@@ -8,6 +8,7 @@ const POS_CAP = 0.06;
 const KIND = {
   shot:   { decay: 12, pitch: 0.25 * DEG, yaw: 0.05 * DEG, roll: 0.03 * DEG, x: 0, y: 0, up: true },
   impact: { decay: 9,  pitch: 0.28 * DEG, yaw: 0.28 * DEG, roll: 0.10 * DEG, x: 0.008, y: 0.008, up: false },
+  hit:    { decay: 7,  pitch: 1.10 * DEG, yaw: 0.70 * DEG, roll: 0.60 * DEG, x: 0.012, y: 0.012, up: true }, // A6: flinch on every hit taken
   blast:  { decay: 4,  pitch: 1.80 * DEG, yaw: 1.40 * DEG, roll: 1.00 * DEG, x: 0.0283, y: 0.0283, up: false },
 };
 const W1 = [11.3, 17.6, 13.1, 9.7, 19.4];
@@ -39,11 +40,12 @@ function puffTex() {
   const c = document.createElement('canvas');
   c.width = c.height = 32;
   const g = c.getContext('2d');
-  const rg = g.createRadialGradient(16, 16, 0, 16, 16, 16);
-  rg.addColorStop(0, 'rgba(255,255,255,0.95)');
-  rg.addColorStop(0.4, 'rgba(255,255,255,0.4)');
-  rg.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = rg; g.fillRect(0, 0, 32, 32);
+  // A6 tester: puffs read faint and the 10-20 cm chips not at all (alpha 0.4 at 40% radius left a ~6 cm dot of a 15 cm
+  // chip). Dense core out to ~55% radius, then a soft edge; a few offset lobes so big puffs are not perfect discs.
+  const blob = (x, y, r, a) => { const rg = g.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, 'rgba(255,255,255,' + a + ')'); rg.addColorStop(0.55, 'rgba(255,255,255,' + (a * 0.85) + ')');
+    rg.addColorStop(0.8, 'rgba(255,255,255,' + (a * 0.35) + ')'); rg.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = rg; g.fillRect(0, 0, 32, 32); };
+  blob(16, 16, 15, 1); blob(12, 13, 8, 0.5); blob(20, 18, 8, 0.5);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   softRound = t;
@@ -186,17 +188,22 @@ export function createFx3({ camera, audio, scene }) {
   }
   function impact(point, normal, surface) {
     if (!point || poolCap() <= 0) return;
-    const dustN = take(6);
-    const debN = take(5);
     const wall = normal && Math.abs(normal.y || 0) < 0.5;
-    const cloudN = wall ? take(1) : 0;
+    const dustN = take(wall ? 4 : 6);
+    const debN = take(5);
+    const cloudN = wall ? take(3) : 0;
     if (!dustN && !debN && !cloudN) return;
     const col = plasterish(surface) ? 0xd8cfc0 : 0xc9b38a;
     if (dustN) dust(point, normal, dustN, col);
     if (debN) debris(point, normal, debN);
-    if (cloudN) { // wall hit: one big slow cloud that hangs on the facade and sinks (not just a spark)
+    if (cloudN) { // wall hit: a dense, darker cloud (3 stacked billboards, ~1-1.5 m, ~1.5 s) that hangs on the facade (A6: read faint at 10-12 m)
       const d = nrm(normal);
-      emit(vv.set(point.x + d.x * 0.15, point.y, point.z + d.z * 0.15), d.x * 0.35, 0.05, d.z * 0.35, 1.3 + Math.random() * 0.3, 0.6, 1.9, -0.15, sandCol(col));
+      for (let i = 0; i < cloudN; i++) {
+        const c = sandCol(col); c.multiplyScalar(0.72 + 0.1 * i);
+        emit(vv.set(point.x + d.x * (0.15 + 0.1 * i) + (Math.random() - 0.5) * 0.25, point.y + (Math.random() - 0.5) * 0.25, point.z + d.z * (0.15 + 0.1 * i) + (Math.random() - 0.5) * 0.25),
+          d.x * 0.3, 0.06, d.z * 0.3, 1.5 + Math.random() * 0.25, 0.8, 1.5, -0.12, c);
+      }
+      if (typeof window !== 'undefined' && window.SS) window.SS.wallPuffs = (window.SS.wallPuffs | 0) + 1;
       publish();
     }
   }
@@ -535,8 +542,12 @@ const SKY_N = 12, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.15
   function nearMiss(point, dir) {
     let dx = 0, dy = 0, dz = 0;
     if (dir) { dx = +dir.x || 0; dy = +dir.y || 0; dz = +dir.z || 0; }
-    kick('impact', 0.6);
-    if (audio && typeof audio.whizz === 'function') audio.whizz(point);
+    const inCover = typeof window !== 'undefined' && window.SS && window.SS.input && window.SS.input.cover;
+    kick('impact', inCover ? 1.6 : 1.1); // A6: 0.6 (~0.17 deg) was not felt; still well under the blast shake
+    // A6: there never was an audio.whizz, so near misses were silent and unlogged; use the supersonic crack (+ whizz sweep)
+    if (audio && typeof audio.whizz === 'function') audio.whizz(point); else if (audio && typeof audio.crack === 'function' && point) audio.crack(point);
+    if (audio && typeof audio.log === 'function') audio.log('near miss', (typeof window !== 'undefined' && window.SS && window.SS.input && window.SS.input.cover) ? 'in cover' : '');
+    if (typeof window !== 'undefined' && window.SS) { window.SS.nearMisses = (window.SS.nearMisses | 0) + 1; if (window.SS.input && window.SS.input.cover) window.SS.coverNearMisses = (window.SS.coverNearMisses | 0) + 1; }
     if (!point || poolCap() <= 0) return;
     const n = take(6);
     if (!n) return;

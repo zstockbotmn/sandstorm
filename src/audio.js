@@ -10,7 +10,7 @@ function alog(kind, detail) {
   else { L.push({ t, kind, detail: detail || '', n: 1 }); if (L.length > 30) L.shift(); }
   if (!ALOG_ON || typeof document === 'undefined') return;
   if (!alogEl) { alogEl = document.createElement('div'); alogEl.id = 'dbg-audiolog';
-    alogEl.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:31;pointer-events:none;font:11px/1.35 monospace;color:#ffe9b0;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;white-space:pre;max-width:46vw';
+    alogEl.style.cssText = 'position:fixed;left:calc(14px + env(safe-area-inset-left));top:calc(96px + env(safe-area-inset-top));z-index:31;pointer-events:none;font:11px/1.35 monospace;color:#ffe9b0;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;white-space:pre;max-width:46vw';
     document.body.appendChild(alogEl); }
   alogEl.textContent = 'SOUND\n' + L.slice(-6).map((e) => e.t.toFixed(1) + 's ' + e.kind + (e.detail ? ' ' + e.detail : '') + (e.n > 1 ? ' x' + e.n : '')).join('\n');
 }
@@ -236,6 +236,15 @@ export function createAudio() {
     if (!ctx) return;
     tone(1800, 0.04, 0.12, 'square');
     tone(95, 0.11, 0.32, 'sine'); burst(0.05, 0.3, 380, 0.8, 'lowpass'); // m1w: body-hit thud under the tick
+  }
+
+  // A6: every hit on the player has its own sound event: a dull body thump + a short ring, panned toward the shooter
+  function hurt(pos, dmg) {
+    alog('hit taken', '-' + Math.round(dmg || 0) + ' hp');
+    if (window.SS) window.SS.hurtSounds = (window.SS.hurtSounds | 0) + 1;
+    if (!ctx) return;
+    const p = panNode(pos ? bearing(pos) : 0); p.connect(master);
+    tone(70, 0.22, 0.55, 'sine', p); burst(0.14, 0.6, 260, 0.9, 'lowpass', p); tone(3400, 0.35, 0.05, 'sine', p);
   }
 
   function kill() { // kill confirm: low thump + bright ding
@@ -597,5 +606,5 @@ export function createAudio() {
     }
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State };
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
 }
