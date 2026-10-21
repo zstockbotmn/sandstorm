@@ -25,7 +25,7 @@ const QS = process.env.SS_QS || '';
     window.__post = () => { const now = performance.now();
       for (const e of window.__E) { if (!e.alive || !e.bones) continue; R.hooks = R.hooks || ('peekKind' in e && 'peekHigh' in e && 'lastPeekKind' in e && 'settleT' in e);
         const s = st.get(e) || { k: 0, t05: null, full: null, shots: e.shotsTaken | 0, cur: null, lastKind: null }; const k = +e.peekT || 0;
-        if (s.k <= 0.05 && k > 0.05) { s.t05 = now; s.full = null; s.firstGap = null; s.cur = { kind: e.peekKind, high: e.peekHigh, type: e.anchor && e.anchor.type };
+        if (s.k <= 0.05 && k > 0.05) { if (s.anchor !== e.anchor) { s.anchor = e.anchor; s.lastKind = null; } /* 'no same spot twice' is per cover: a new cover after a reposition starts fresh */ s.t05 = now; s.full = null; s.firstGap = null; s.cur = { kind: e.peekKind, high: e.peekHigh, type: e.anchor && e.anchor.type };
           const multi = s.cur.type === 'wall' || s.cur.type === 'door' || s.cur.type === 'alley' || s.cur.type === 'car' || s.cur.type === 'barrel';
           if (multi && s.lastKind && s.cur.kind) { R.multi++; if (s.cur.kind === s.lastKind) R.repeats++; }
           if (s.cur.type === 'car' && s.cur.kind === 'over' && s.cur.high === false) R.carCrouch++; s.lastKind = s.cur.kind || s.lastKind; }
