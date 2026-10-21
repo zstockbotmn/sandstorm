@@ -206,7 +206,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const hitZones = HITS2 ? { armL: 0, armR: 0, legL: 0, legR: 0, torso: 0 } : null;
   const api = { list, update };
   // Test hook: pin an enemy at (x, z) facing the camera in a posture, AI frozen (stagger), for hit-registration tests.
-  api.debugPose = (e, x, z, posture) => { e.pinned = true; e.group.position.set(x, 0, z); e.staggerT = 1e9; e.moving = false; e.exposed = true; e.posture = posture || 'idle'; e.phase = 'peek'; e.turned = false;
+  api.debugPose = (e, x, z, posture) => { e.pinned = true; e.group.position.set(x, 0, z); /* drop the cover side-step of the fighter's real cover (it crept posed fighters ~0.25 m on High) */ if (e._stepVec) { e._stepVec.x = 0; e._stepVec.z = 0; } e._sideStep = false; e._stepDist = 0; e._peekArm = false; e.staggerT = 1e9; e.moving = false; e.exposed = true; e.posture = posture || 'idle'; e.phase = 'peek'; e.turned = false;
   api.playerSees = (e) => playerSees(e);
     turnTo(e, camera.position.x, camera.position.z, 100); e.shootCd = 1e9; return e; };
 
@@ -804,7 +804,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     const corner = type === 'wall' || type === 'door' || type === 'alley';
     const lowC = type === 'car' || type === 'barrel';
-    const stepOk = q === 'high' && !farOff && (corner || lowC);
+    // only at the cover it belongs to: a fighter away from its stand spot (posed, warped, or en route) would glide over a cover that isn't there
+    const sv = enemy._stepVec, gp0 = enemy.group.position, an = enemy.anchor, ap = an && an.pos;
+    const atCover = !ap || Math.hypot(gp0.x - (sv ? sv.x : 0) - ap.x, gp0.z - (sv ? sv.z : 0) - ap.z) < (EDGE[an.type] || 0) + (FAR[an.type] || 0) + 1.5;
+    const stepOk = q === 'high' && !farOff && (corner || lowC) && atCover;
     enemy._sideStep = !!(stepOk && enemy._peekArm && enemy._stepDist > 0 && enemy._peekPh > 0.001 && !enemy.pinned);
     tickFidget(enemy, dt);
   }
