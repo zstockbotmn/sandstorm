@@ -182,21 +182,25 @@ export function createHud() {
   }
   // keep at most 2 lines; a priority (radio-warn) line is never the one evicted
   function evict() { while (radioLines.length > 2) { const i = radioLines.findIndex((l) => !l.classList.contains('radio-warn')); const l = radioLines.splice(i >= 0 ? i : 0, 1)[0]; l.remove(); } }
-  function callout(text) {
+  // pA (0.6 fps): normal callouts faded by CSS in 2 s, so 'Moving!' was gone before a second frame was drawn, and a repeat
+  // was dropped as 'same line twice'. Now each line is held by JS for >= 2.5 s real AND >= 3 rendered frames, then fades;
+  // movement calls (important) skip the 4 s throttle, and a line may repeat once 8 s have passed.
+  const CALL_MIN_MS = 2500, CALL_MIN_FRAMES = 3, callSeen = {};
+  function callout(text, important) {
     const now = performance.now();
-    if (now < radioNext || text === radioLast) return; // max one line per 4 s, never the same line twice in a row
-    radioNext = now + 4000; radioLast = text;
+    if (!important && now < radioNext) return; // max one line per 4 s
+    if (text === radioLast && now - (callSeen[text] || -1e9) < 8000) return; // never the same line twice in a row (8 s)
+    radioNext = now + 4000; radioLast = text; callSeen[text] = now;
     const line = document.createElement('div');
-    line.className = 'radio-line';
+    line.className = 'radio-line radio-held';
     line.textContent = '[RADIO] ' + text;
     radioStack.appendChild(line);
     radioLines.push(line);
     evict();
-    setTimeout(() => {
-      line.remove();
-      const i = radioLines.indexOf(line);
-      if (i >= 0) radioLines.splice(i, 1);
-    }, 2000);
+    const f0 = (window.SS && window.SS.frameN) | 0; hud.lastCallout = { text, t: now, frame: f0 };
+    const done = () => { line.remove(); const i = radioLines.indexOf(line); if (i >= 0) radioLines.splice(i, 1); };
+    const check = () => { if (!line.isConnected) return; if (performance.now() - now >= CALL_MIN_MS && (((window.SS && window.SS.frameN) | 0) - f0) >= CALL_MIN_FRAMES) { line.classList.add('fade'); setTimeout(done, 900); } else setTimeout(check, 250); };
+    setTimeout(check, 250);
   }
 
   const multEl = document.createElement('div'); multEl.id = 'mult'; root.appendChild(multEl);

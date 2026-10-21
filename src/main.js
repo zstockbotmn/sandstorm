@@ -464,6 +464,19 @@ try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { con
     const fps = n / t; window.SS.benchFps = Math.round(fps * 10) / 10; n = t = 0; if (window.SS.quality === 'low') { if (fps < 10) goUltra('fps<10'); } else if (fps < 20) goLow('fps<20'); }; }
 
 // ?debug readout: fps, quality (+ why auto-Low fired), renderer string.
+// Debug-only kill helper (?debug or automation): K, or the small KILL button, kills the nearest live enemy with a normal head
+// hit (same hitEnemy path as a real round: marker, score, kill fall). Tester: 0.7 fps taps never landed, so the last-enemy case
+// could not be reached.
+if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
+  window.SS.debugKillNearest = () => { const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9;
+    for (const e of L) { if (!e.alive || e.dying) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }
+    if (!best) return null; const hp = best.bones && best.bones.Head ? best.bones.Head.getWorldPosition(new THREE.Vector3()) : best.group.position.clone().setY(1.6);
+    best.health = Math.min(best.health, 1); best.takeHit('head', hp); return best; };
+  window.addEventListener('keydown', (e) => { if ((e.key === 'k' || e.key === 'K') && window.SS.running) window.SS.debugKillNearest(); });
+  if (/[?&]debug\b/.test(location.search)) { const kb = document.createElement('button'); kb.id = 'dbg-kill'; kb.textContent = 'KILL';
+    kb.style.cssText = 'position:fixed;right:8px;top:64px;z-index:30;font:600 11px monospace;color:#fff;background:rgba(160,30,30,.8);border:0;border-radius:4px;padding:4px 8px';
+    kb.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (window.SS.running) window.SS.debugKillNearest(); }); document.body.appendChild(kb); }
+}
 if (/[?&]debug\b/.test(location.search)) {
   const el = document.createElement('div'); el.id = 'dbg-fps';
   el.style.cssText = 'position:fixed;left:6px;bottom:22px;z-index:20;font:11px monospace;color:#fff;background:rgba(0,0,0,.55);padding:2px 5px;pointer-events:none;max-width:60vw;white-space:nowrap;overflow:hidden';

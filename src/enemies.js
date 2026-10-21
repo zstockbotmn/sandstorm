@@ -217,6 +217,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // m1x pacing preview (App PM): a run opens with a quiet walk; distant gunfire swells from APPROACH_S, a TEXT radio
   // warning shows RADIO_WARN_S before contact, first contact no earlier than FIRST_CONTACT_S of run time (and FIRST_WAVE_AT m).
   // Tunable: ?contact=<s> (debug/test builds only) overrides FIRST_CONTACT_S.
+  // Debug-only (?debug or automation): ?enemies=1 -> every wave is a single fighter (tester: reach the last-enemy case at 0.7 fps).
+  const WAVE_ONE = (() => { try { return /[?&]enemies=1\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (_) { return false; } })();
   const FIRST_CONTACT_S = (() => { try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) return +m[1]; } catch (_) {} return 11; })(); // App PM (bundle): the opening walk was 24 s, Zack found it long
   const RADIO_WARN_S = 5, APPROACH_S = 3; // build-up from ~3 s, radio at ~6 s (11 - 5); the radio line still holds >= 6 s real / 5 frames, so at low fps it may overlap contact
   let quietRunT = 0, quietRealAt = 0, radioWarned = false;
@@ -2039,7 +2041,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function squadCall(text) {
     const hud = window.SS && window.SS.hud;
-    if (hud && typeof hud.callout === 'function') hud.callout(text);
+    if (hud && typeof hud.callout === 'function') hud.callout(text, /Moving|moving up|Flanking|Grenade/.test(text));
   }
 
   // Step B: most enemies 10-20 m away (closer, readable fights); ~20% further (22-40 m), e.g. rooftop shooters.
@@ -2065,7 +2067,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Cover-slot reservation + spacing (tester p1b: two fighters 30 px apart on one barrier, the other cover empty).
   // A spot is taken when another live fighter's anchor (its reserved slot, set as soon as it picks it), its stand spot,
   // or where it actually is (a car/barrel hide sits 0.75-2.75 m behind the anchor) is within COVER_GAP of it.
-  const COVER_GAP2 = 1.8 * 1.8;
+  const COVER_GAP2 = 3 * 3; // pA: 1.8 m still let two fighters sit at adjacent barriers 2-3 m apart
   function occupiedBy(pos, self) {
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
@@ -2085,7 +2087,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (let i = 0; i < list.length; i++) {
       const e = list[i]; if (!e.alive || e === self) continue;
       const a = (e.anchor && e.anchor.pos) || e.group.position;
-      if ((a.x - pos.x) ** 2 + (a.z - pos.z) ** 2 < 16) n++;
+      const d2 = (a.x - pos.x) ** 2 + (a.z - pos.z) ** 2;
+      if (d2 < 36) n += d2 < 16 ? 2 : 1; // within 4 m counts double, 4-6 m once
     }
     return n;
   }
@@ -2106,9 +2109,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!pool.length) pool = coverPool(null);
     if (!pool.length) return null;
     let pick = pool[(Math.random() * pool.length) | 0];
+    let bestCrowd = 1e9; // pA: spread out - of 6 free tries keep the least crowded (first free one wins ties)
     for (let n = 0; n < 6; n++) {
       const tryP = pool[(Math.random() * pool.length) | 0];
-      if (!occupiedBy(tryP.pos, null)) { pick = tryP; break; }
+      if (occupiedBy(tryP.pos, null)) continue;
+      const cr = crowdAt(tryP.pos, null); if (cr < bestCrowd) { bestCrowd = cr; pick = tryP; } if (cr === 0) break;
     }
     if (occupiedBy(pick.pos, null)) return null;
     const enemy = buildEnemy(roll, pick);
@@ -2361,7 +2366,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const d = p.pos.distanceToSquared(enemy.home);
       if (d < 1.2 || d > 81) continue;
       if (occupiedBy(p.pos, enemy)) continue;
-      const dS = d + 12 * crowdAt(p.pos, enemy); // nearest, but away from the others
+      const dS = d + 30 * crowdAt(p.pos, enemy); // nearest, but away from the others
       if (dS < bestD) { bestD = dS; best = p; }
     }
     if (!best) {
@@ -2428,7 +2433,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
           const los = clearToEye(_losP);
           if (needLos && !los) { rej.los++; continue; }
           const dist = Math.sqrt(d2);
-          const score = Math.abs(dist - 12) + 0.3 * Math.abs(c.pos.x) + 6 * crowdAt(c.pos, e) + (los ? 0 : 8);
+          const score = Math.abs(dist - 12) + 0.3 * Math.abs(c.pos.x) + 10 * crowdAt(c.pos, e) + (los ? 0 : 8);
           if (score < bestS) { bestS = score; best = c; }
         }
       } finally { e.anchor = a0; e.home = h0; }
@@ -2786,6 +2791,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         // Tester: 2-3 enemies per wave; the last one of a 3-wave (or 1 in 2 of 2-waves) is a visible flanker.
         // Step D: escalating waves (2, 2, 3, 3, then 3-4) + a reinforcement truck (+2) every 4th wave.
         burstCap = burstIndex <= 2 ? 2 : burstIndex <= 4 ? 3 : (Math.random() < 0.5 ? 4 : 3);
+        if (WAVE_ONE) burstCap = 1;
         waveOpen = true; waveSpawned = 0; waveTotal = burstCap + (burstIndex >= 4 && burstIndex % 4 === 0 ? 2 : 0); if (window.SS) window.SS.waveTotal = waveTotal;
         if (burstIndex >= 4 && burstIndex % 4 === 0) startTruck();
         burstSpawned = 0; roofWave = Math.random() < 0.5;
