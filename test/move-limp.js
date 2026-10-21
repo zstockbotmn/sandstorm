@@ -17,7 +17,7 @@ const QS = process.env.SS_QS || '&q=low&test=fast';
     await p.waitForFunction(() => (SS.enemies.list || []).some((e) => e.alive && !e.dying && e.anchor && e.group.position.y < 0.05 && e.phase !== 'relocate' && e.phase !== 'approach'), null, { timeout: 120000, polling: 250 });
     res = await p.evaluate(async () => { const c = SS.camera.position; let e = null, bd = 1e9; for (const q of SS.enemies.list) { if (!q.alive || q.dying) continue; const d = q.group.position.distanceTo(c); if (d < bd) { bd = d; e = q; } }
       e.health = 1e9; e.shootCd = 1e9; SS.debugHitNearest('legL'); const hit = { zone: e.lastHitZone, limp: e.limp, side: e._limpSide };
-      await new Promise((r) => setTimeout(r, 1500)); const mv = SS.debugMoveNearest(); if (!mv) return { hit, mv: null };
+      await new Promise((r) => setTimeout(r, 1500)); /* the lasting wound (limp) lands once the hit reaction ends */ Object.assign(hit, { limp: e.limp, side: e._limpSide }); const mv = SS.debugMoveNearest(); if (!mv) return { hit, mv: null };
       const start = e.group.position.clone(), home = e.home.clone(); let prev = start.clone(), maxStep = 0, maxDip = 0, limpLost = 0, frames = 0, moved = 0, phases = new Set(), tp = 0; const t0 = performance.now();
       while (performance.now() - t0 < 12000) { await new Promise((r) => requestAnimationFrame(r)); frames++; const g = e.group.position, dt = Math.min(0.2, SS.lastSimDt || 0.05);
         const st = Math.hypot(g.x - prev.x, g.z - prev.z); maxStep = Math.max(maxStep, st); if (st > 8 * Math.max(dt, 0.2) + 0.05) tp++; prev.copy(g);

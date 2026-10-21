@@ -26,12 +26,12 @@ const QS = process.env.SS_QS || '', KIND = process.env.SS_KIND || 'cart', RUNS =
       Object.assign(e, { pinned: false, staggerT: 0, debugHold: true, health: 1, phase: 'hide', engaged: true, shootCd: 1e9 });
       await new Promise((ok) => setTimeout(ok, 1000)); if (!e.alive) return { skipped: 'fighter gone' };
       SS.lastDoll = null; SS.debugKillNearest(); const rows = [], t0 = performance.now();
-      while (performance.now() - t0 < 2500) { await new Promise((ok) => requestAnimationFrame(ok)); const d = SS.lastDoll, hp = e.bones.Hips.getWorldPosition(new THREE.Vector3());
+      while (performance.now() - t0 < 5000) /* kill-cover samples 5 s: the 2.5 s trace missed late dips */ { await new Promise((ok) => requestAnimationFrame(ok)); const d = SS.lastDoll, hp = e.bones.Hips.getWorldPosition(new THREE.Vector3());
         const pv = d && d.parts && d.parts.find((q) => q.name === 'pelvis'); const rl = d && d.skin && d.skin.links && d.skin.links.find((l) => l.root);
         const model = d && d.skin && d.skin.model; const pt = pv && pv.rb ? pv.rb.translation() : null;
         rows.push({ ms: Math.round(performance.now() - t0), ph: !d ? 'pre' : (d.blendW < 1 ? 'blend' : 'rag'), hipY: +hp.y.toFixed(3), rbY: pt && +pt.y.toFixed(3), bodyY: pv && +pv.body.position.y.toFixed(3),
           gap: pv ? +hp.distanceTo(new THREE.Vector3(pv.body.position.x, pv.body.position.y, pv.body.position.z)).toFixed(3) : null, offP: rl ? +rl.offP.length().toFixed(3) : null,
           w: d && +(d.blendW || 0).toFixed(2), modelY: model && +model.position.y.toFixed(3), artRootY: e.art && +e.art.root.position.y.toFixed(3), pushed: d && +(d.pushedOut || 0).toFixed(2), settled: d && d.settled, simDt: SS.lastSimDt && +SS.lastSimDt.toFixed(3) }); }
-      return { kind: KIND, minHip: Math.min(...rows.map((r) => r.hipY)), rows }; }, KIND);
+      const mi = rows.reduce((m, r, i) => (r.hipY < rows[m].hipY ? i : m), 0); return { kind: KIND, minHip: rows[mi].hipY, minAt: rows[mi].ms, around: rows.slice(Math.max(0, mi - 6), mi + 4), low: rows.filter((r) => r.hipY < 0.1).length, rows: rows.filter((r, i) => i % 8 === 0) }; }, KIND);
     console.log(JSON.stringify(out)); }
   await b.close(); srv.close(); process.exit(0); })();
