@@ -25,7 +25,7 @@ async function boot(b, url) { const ctx = await b.newContext({ viewport: { width
         const phases = [];
         for (const force of order) { SS.pressForce = force; await sleep(300); const ph = { force, pPub: SS.pressureP };
           // exposed: scoped (pops out of cover), looking at the nearest live fighter; every hit is recorded, then HP topped up
-          let hits = [], first = null; pl.damage = function (a, from, src) { if (src === 'gun' || src === 'flank') hits.push(+(+a).toFixed(2)); /* set-piece blasts (rpg/truck/grenade) are not 'pressure' */ if (first == null && (src === 'gun' || src === 'flank')) first = SS.simTime; orig.call(this, a, from, src); pl.health = 100; };
+          let hits = [], first = null; pl.damage = function (a, from, src) { if (src === 'gun' || src === 'flank') hits.push(+((+a) / (((SS.waveClears | 0) === 0 && SS.simTime < 40) ? 0.6 : 1)).toFixed(2)); /* A11: undo the wave-1 opening softening (WAVE1_DAMAGE 0.6 for 40 s) so phases compare like for like */ /* set-piece blasts (rpg/truck/grenade) are not 'pressure' */ if (first == null && (src === 'gun' || src === 'flank')) first = SS.simTime; orig.call(this, a, from, src); pl.health = 100; };
           let s0 = SS.simTime, sh0 = SS.enemyShots | 0; while (SS.simTime - s0 < PH_S && pl.alive && performance.now() - t0 < 1500000) { SS.input.scope = true; const e = nearest();
             if (e) { const c = SS.camera.position, dx = e.group.position.x - c.x, dz = e.group.position.z - c.z; SS.input.yaw = Math.atan2(dx, -dz); SS.input.pitch = -Math.atan2(e.group.position.y + 1.3 - c.y, Math.hypot(dx, dz)); }
             if ((SS.engaged | 0) === 0 && SS.enemies.list.every((x) => !x.alive)) break; await sleep(120); }
