@@ -50,3 +50,8 @@ Open: strafe coverage at 26 m (78% vs 90%), crouch-head hit-volume trim (10-14 c
 ## Step 5 (set piece / pacing) note from tester A4
 - The quiet rail between waves has little to do. Give it texture without losing the calm: distant skyline fights (3d),
   radio chatter, civilians/dogs crossing far ahead, a pickup or a look-around moment, a scripted vehicle pass; no combat.
+
+## Step 4c follow-ups (2026-10-21)
+- 4c rooms exist only on procedural buildings (Low / Ultra-low off / ?bld=4p); art buildings on High need a cut or a separate room shell (follow-up).
+- Enemy use of rooms: a 'room' cover point is pushed inside each room but no AI type list uses it yet ('door' would trigger left/right peeks into the 0.3 m jambs). Follow-up: a 'room' behaviour (stand back in the shadow, fire through the doorway, no sidesteps).
+- Cost: ~22 meshes per room (addBox per piece), <= 1 room per segment at 35%; merge per material if the perf run shows it.

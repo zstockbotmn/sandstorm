@@ -127,6 +127,15 @@ export function createWorld(scene, seed) {
   // Shared by art colliders: not drawn, still raycastable (mesh.visible stays true).
   const matInvisible = new THREE.MeshBasicMaterial({ visible: false });
   if (/[?&]hitbox=2/.test(location.search)) Object.assign(matInvisible, { visible: true, wireframe: true, color: new THREE.Color(0xff8800) }); // world colliders too
+  const ROOM_DIM = [0.62, 0.5, 0.38], _roomMats = [];
+  function roomMat(i) {
+    if (_roomMats[i]) return _roomMats[i];
+    const m = matPlaster.clone();
+    m.color.multiplyScalar(ROOM_DIM[i]);
+    return (_roomMats[i] = m);
+  }
+  let _roomWood = null;
+  function roomWood() { return _roomWood || (_roomWood = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 0.9 })); }
   const BLDGS = [['bldg1', 0.3], ['bldg2', 0.3], ['bldg3', 0.2], ['bldg4', 0.2]];
   const ROOF_OK = { bldg1: 1, bldg2: 1, bldg3: 1 };
   // Poly Haven CC0 1k PBR (WebP) for building sides/backs/roofs and the background rows. World-scaled box UVs.
@@ -632,7 +641,7 @@ export function createWorld(scene, seed) {
     while (seg.group.children.length) { const ch = seg.group.children[0]; if (ch.userData.ownGeo && ch.geometry) ch.geometry.dispose(); seg.group.remove(ch); }
 
     const rng = mulberry32((seed ^ Math.imul(seg.gen + 1, 0x9e3779b1) ^ Math.imul(seg.id + 1, 0x85ebca6b)) >>> 0);
-    if (BLD4) { seg._wins = []; seg._artWinN = 0; seg._wrng = mulberry32((seed ^ Math.imul(seg.gen + 11, 0x2c1b3c6d) ^ Math.imul(seg.id + 5, 0x297a2d39)) >>> 0); } else seg._wins = null;
+    if (BLD4) { seg._wins = []; seg._artWinN = 0; seg._roomDone = false; seg._wrng = mulberry32((seed ^ Math.imul(seg.gen + 11, 0x2c1b3c6d) ^ Math.imul(seg.id + 5, 0x297a2d39)) >>> 0); } else seg._wins = null;
     const oz = seg.originZ;
 
     addBox(seg, matRoad, 0, -0.05, oz - SEG_LEN / 2, 10, 0.1, SEG_LEN, { cast: false });
@@ -701,6 +710,45 @@ export function createWorld(scene, seed) {
     }
   }
 
+  function addRoom(seg, side, cx, cz, depth, h, lot, facadeX, doorZ) {
+    const W = Math.min(3.6, lot - 2.4), RH = 3, L = lot - 0.35, z0 = cz - L / 2, z1 = cz + L / 2;
+    const zc = Math.max(z0 + W / 2 + 0.3, Math.min(z1 - W / 2 - 0.3, doorZ));
+    const X = (a) => facadeX + side * a, nc = { collide: false, cast: false };
+    addBox(seg, matPlaster, cx, (RH + h) / 2, cz, depth, h - RH, L);
+    if (depth - 3.8 >= 0.2) addBox(seg, matPlaster, X((3.8 + depth) / 2), RH / 2, cz, depth - 3.8, RH, L);
+    for (let s = 0; s < 2; s++) {
+      const za = s ? zc + W / 2 : z0, zb = s ? z1 : zc - W / 2;
+      if (zb - za >= 0.05) addBox(seg, matPlaster, X(1.9), RH / 2, (za + zb) / 2, 3.8, RH, zb - za);
+    }
+    const jw = W / 2 - 0.6;
+    if (jw >= 0.05) {
+      addBox(seg, matPlaster, X(0.15), RH / 2, zc - W / 4 - 0.3, 0.3, RH, jw);
+      addBox(seg, matPlaster, X(0.15), RH / 2, zc + W / 4 + 0.3, 0.3, RH, jw);
+    }
+    addBox(seg, matPlaster, X(0.15), (2.2 + RH) / 2, zc, 0.3, RH - 2.2, 1.2);
+    const iw = W - 0.06, id = 3.47;
+    addBox(seg, roomMat(0), X(2.035), 0.02, zc, id, 0.02, iw, nc);
+    addBox(seg, roomMat(1), X(2.035), RH - 0.02, zc, id, 0.02, iw, nc);
+    addBox(seg, roomMat(0), X(2.035), RH / 2, zc - W / 2 + 0.02, id, RH - 0.04, 0.02, nc);
+    addBox(seg, roomMat(0), X(2.035), RH / 2, zc + W / 2 - 0.02, id, RH - 0.04, 0.02, nc);
+    addBox(seg, roomMat(2), X(3.78), RH / 2, zc, 0.02, RH - 0.04, iw, nc);
+    const A = (70 + seg._wrng() * 30) * Math.PI / 180;
+    const leaf = addBox(seg, roomWood(), X(0.2) + side * 0.575 * Math.sin(A), 1.075, zc - 0.6 + 0.575 * Math.cos(A), 0.06, 2.15, 1.15, { collide: false });
+    leaf.rotation.y = side * A;
+    addBox(seg, roomWood(), X(2.2), 0.76, zc, 1.2, 0.06, 0.8);
+    addBox(seg, roomWood(), X(2.2), 0.38, zc, 0.9, 0.7, 0.5);
+    const nC = 2 + Math.floor(seg._wrng() * 2), cS = seg._wrng() < 0.5 ? -1 : 1;
+    for (let i = 0; i < nC; i++) addBox(seg, roomWood(), X(3.4), 0.3 + i * 0.6, zc + cS * (W / 2 - 0.4), 0.6, 0.6, 0.6);
+    addBox(seg, roomWood(), X(3.58), 0.9, zc, 0.35, 1.8, 1.6);
+    addBox(seg, matAwning, X(1.35), 0.03, zc, 1.6, 0.02, 1.0, { collide: false });
+    for (let i = 0, n = 3 + Math.floor(seg._wrng() * 3); i < n; i++) {
+      const rs = 0.15 + seg._wrng() * 0.2;
+      addBox(seg, matPlaster, X(0.9 + seg._wrng() * 1.8), rs / 2, zc - cS * (W / 2 - 0.45) + (seg._wrng() - 0.5) * 0.4, rs, rs, rs, nc);
+    }
+    seg.coverPoints.push({ pos: new THREE.Vector3(X(1.0), 1.2, zc + 0.9), type: 'room' });
+    if (typeof window !== 'undefined' && window.SS) window.SS.bld4rooms = (window.SS.bld4rooms | 0) + 1;
+  }
+
   function buildSide(seg, rng, side, oz) {
     const doors = [];
     let z = oz - 3;
@@ -735,14 +783,17 @@ export function createWorld(scene, seed) {
       const h = floors * 3.15;
       const cx = side * (6.2 + depth * 0.5);
       const cz = z - lot * 0.5;
-      addBox(seg, matPlaster, cx, h * 0.5, cz, depth, h, lot - 0.35);
+      const room = BLD4 && !ULTRA && seg.originZ < -30 && !seg._roomDone && lot >= 7 && depth >= 6 && seg._wrng() < 0.35;
+      if (room) seg._roomDone = true;
+      if (!room) addBox(seg, matPlaster, cx, h * 0.5, cz, depth, h, lot - 0.35);
       addBox(seg, matPlaster, cx, h + 0.28, cz, depth + 0.35, 0.55, lot, { collide: false });
       const facadeX = cx - side * (depth * 0.5);
       // Roof spot sits on the street-side parapet edge (not the roof centre, which put enemies inside the building).
       seg.coverPoints.push({ pos: new THREE.Vector3(facadeX + side * 0.45, h + 0.7, cz), type: 'roof' });
       const doorZ = cz + (rng() - 0.5) * lot * 0.3;
       doors.push(doorZ);
-      addBox(seg, matDark, facadeX - side * 0.12, 1.15, doorZ, 0.28, 2.3, 1.15);
+      if (room) addRoom(seg, side, cx, cz, depth, h, lot, facadeX, doorZ);
+      else addBox(seg, matDark, facadeX - side * 0.12, 1.15, doorZ, 0.28, 2.3, 1.15);
       seg.coverPoints.push({
         pos: new THREE.Vector3(facadeX - side * 0.4, 1.2, doorZ),
         type: 'door',
