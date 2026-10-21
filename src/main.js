@@ -410,13 +410,19 @@ document.getElementById('play').addEventListener('click', () => requestAnimation
 
 // Quality toggle on the start screen (saved in localStorage; applies on reload).
 { const b = document.getElementById('quality');
-  // Shows the tier in use (incl. an auto/saved Ultra-low) and cycles Ultra-low -> Low -> High; a pick sticks (no auto override).
+  // Shows the tier in use (incl. an auto/saved Ultra-low) and cycles Low -> High -> Ultra-low -> Low; a pick sticks (no auto override).
   if (b) { const cur = () => (window.SS.quality === 'ultra-low' ? 'ultra-low' : QUALITY === 'low' || window.SS.quality === 'low' ? 'low' : 'high');
-    const label = () => { const c = cur(); b.textContent = 'Quality: ' + (c === 'ultra-low' ? 'Ultra-low' : c === 'low' ? 'Low' : 'High') + (window.SS.autoLow && !PICKED ? ' (auto) - tap to change' : ' - tap to change'); };
+    const label = () => { const c = cur(); const nx = c === 'ultra-low' ? 'Low' : c === 'low' ? 'High' : 'Ultra-low'; b.textContent = 'Quality: ' + (c === 'ultra-low' ? 'Ultra-low' : c === 'low' ? 'Low' : 'High') + (window.SS.autoLow && !PICKED ? ' (auto)' : '') + ' - tap for ' + nx; };
     window.SS.qualityLabel = label; label();
     // m1t: act on pointerdown (laggy clicks needed repeats) and exactly once: a second press while the reload is pending
     // used to step the cycle again (High -> Ultra-low), which then looked like an auto fallback.
-    let picked = false; const pick = (ev) => { ev.stopPropagation(); if (ev.cancelable) ev.preventDefault(); if (picked) return; picked = true; const c = cur(); const next = c === 'ultra-low' ? 'low' : c === 'low' ? 'high' : 'ultra-low';
+    // A5 tester (High -> Ultra-low -> Low at 1-2 fps): taps queued during the reload landed on the NEW page and stepped again.
+    // Debounce: ignore taps < 600 ms after this page's button is up, and < 600 ms (wall clock) after the last pick across the
+    // reload. Order stays Low -> High -> Ultra-low -> Low (the label names the next tier).
+    const shownAt = performance.now(); let lastPick = 0; try { lastPick = +(sessionStorage.getItem('ssQPickAt') || 0); } catch (_) {}
+    let picked = false; const pick = (ev) => { ev.stopPropagation(); if (ev.cancelable) ev.preventDefault(); if (picked) return;
+      if (performance.now() - shownAt < 600 || Date.now() - lastPick < 600 + 1500 * (lastPick > 0 && performance.now() < 3000 ? 1 : 0)) { window.SS.qualityDebounced = (window.SS.qualityDebounced | 0) + 1; return; }
+      picked = true; try { sessionStorage.setItem('ssQPickAt', String(Date.now())); } catch (_) {} const c = cur(); const next = c === 'ultra-low' ? 'low' : c === 'low' ? 'high' : 'ultra-low';
       b.textContent = 'Quality: ' + (next === 'ultra-low' ? 'Ultra-low' : next === 'low' ? 'Low' : 'High') + ' - loading\u2026'; b.disabled = true; window.SS.qualityPicks = (window.SS.qualityPicks | 0) + 1; setQuality(next); };
     b.addEventListener('pointerdown', pick); b.addEventListener('click', pick); }
   window.SS.quality = QUALITY; }

@@ -165,7 +165,7 @@ export function createFx3({ camera, audio, scene }) {
     cc.setHex(0x5a4a3a);
     for (let i = 0; i < N; i++) {
       const spd = 2.2 + Math.random() * 1.6, r = () => (Math.random() * 2 - 1) * 0.6;
-      const sz = 0.07 + Math.random() * 0.07; // chunks: 7-14 cm (4-7 cm were sub-pixel at 15 m), bounce once on the street
+      const sz = 0.1 + Math.random() * 0.1; // chunks: 10-20 cm (4-7 cm were sub-pixel at 15 m; ~2-4 px at 25 m on Low), bounce on the street
       emit(point, (d.x + r()) * spd, (d.y + r()) * spd + 1.2, (d.z + r()) * spd, 0.8 + Math.random() * 0.4, sz, sz, -9.8, cc);
     }
     publish();

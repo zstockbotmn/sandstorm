@@ -1966,6 +1966,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // m1w item 7: engaged fights were too lethal (a lone fighter took the player 100% -> ~5% in ~20 s). Incoming gunfire
   // is capped at DMG_CAP_HPS hp per second (token bucket, accrues on the slower of real and game time, holds one full
   // hit). A hit the bucket cannot pay for becomes a near miss (tracer/crack still), so the lone-enemy kill takes >= ~30 s.
+  let fightSim0 = -1e9, lastShotSim = -1e9; // threat ramp clocks (game time)
   const LOW_HP_CHANCE = 0.3, LOW_HP_SLIVER = 6; // m1x: hit-chance floor once a hit would be lethal and the player is exposed
   const DMG_CAP_HPS = 2.8, DMG_CAP_BURST = 22; let dmgBucket = DMG_CAP_BURST, dmgBucketR = 0, dmgBucketSim = 0;
   function dmgBudget(nowS, simS) { if (dmgBucketR) dmgBucket = Math.min(DMG_CAP_BURST, dmgBucket + DMG_CAP_HPS * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
@@ -2021,6 +2022,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // m1y: at a sliver (< LOW_HP_SLIVER hp) a seen, exposed player's next hit lands with >= 0.6 chance; in game time the
     // fire cadence slows at ~1 fps (sim dt capped), so the old floor still left a ~20 s wall-clock sliver at 1 fps.
     if (lowHp && player.health < LOW_HP_SLIVER) chance = Math.max(chance, 0.6);
+    // A5 / App PM (enemies felt harmless: ~0.07 hit chance after the stacked early softeners, first damage ~40 game-s in):
+    // pressure grows with time NOT hit. A fight starts at the first enemy round after >= 15 game-s of quiet; from 5 game-s
+    // after that (or after the last hit) the hit chance floor climbs ~0.035 per game-s up to 0.45 (exposed) / 0.14 (ducked),
+    // so an exposed player is hit within ~10-18 game-s of a fight and keeps taking spaced hits. Damage per hit is unchanged
+    // (gentle: wave 1 x0.6, ~5 hits to die) and every sight / spacing / damage-cap gate still applies.
+    const tS = window.SS ? (window.SS.simTime || 0) : 0;
+    if (tS - lastShotSim > 15) fightSim0 = tS; lastShotSim = tS;
+    const dryS = tS - Math.max(fightSim0, lastPlayerHitSim != null ? lastPlayerHitSim : -99);
+    const ducked = !!(window.SS && window.SS.input && window.SS.input.cover);
+    if (dryS > 5) chance = Math.max(chance, Math.min(ducked ? 0.14 : 0.45, 0.06 + 0.035 * (dryS - 5)));
+    if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3) };
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap && simS - (lastPlayerHitSim || -99) >= gap; // spacing holds in BOTH real and game time
@@ -2038,9 +2050,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     _aim.copy(camera.position);
     if (!hit) {
       const sp = (HITS2 && enemy.spreadMul > 1) ? enemy.spreadMul : 1; // arm wound: this fighter's miss spread x2.5
-      _aim.x += (Math.random() - 0.5) * 2.4 * sp;
-      _aim.y += (Math.random() - 0.5) * 1.2 * sp;
-      _aim.z += (Math.random() - 0.5) * 2.4 * sp;
+      if (Math.random() < 0.5 && sp === 1) { // suppression (App PM): half the misses crack past 0.5-1.3 m off the head (near-miss dust/whizz/shake)
+        const a = Math.random() * Math.PI * 2, r = 0.5 + Math.random() * 0.8; _aim.x += Math.cos(a) * r; _aim.y += Math.sin(a) * r * 0.6; _aim.z += (Math.random() - 0.5) * 0.4;
+      } else {
+        _aim.x += (Math.random() - 0.5) * 2.4 * sp;
+        _aim.y += (Math.random() - 0.5) * 1.2 * sp;
+        _aim.z += (Math.random() - 0.5) * 2.4 * sp;
+      }
     }
     // m1w: an off-view shot's tracer ends in front of the player on the shooter's side, so it streaks in from that edge
     if (offView) { const yw = window.SS && window.SS.input ? window.SS.input.yaw : 0, fx = Math.sin(yw), fz = -Math.cos(yw), sx = Math.cos(yw), sz = Math.sin(yw);
@@ -3090,7 +3106,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
-    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
+    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
     if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
     if (window.SS) window.SS.bursting = false;
     if (HITS2 && hitZones) {
