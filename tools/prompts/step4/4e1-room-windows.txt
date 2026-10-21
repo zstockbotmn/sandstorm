@@ -1,0 +1,11 @@
+STEP 4e1 (behind ?bld=4 only; without bld=4 NOTHING may change, including rng() order). Edit ONLY src/world.js. Do not explore:
+find the code with rg -n "_artWinN|function addRoom|ROOMS.set|const pending|if \(pending\)" src/world.js and read only ~20 lines
+around each hit; then write the edit in one go and run node --check src/world.js. No tests, browsers, builds; do NOT git commit.
+Problem: placeArtBuilding pushes interior-mapped windows (seg._wins entries { pos, normal, w, h, room, lit }, counted in
+seg._artWinN) BEFORE the art room is cut (the `if (pending)` block after doors.push). A window whose rectangle overlaps the
+room opening now floats in front of the real room (or inside the clip box, where the facade around it is discarded).
+Fix: in addRoom, inside the existing `if (art) { ... ROOMS.set(...) }` branch, right after syncRoomClip(): remove from seg._wins
+every entry with Math.abs(e.pos.x - facadeX) < 1.0 && e.pos.y - e.h / 2 < RH + 0.3 && Math.abs(e.pos.z - zc) < W / 2 + e.w / 2 + 0.3
+(iterate backwards, splice, and decrement seg._artWinN for each). Publish the count: window.SS.bld4roomWinCut =
+(window.SS.bld4roomWinCut | 0) + removed (guard typeof window). Nothing else changes; procedural rooms (art undefined) untouched.
+Keep it under ~12 added lines.

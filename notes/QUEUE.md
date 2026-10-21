@@ -103,3 +103,13 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - 5 near misses: max 1 per 1.5-2 s, closer louder.
 - 6/7 SET PIECE pinned block in debug sound log (12 s); FORCED tag in debug.
 - Tests: test/a11.js, truck.js crashFx, pressure.js (wave-1 softening normalised).
+
+## Step 4 run list + art-room follow-up (prepared Oct 21, 5:45 PM ET; NOT run - tester on A11)
+- tools/step4-runs.sh [from-step]: one job at a time via tools/run.sh (hard timeout each), logs + summary in logs/step4/.
+  Order: 1 window-table.mjs (writes assets/models/windows.json - it does not exist yet, so art windows have never been placed;
+  review + commit it) -> 2 build -> 3-8 test/bld4-shots.js low/high/ultra-low x bld=4p/4 (street, facades, room, sky) ->
+  9 fx3-sky.js Low with bld=4 (skyline) -> 10 test/perf-bld4.js (Low + Ultra-low, bld=4 vs off: fps, calls, tris) ->
+  11 rpg-wave Low -> 12 a11 Ultra-low -> 13 truck Ultra-low (A11 leftovers).
+- New tests (unrun): test/bld4-shots.js, test/perf-bld4.js.
+- 4e art rooms (4c2 cut exists, never seen): prompts tools/prompts/step4/4e0 plan + 4e1 windows over the opening, 4e2 atlas
+  palette linings, 4e3 merge room meshes, 4e4 clip-loop cost + ?rooms=0. Run step4-runs.sh first (baseline), then 4e1-4e4, then again.

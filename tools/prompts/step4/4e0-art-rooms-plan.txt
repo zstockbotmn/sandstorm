@@ -1,0 +1,16 @@
+STEP 4e plan (for the builder, not a Grok prompt): art-building rooms follow-up. 4c2 (b1ad6a1) already cuts ONE enterable
+ground-floor room into a Meshy art building per segment (world-space clip box + split collider, ?bld=4, not Ultra-low) but it
+was never seen in a run. 4e makes it ship-able: no fake window over the real room, the room reads like the interior-mapped
+windows next to it, cheaper on iPhone, and a kill switch. Run one chunk at a time, each with
+  nohup timeout 900 ~/.grok/bin/grok --always-approve -p "$(cat tools/prompts/step4/4eN-....txt)" > logs/grok-4eN.log 2>&1 &
+review the diff by hand, node --check, commit + push, then the next. Run tools/step4-runs.sh (shots + perf) BEFORE 4e1 so there is
+a baseline, and again after 4e4.
+  4e1-room-windows.txt  drop interior-mapped art windows that fall inside / on top of the room opening (world.js only)
+  4e2-room-palette.txt  art-room linings take the interior atlas palette (WALLS / FLOORS from interior.js), per-room cell
+  4e3-room-merge.txt    merge each room's non-colliding boxes per material (~22 meshes -> <= 6), colliders untouched
+  4e4-clip-cost.txt     ROOM_N 8 -> SEG_COUNT (5), union-box early-out before the per-room loop, ?rooms=0 kill switch
+Flag rules for every chunk: without ?bld=4 NOTHING may change (rng() order, meshes, materials); Ultra-low never gets art rooms;
+?rooms=0 (4e4) turns off procedural AND art rooms. Later (not 4e): an enemy 'room' behaviour for the 'room' cover point.
+Checks after 4e4 (tools/step4-runs.sh steps 3-10): room view in logs/step4/bld4_*_bld4_room.png on Low + High shows a lit
+doorway with a room (no black hole, no art facade inside, no floating window), SS.bld4rooms >= 1, perf-bld4 Low calls within
++30 % of bld off.

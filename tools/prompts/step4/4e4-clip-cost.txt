@@ -1,0 +1,17 @@
+STEP 4e4 (behind ?bld=4 only; without bld=4 NOTHING may change, including rng() order). Edit ONLY src/world.js. Do not explore: read
+lines with rg -n "ROOM_N|ROOM_UA|ROOM_UB|function syncRoomClip|function roomClipPatch|const artRoom|const room = BLD4|SEG_COUNT ="
+src/world.js and ~12 lines after roomClipPatch's first line; then edit in one go; node --check src/world.js. No tests, browsers,
+builds; do NOT git commit.
+Goal: every art/shell fragment runs the 8-box clip loop even with no room near it; cheaper on iPhone GPUs, plus a kill switch.
+1) ROOM_N = SEG_COUNT (5; at most one art room per segment). If SEG_COUNT is declared after ROOM_N, use the literal 5 with a
+   comment.
+2) Add uniforms ROOM_ALLA / ROOM_ALLB ({ value: new THREE.Vector3(...) }) holding the union box of all live rooms (set to
+   +1e9 / -1e9 when there are none) and update them in syncRoomClip. In roomClipPatch pass them as uRAllA / uRAllB and wrap the
+   existing for-loop: if (all(greaterThan(vClipW, uRAllA)) && all(lessThan(vClipW, uRAllB))) { ...loop... }. Keep the
+   customProgramCacheKey suffix but change it to '|roomclip2'.
+3) Kill switch: const ROOMS_OFF = typeof location !== 'undefined' && /[?&]rooms=0\b/.test(location.search); next to BLD4P. Add
+   `&& !ROOMS_OFF` to the art-room condition (const artRoom = ...) and the procedural room condition (const room = BLD4 ...).
+   IMPORTANT: put !ROOMS_OFF LAST in each condition, after the seg._wrng() < 0.35 draw, so the bld4 rng stream is identical with
+   and without rooms=0. When ROOMS_OFF, also skip roomClipPatch entirely (return at its top) so no shader changes.
+4) Publish window.SS.bld4roomsOff = ROOMS_OFF once at module load (guarded).
+Keep it under ~25 added/changed lines.

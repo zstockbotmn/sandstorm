@@ -1,0 +1,17 @@
+STEP 4e2 (behind ?bld=4 only, never Ultra-low; without bld=4 NOTHING may change, including rng() order). Edit ONLY
+src/interior.js and src/world.js. Do not explore: in src/interior.js read the WALLS / FLOORS constants and paintCell (rg -n
+"const WALLS|const FLOORS|function paintCell|function shade" src/interior.js, ~30 lines); in src/world.js read roomMat / roomWood
+(rg -n "function roomMat|ROOM_DIM" src/world.js) and the lining block of addRoom (rg -n "roomMat\(" src/world.js). Then edit in one
+go; node --check both files. No tests, browsers, builds; do NOT git commit.
+Goal: an art room (addRoom called with `art`) should look like the interior-mapped rooms in the windows next to it, not grey plaster.
+1) src/interior.js: export const ROOM_WALLS = WALLS; export const ROOM_FLOORS = FLOORS; (export the existing arrays, do not copy).
+2) src/world.js: import { ROOM_WALLS, ROOM_FLOORS } with the existing interior.js import. Next to roomMat add
+   function artRoomMat(cell, part) — cell 0..7 (atlas index), part 'floor' | 'ceil' | 'side' | 'back'; cached in a Map by
+   cell + part (<= 32 materials ever); MeshStandardMaterial({ roughness: 0.95, metalness: 0 }) whose color is, mirroring
+   paintCell: wall = ROOM_WALLS[cell % 4], floor = ROOM_FLOORS[cell % 3]; ceil = wall x 0.7, side = wall x 0.8, back = wall x 1.0,
+   floor = floor x 0.85, then x 0.75 overall (the room is in shade behind the facade). Set color via new THREE.Color(hex)
+   .convertSRGBToLinear() before multiplyScalar so it matches the sRGB atlas.
+3) In addRoom, ONLY when art is set: const cell = (seg.id * 5 + 3) % 8 (deterministic, no rng draw); use artRoomMat(cell, 'floor')
+   for the floor lining, 'ceil' for the ceiling, 'side' for the two side linings, 'back' for the back lining, in place of
+   roomMat(0/1/2). The procedural path keeps roomMat exactly. Publish window.SS.bld4roomCell = cell (guarded).
+Keep it under ~25 added lines.

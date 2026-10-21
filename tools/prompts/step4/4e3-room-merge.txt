@@ -1,0 +1,16 @@
+STEP 4e3 (behind ?bld=4 only; without bld=4 NOTHING may change). Edit ONLY src/world.js. Do not explore: read addBox (rg -n
+"function addBox" src/world.js, ~15 lines), the whole addRoom function (rg -n "function addRoom" then ~90 lines) and the existing
+mergeGeometries use (rg -n "mergeGeometries" src/world.js, 3 lines each). Then edit in one go; node --check src/world.js. No tests,
+browsers, builds; do NOT git commit.
+Goal: a room is ~22 separate meshes (one draw call each); on iPhone that is the main cost. Merge the room's NON-colliding boxes.
+1) At the top of addRoom note const c0 = seg.group.children.length. Just before `return true` (both art and procedural paths, only
+   when BLD4 — addRoom is only reached under BLD4 today, keep a BLD4 check anyway): take the children added since c0 that are
+   Meshes using the shared boxGeo AND are not colliders (not in world.colliders / the collide list addBox pushes to — check what
+   addBox does with opts.collide and use that exact list) AND are not the door leaf (keep a reference to `leaf` and skip it, it
+   stays separate). Group them by material; for each material with >= 2 meshes: m.updateMatrix(); geometry = boxGeo.clone()
+   .applyMatrix4(m.matrix) (toNonIndexed if mergeGeometries needs matching index state, as the existing code does), merge, make
+   ONE Mesh(merged, material) with castShadow false, receiveShadow true, userData.segId = seg.id, add it to seg.group, remove the
+   originals from seg.group. If the segment keeps a list of disposable geometries (check how other merged meshes are disposed on
+   recycle) push the merged geometry there.
+2) Count it: window.SS.bld4roomMeshes = { before, after } for the last room (guarded).
+Do not merge anything with a collider; colliders, cover points and the clip box stay exactly as they are. Keep it under ~30 lines.
