@@ -351,6 +351,26 @@ function easeVel(vel, fwd, right, dt) {
   vel.speed = Math.hypot(vel.fwd, vel.right);
 }
 
+// Left stance is playback phase [0, 0.5), right is [0.5, 1). Rate 0.5/0.325 through the
+// wounded half (35% less time) and 0.5/0.675 through the other, so the stride period holds.
+const LIMP_FAST = 0.5 / 0.325, LIMP_SLOW = 0.5 / 0.675;
+function limpPhase(phase, du, side) {
+  let p = wrap01(phase);
+  if (!(du > 0)) return p;
+  let left = du;
+  const right = side === 'R';
+  for (let n = 0; n < 6 && left > 1e-8; n++) {
+    const wounded = right ? p >= 0.5 : p < 0.5;
+    const edge = p < 0.5 ? 0.5 : 1;
+    const span = edge - p;
+    const rate = wounded ? LIMP_FAST : LIMP_SLOW;
+    if (!(span > 1e-8) || left * rate < span) return wrap01(p + left * rate);
+    left -= span / rate;
+    p = edge >= 1 ? 0 : edge;
+  }
+  const rest = (right ? p >= 0.5 : p < 0.5) ? LIMP_FAST : LIMP_SLOW;
+  return wrap01(p + left * rest);
+}
 function applyAction(action, w, phase, dur, manual) {
   if (w < 1e-3) {
     if (action.setEffectiveWeight) action.setEffectiveWeight(0);
@@ -433,7 +453,11 @@ export function updateLoco(enemy, dt, input) {
     const ms = Math.max(0.3, metaSpeed(enemy, name));
     adv += w * clamp(speed / ms, 0.45, 1.7) / Math.max(1e-3, clipDur(action, enemy, name));
   }
-  const phase = wrap01((enemy.animPhase || 0) + adv * dt);
+  // Lasting limp (?hits=2): the wounded half of the shared cycle plays faster so that
+  // side is planted ~35% less, and the other half slows so one stride still takes the
+  // same time. No limpSide (default, or ultra-low) keeps the linear clock.
+  const du = adv * dt;
+  const phase = input.limpSide ? limpPhase(enemy.animPhase || 0, du, input.limpSide) : wrap01((enemy.animPhase || 0) + du);
   enemy.animPhase = phase;
   // Several names can share ONE AnimationAction (art.js: strafe = clips.strafe || clips.walk, crouch/lean = clips.idle when
   // missing; mixer.clipAction returns the same action for the same clip). Applying per name let a later zero-weight alias

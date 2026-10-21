@@ -511,6 +511,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // Hit-react sink. footIK rewrites root y from rootY0 + pelvisOff every frame, so a
     // one-shot root.y -= drop in stepArt would vanish. Same offset path as cover yOff.
     if (enemy._reactDrop) { r.position.y -= enemy._reactDrop; r.updateMatrixWorld(true); }
+    // Limp hip dip (set after the mixer). Same root-y path as the hit sink: footIK rewrites y each frame.
+    if (HITS2 && enemy._limpDip) { r.position.y -= enemy._limpDip; r.updateMatrixWorld(true); }
     // pelvis drop runs at every range/tier (cheap); the two-bone solve + locking only on High within 30 m
     if (art.tier !== 'high' || camera.position.distanceToSquared(enemy.group.position) > 900) { enemy.legs.forEach((l) => { l.lock = null; }); return; }
     const ground = enemy.group.position.y + enemy.ankleH, out = enemy.ikDbg || (enemy.ikDbg = []);
@@ -670,6 +672,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       cover: drive ? (enemy.coverT || 0) : undefined,
       // Crouch-peek keeps the crouch blend (rise 0). Standing peek still hands weight to lean.
       peek: drive ? ((enemy.peekKind && enemy.peekHigh === false) ? 0 : (enemy.peekT || 0)) : undefined,
+      limpSide: (HITS2 && enemy._limpSide && (enemy.limp || 0) > 0 && qName() !== 'ultra-low') ? enemy._limpSide : 0,
     });
     if (enemy.hitPlaying && enemy.hitReturning && enemy.actions.hit) {
       const hit = enemy.actions.hit;
@@ -999,6 +1002,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     try { supportArm(enemy, name, dt); } catch (err) { reportErr('support arm', err); }
     if (LOCO2) applyFidget(enemy);
     if (HITS2 && enemy.reactSt) applyHitReact(enemy, dt);
+    if (HITS2) applyLastingWounds(enemy);
     if (enemy.hitPlaying && !enemy.actions.hit.enabled) {
       enemy.hitPlaying = false;
       enemy.hitReturning = false;
@@ -1041,6 +1045,74 @@ export function createEnemies(scene, camera, world, weapon, player) {
       _reactP.copy(gp).addScaledVector(st.stepDir, step);
       if (reactDestClear(_reactP)) gp.copy(_reactP);
     }
+  }
+
+  // Lasting wounds (?hits=2). Scalars every frame; the pose (clutch IK, torso hunch, hip dip) is after the mixer.
+  function tickWounds(enemy, dt) {
+    const w = enemy.wounds;
+    const armL = !!(w && w.armL > 0), armR = !!(w && w.armR > 0);
+    const legL = !!(w && w.legL > 0), legR = !!(w && w.legR > 0);
+    enemy.spreadMul = (armL || armR) ? 2.5 : 1;
+    enemy.speedMul = (legL || legR) ? 0.6 : 1;
+    enemy.limp = (legL || legR) ? 1 : 0;
+    if (legL || legR) enemy._limpSide = w.legL > w.legR ? 'L' : w.legR > w.legL ? 'R' : (enemy.lastHitZone === 'legL' ? 'L' : 'R');
+    else enemy._limpSide = 0;
+    if (armL || armR) enemy._clutchSide = w.armL > w.armR ? 'L' : w.armR > w.armL ? 'R' : (enemy.lastHitZone === 'armL' ? 'L' : 'R');
+    else enemy._clutchSide = 0;
+    const show = (armL || armR) && enemy.phase !== 'fire' && enemy.phase !== 'peek' && !enemy.dying && !enemy.hitPlaying;
+    const step = dt > 0 ? dt / 0.3 : 1;
+    const c = enemy.clutchW || 0;
+    enemy.clutchW = show ? (c + step > 1 ? 1 : c + step) : (c - step < 0 ? 0 : c - step);
+  }
+  // 0 at the edges of the wounded half-cycle, 1 at mid-stance. Left [0, 0.5), right [0.5, 1).
+  function stanceW(phase, side) {
+    let u = phase - (side === 'R' ? 0.5 : 0);
+    u -= Math.floor(u);
+    if (u >= 0.5) return 0;
+    return Math.sin(u * Math.PI * 2);
+  }
+  // Other hand onto the wounded arm (mid upper-arm / mid-forearm). Same two-bone solve as supportArm.
+  function clutchWound(enemy) {
+    const b = enemy.bones, r = enemy.art && enemy.art.root;
+    const side = enemy._clutchSide;
+    if (!b || !r || (side !== 'L' && side !== 'R')) return;
+    const clutchL = side !== 'L';
+    const up = clutchL ? b.LeftArm : b.RightArm;
+    const fore = clutchL ? b.LeftForeArm : b.RightForeArm;
+    const hand = clutchL ? (enemy.leftHand || (enemy.leftHand = r.getObjectByName('LeftHand'))) : b.RightHand;
+    const wUp = side === 'L' ? b.LeftArm : b.RightArm;
+    const wFore = side === 'L' ? b.LeftForeArm : b.RightForeArm;
+    const wHand = side === 'L' ? (enemy.leftHand || (enemy.leftHand = r.getObjectByName('LeftHand'))) : b.RightHand;
+    if (!up || !fore || !hand || !wUp || !wFore) return;
+    const wgt = enemy.clutchW || 0;
+    const qa = up.quaternion.clone(), qf = fore.quaternion.clone();
+    enemy.group.updateMatrixWorld(true);
+    wUp.getWorldPosition(_saS);
+    wFore.getWorldPosition(_saT);
+    _saF.copy(_saS).lerp(_saT, 0.5);
+    if (wHand) { wHand.getWorldPosition(_saR); _saT.lerp(_saR, 0.5); }
+    _saT.add(_saF).multiplyScalar(0.5);
+    twoBone(up, fore, hand, _saT); twoBone(up, fore, hand, _saT);
+    if (wgt < 0.999) {
+      up.quaternion.copy(qa.slerp(up.quaternion.clone(), wgt));
+      fore.quaternion.copy(qf.slerp(fore.quaternion.clone(), wgt));
+      r.updateMatrixWorld(true);
+    }
+  }
+  function applyLastingWounds(enemy) {
+    enemy._limpDip = 0;
+    if (!enemy.bones || enemy.dying || window.SS_NOPROC) return;
+    if (qName() === 'ultra-low') return; // ultra-low: speed and aim only
+    const b = enemy.bones, w = enemy.wounds;
+    if (w && w.torso > 0 && (b.Spine || b.Spine01)) {
+      enemy.group.updateMatrixWorld(true);
+      _rightW.set(1, 0, 0).applyQuaternion(enemy.group.quaternion);
+      const bend = 4 * Math.PI / 180;
+      bendBone(b.Spine01 || b.Spine, _rightW, bend * 0.5);
+      if (b.Spine && b.Spine01) { b.Spine01.updateMatrixWorld(true); bendBone(b.Spine, _rightW, bend * 0.5); }
+    }
+    if ((enemy.clutchW || 0) > 0.01) clutchWound(enemy);
+    if ((enemy.limp || 0) > 0 && enemy._limpSide && enemy.moving) enemy._limpDip = 0.05 * enemy.limp * stanceW(enemy.animPhase || 0, enemy._limpSide);
   }
 
   function playHit(enemy, head) {
@@ -1250,6 +1322,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     if (HITS2) {
       enemy.wounds = { armL: 0, armR: 0, legL: 0, legR: 0, torso: 0 };
+      enemy.clutchW = 0; enemy.spreadMul = 1; enemy.limp = 0; enemy.speedMul = 1;
       enemy.lastHitZone = null; enemy.lastHitDir = null; enemy.lastHitT = 0; enemy.react = null;
       enemy.reactSt = createReactState(); enemy.reactW = 0;
     }
@@ -1806,6 +1879,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const prog = window.SS ? window.SS.distance : 0;
     if ((prog < 120 || burstIndex <= 2) && pressure < 0.45) chance *= 0.72; // still lethal once standing-still pressure builds
     if ((enemy.suppressT || 0) > 0) chance *= 0.45; // blind-fire suppression
+    if (HITS2 && enemy.spreadMul > 1) chance /= enemy.spreadMul; // wounded arm: weaker aim (fewer hits, wider misses)
     // Grace ramp (tester: nearly dead after one burst): the first ~60 s of a run land fewer hits, and any two hits on the
     // player are spaced >= 0.9 s early (0.4 s later) so one burst can't chain 3-4 hits. Damage per hit unchanged (~5 to die).
     const runT = window.SS && window.SS.startedAt ? (performance.now() - window.SS.startedAt) / 1000 : 999;
@@ -1840,9 +1914,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
     if (!hit) {
-      _aim.x += (Math.random() - 0.5) * 2.4;
-      _aim.y += (Math.random() - 0.5) * 1.2;
-      _aim.z += (Math.random() - 0.5) * 2.4;
+      const sp = (HITS2 && enemy.spreadMul > 1) ? enemy.spreadMul : 1; // arm wound: this fighter's miss spread x2.5
+      _aim.x += (Math.random() - 0.5) * 2.4 * sp;
+      _aim.y += (Math.random() - 0.5) * 1.2 * sp;
+      _aim.z += (Math.random() - 0.5) * 2.4 * sp;
     }
     // m1w: an off-view shot's tracer ends in front of the player on the shooter's side, so it streaks in from that edge
     if (offView) { const yw = window.SS && window.SS.input ? window.SS.input.yaw : 0, fx = Math.sin(yw), fz = -Math.cos(yw), sx = Math.cos(yw), sz = Math.sin(yw);
@@ -2038,8 +2113,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const d = Math.abs(ahead - 18) + Math.abs(c.pos.x) * 0.3; if (d < bd) { bd = d; best = c; } }
     e.behavior = 'shifter'; e.unseenT = 0; e.seen = true; e.engaged = true; e.afterHide = false;
     // p1b: a ground fighter hiding in cover RUNS there (the warp popped 9-10 m and reset the hold clock). An exposed one
-    // that is still unseen may be stuck inside geometry, so it keeps the old move.
-    if (best && REPOS && !e.exposed && e.group.position.y < 0.05) { e.seenForced = (e.seenForced | 0) + 1; startReposition(e, best); return; }
+    // that is still unseen runs too (a path leads it out of any collider); only no-cover / elevated cases still warp.
+    if (best && REPOS && e.group.position.y < 0.05) { e.seenForced = (e.seenForced | 0) + 1; startReposition(e, best); return; }
     e.teleports = (e.teleports | 0) + 1; if (window.SS) window.SS.lastTeleport = { why: 'toVisibleCover', exposed: !!e.exposed, t: window.SS.simTime };
     if (best) { e.anchor = best; e.home = standPos(best); }
     else { const side = Math.sign(e.group.position.x) || 1; e.anchor = { type: 'door', pos: new THREE.Vector3(side * 5.4, 1.2, pz - 18) }; e.home = standPos(e.anchor); }
@@ -2328,6 +2403,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!lateral && !climb && dist < 1.5) enemy.moveKind = 'walk';
     else if (!lateral && !climb && enemy._repositioning) enemy.moveKind = repositionMoveKind(enemy, enemy._reposDist != null ? enemy._reposDist : dist);
     enemy.moving = true;
+    if (HITS2 && enemy.speedMul > 0 && enemy.speedMul < 1) speed *= enemy.speedMul; // leg wound: path speed x0.6
     if (LOCO2) speed = coverGaitSpeed(enemy, speed);
     // Human locomotion: accelerate ~7 m/s², brake into the last metre, no instant starts/stops (no sliding).
     const prevV = enemy.curSpeed || 0;
@@ -2727,6 +2803,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         list.splice(i, 1);
         continue;
       }
+      if (HITS2) tickWounds(e, dt);
       if (e.art) stepArt(e, dt);
       else if (LOCO2) tickCover(e, dt);
       if (LOCO2) parkCoverStep(e);
