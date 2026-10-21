@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const FLIGHT_S = 1.1, FLIGHT_MS = 900, PUFF_N = 40;
+const FLIGHT_S = 1.1, FLIGHT_MS = 900, PUFF_N = 72, PUFF_LIFE = 2.2, PUFF_STEP = 0.35; // A9: thicker, longer trail (reads at 24-38 m on Low)
 
 function roundTex() {
   const c = document.createElement('canvas');
@@ -22,7 +22,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   });
   const puffs = [];
   for (let i = 0; i < PUFF_N; i++) {
-    const mat = puff(0x9a948a, 0), mesh = new THREE.Mesh(geo, mat);
+    const mat = puff(0x8a847a, 0), mesh = new THREE.Mesh(geo, mat);
     mesh.visible = false; mesh.frustumCulled = false; scene.add(mesh);
     puffs.push({ mesh, mat, life: 0 });
   }
@@ -34,8 +34,11 @@ export function createSetPieces({ scene, camera, player, hud }) {
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.7, 8), dark);
   const nose = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.26, 8), dark);
   nose.position.y = 0.48; body.frustumCulled = nose.frustumCulled = false;
+  rocket.scale.setScalar(1.6); // A9: bigger body
   rocket.add(body, nose); rocket.visible = false; rocket.frustumCulled = false; scene.add(rocket);
-  const glow = new THREE.Mesh(geo, puff(0xff6414, 0.95));
+  // A9: motor glow = a bright core + a wide orange halo, sized with distance so it stays ~25-40 px at 24-38 m
+  const glow = new THREE.Mesh(geo, puff(0xffd070, 1)); const halo = new THREE.Mesh(geo, puff(0xff7a20, 0.55));
+  halo.visible = false; halo.frustumCulled = false; scene.add(halo);
   glow.scale.setScalar(0.42); glow.visible = false; glow.frustumCulled = false; scene.add(glow);
   const launch = new THREE.Vector3(), target = new THREE.Vector3();
   const prev = new THREE.Vector3(), pos = new THREE.Vector3();
@@ -56,16 +59,16 @@ export function createSetPieces({ scene, camera, player, hud }) {
   function spawnSmoke(p) {
     let s = puffs[0];
     for (let i = 0; i < PUFF_N; i++) if (puffs[i].life <= 0) { s = puffs[i]; break; }
-    s.life = 1.6; s.mesh.visible = true; s.mesh.position.copy(p);
-    s.mesh.scale.setScalar(0.25); s.mat.opacity = 0.6; s.mesh.lookAt(camera.position);
+    s.life = PUFF_LIFE; s.mesh.visible = true; s.mesh.position.copy(p);
+    s.mesh.scale.setScalar(0.5); s.mat.opacity = 0.75; s.mesh.lookAt(camera.position);
   }
   function trail(a, b) {
     dir.subVectors(b, a);
     const dist = dir.length();
     if (!(dist > 1e-5)) return;
     let walked = 0, n = 0;
-    while (walked < dist && smokeAcc + (dist - walked) >= 0.6 && n++ < 70) {
-      walked += 0.6 - smokeAcc;
+    while (walked < dist && smokeAcc + (dist - walked) >= PUFF_STEP && n++ < 120) {
+      walked += PUFF_STEP - smokeAcc;
       spawnSmoke(tmp.copy(a).addScaledVector(dir, walked / dist));
       smokeAcc = 0;
     }
@@ -79,15 +82,33 @@ export function createSetPieces({ scene, camera, player, hud }) {
     dir.subVectors(target, launch);
     if (dir.lengthSq() < 1e-8) return;
     dir.normalize(); rocket.quaternion.setFromUnitVectors(yAxis, dir); rocket.position.copy(at);
-    glow.position.copy(at).addScaledVector(dir, -0.4); glow.lookAt(camera.position); glow.visible = true;
+    glow.position.copy(at).addScaledVector(dir, -0.7); glow.lookAt(camera.position); glow.visible = true;
+    const gd = Math.max(1, camera.position.distanceTo(at)), fl = 0.85 + 0.3 * Math.random();
+    glow.scale.setScalar(Math.max(0.5, gd * 0.022) * fl); halo.position.copy(glow.position); halo.lookAt(camera.position); halo.scale.setScalar(Math.max(1.1, gd * 0.055) * fl); halo.visible = true;
   }
   function publish() { if (window.SS) window.SS.setpiece = { rpgs: state.rpgs, lastRpg: rec }; }
+  // A9: the launch point is found on the real street, never inside a collider: a horizontal ray finds the facade on one
+  // side at 6 m up; a down ray finds its roof. Low roof -> rooftop edge, tall -> a window 0.6 m out from the wall, no wall
+  // within 12 m -> an alley mouth at street level. Rejected if inside any collider box or without a clear line to the target.
+  const ray = new THREE.Raycaster(), _o = new THREE.Vector3(), _d = new THREE.Vector3(), _bx = new THREE.Box3();
+  function cols() { const w = window.SS && window.SS.world; return (w && (w.shotList ? w.shotList() : w.colliders)) || []; }
+  function firstHit(o, d, far, list) { ray.set(o, d); ray.near = 0; ray.far = far; const h = ray.intersectObjects(list, false); return h.length ? h[0] : null; }
+  function insideAny(p) { const w = window.SS && window.SS.world, list = (w && w.colliders) || []; for (const m of list) { if (!m.geometry) continue; _bx.setFromObject(m); _bx.expandByScalar(0.15); if (_bx.containsPoint(p)) return true; } return false; } // box colliders only (cheap)
+  function pickTarget() { const dx = launch.x - camera.position.x, dz = launch.z - camera.position.z, h = Math.hypot(dx, dz) || 1, sway = (Math.random() - 0.5) * 2, ix = dx / h, iz = dz / h;
+    target.set(camera.position.x + ix * 2.8 - iz * sway, 0.3 + Math.random() * 0.6, camera.position.z + iz * 2.8 + ix * sway); }
+  function pickLaunch() { const list = cols(); let kind = 'street';
+    for (let t = 0; t < 8; t++) { const side = Math.random() < 0.5 ? -1 : 1, z = camera.position.z - (24 + Math.random() * 14);
+      const wall = list.length ? firstHit(_o.set(0, 6, z), _d.set(side, 0, 0), 12, list) : null;
+      if (wall) { const hx = wall.point.x, roof = firstHit(_o.set(hx + side * 0.6, 60, z), _d.set(0, -1, 0), 60, list), top = roof ? roof.point.y : 0;
+        if (roof && top > 3 && top < 10) { launch.set(hx - side * 0.35, top + 0.9, z); kind = 'roof'; } else { launch.set(hx - side * 0.6, 5.5 + Math.random() * 2.5, z); kind = 'window'; } }
+      else { launch.set(side * 5.2, 1.6, z); kind = 'alley'; }
+      if (insideAny(launch)) continue;
+      pickTarget(); _d.subVectors(target, launch); const L = _d.length(); _d.divideScalar(L);
+      const blk = list.length ? firstHit(_o.copy(launch).addScaledVector(_d, 0.3), _d, Math.max(0.1, L - 1.6), list) : null; if (blk) continue;
+      return kind; }
+    launch.set(0, 2.2, camera.position.z - 30); pickTarget(); return 'street'; } // last resort: down the middle of the street
   function launchNow(sim) {
-    const side = Math.random() < 0.5 ? -1 : 1;
-    launch.set(side * (5.2 + Math.random() * 1.5), 5.5 + Math.random() * 3.5, camera.position.z - (24 + Math.random() * 14));
-    const dx = launch.x - camera.position.x, dz = launch.z - camera.position.z, h = Math.hypot(dx, dz) || 1;
-    const sway = (Math.random() - 0.5) * 2, ix = dx / h, iz = dz / h;
-    target.set(camera.position.x + ix * 2.8 - iz * sway, 0.3 + Math.random() * 0.6, camera.position.z + iz * 2.8 + ix * sway);
+    const lkind = pickLaunch();
     flying = state.flying = true; launchSim = sim; launchR = performance.now();
     warned = false; smokeAcc = 0; prev.copy(launch); rocket.visible = true; aimRocket(launch);
     showFlash(launch, 1.6, 0.15);
@@ -95,17 +116,17 @@ export function createSetPieces({ scene, camera, player, hud }) {
     spawnSmoke(pos.copy(launch).addScaledVector(tmp, 0.9));
     spawnSmoke(pos.copy(launch).addScaledVector(tmp, 1.7));
     const a = clip();
-    if (a && a.crack) a.crack(launch.clone());
+    if (a && a.thump) a.thump(launch.clone()); else if (a && a.crack) a.crack(launch.clone());
     if (a && a.whoosh) a.whoosh(launch.clone(), 1.1);
     if (hud && hud.callout) hud.callout('RPG!', true);
     if (hud && hud.edgeWarn) hud.edgeWarn(angleTo(launch));
     state.rpgs += 1; firedWave = true; lastAt = sim;
-    rec = { launchSim: sim, launchR, impactSim: null, impactR: null, dmg: 0, hpBefore: player.health, dist: 0 };
+    rec = { launchSim: sim, launchR, impactSim: null, impactR: null, dmg: 0, hpBefore: player.health, dist: 0, kind: lkind, from: [+launch.x.toFixed(1), +launch.y.toFixed(1), +(launch.z - camera.position.z).toFixed(1)] };
     publish();
     return rec;
   }
   function impact(sim) {
-    flying = state.flying = false; rocket.visible = false; glow.visible = false;
+    flying = state.flying = false; rocket.visible = false; glow.visible = false; halo.visible = false;
     const f = fx();
     if (f && f.blast) f.blast(target.clone());
     if (f && f.impact) for (let i = 0; i < 3; i++) {
@@ -145,8 +166,8 @@ export function createSetPieces({ scene, camera, player, hud }) {
       const s = puffs[i];
       if (s.life <= 0) continue;
       s.life -= dt;
-      const u = Math.max(0, s.life / 1.6);
-      s.mesh.scale.setScalar(0.25 + 0.65 * (1 - u)); s.mat.opacity = 0.6 * u; s.mesh.lookAt(camera.position);
+      const u = Math.max(0, s.life / PUFF_LIFE);
+      s.mesh.scale.setScalar(0.5 + 1.1 * (1 - u)); s.mat.opacity = 0.75 * Math.min(1, u * 1.6); s.mesh.lookAt(camera.position);
       if (s.life <= 0) s.mesh.visible = false;
     }
   }
