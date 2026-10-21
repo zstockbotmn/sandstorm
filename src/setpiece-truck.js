@@ -16,6 +16,11 @@ export function createTruckMoment({ scene, camera, player, hud }) {
   const up = new THREE.Vector3(0, 1, 0), tmp = new THREE.Vector3();
   let wasBurst = false, waveT = 0, delay = 2, firedWave = false, armed = false, seenRun = null, run = null, tex = null;
 
+  const chunkGeo = new THREE.BoxGeometry(1, 1, 1), chunkMats = [new THREE.MeshBasicMaterial({ color: 0x3a3a2c, fog: false }), new THREE.MeshBasicMaterial({ color: 0x23211d, fog: false })], chunks = [];
+  function stepChunks(dt) { if (!chunks.length) return; const rdt = Math.min(dt, 0.05) || 0.016;
+    for (let i = chunks.length - 1; i >= 0; i--) { const c = chunks[i]; c.life -= dt; c.vy -= 14 * rdt; c.m.position.x += c.vx * rdt; c.m.position.y += c.vy * rdt; c.m.position.z += c.vz * rdt; c.m.rotation.x += c.rx * rdt; c.m.rotation.z += c.rz * rdt;
+      if (c.m.position.y < c.m.scale.y * 0.5) { c.m.position.y = c.m.scale.y * 0.5; c.vy = Math.abs(c.vy) * 0.3; c.vx *= 0.55; c.vz *= 0.55; c.rx *= 0.5; c.rz *= 0.5; }
+      if (c.life <= 0) { scene.remove(c.m); chunks.splice(i, 1); } } }
   function angleTo(p) {
     const yaw = (window.SS && window.SS.input && window.SS.input.yaw) || 0;
     const dx = p.x - camera.position.x, dz = p.z - camera.position.z;
@@ -84,10 +89,17 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (run.spot) run.spot.visible = false;
     const p = new THREE.Vector3(run.cx, 0.5, run.cz), f = window.SS && window.SS.fx;
     if (f && f.blast) f.blast(p.clone());
-    if (f && f.impact) for (let i = 0; i < 4; i++) {
-      tmp.set(p.x + (Math.random() - 0.5) * 3, p.y + Math.random() * 1.5, p.z + (Math.random() - 0.5) * 3);
+    // A11 (tester: the crash needs more weight): a real camera kick at the usual 9-14 m (fx.blast's own shake fades to ~0
+    // by 12 m), more and wider debris, plus heavy chunks (scrap boxes) that tumble and bounce. Ultra-low: fewer of each.
+    const ultra = window.SS && window.SS.quality === 'ultra-low', dCam = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+    if (f && f.kick) f.kick('blast', Math.max(0.55, Math.min(1.1, 1.1 - (dCam - 9) * 0.06)));
+    if (f && f.impact) for (let i = 0, n = ultra ? 3 : 9; i < n; i++) {
+      tmp.set(p.x + (Math.random() - 0.5) * 4, p.y + Math.random() * 1.8, p.z + (Math.random() - 0.5) * 4);
       f.impact(tmp.clone(), up, null);
     }
+    for (let i = 0, n = ultra ? 3 : 7; i < n; i++) { const sz = 0.18 + Math.random() * 0.3, m = new THREE.Mesh(chunkGeo, chunkMats[i % 2]); m.scale.set(sz * (1 + Math.random()), sz, sz * (0.6 + Math.random()));
+      m.position.set(p.x + (Math.random() - 0.5) * 1.2, 0.8 + Math.random() * 0.8, p.z + (Math.random() - 0.5) * 1.2); m.castShadow = false; m.frustumCulled = false; scene.add(m);
+      const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 4; chunks.push({ m, vx: Math.cos(a) * sp, vy: 4 + Math.random() * 4, vz: Math.sin(a) * sp, rx: (Math.random() - 0.5) * 12, rz: (Math.random() - 0.5) * 12, life: 2.6 }); }
     const a = window.SS && window.SS.audio;
     if (a && a.boom) a.boom(p.clone());
     const hpBefore = player.health;
@@ -133,7 +145,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (window.SS) window.SS.truckMoment = { count: 0, last: null };
   }
   function update(dt, sim) {
-    const SS = window.SS || {}; sim = sim || SS.simTime || 0; resetRun();
+    const SS = window.SS || {}; sim = sim || SS.simTime || 0; resetRun(); stepChunks(dt || 0);
     const bursting = !!SS.bursting;
     if (bursting && !wasBurst) {
       state.wave += 1;
