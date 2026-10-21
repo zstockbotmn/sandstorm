@@ -197,3 +197,66 @@ void main() {
   material.uniforms.uAtlas.value = atlas;
   return material;
 }
+
+export function createInteriorFallback({ atlas, cols = ATLAS_COLS, rows = ATLAS_ROWS } = {}) {
+  const uniforms = THREE.UniformsUtils.merge([
+    THREE.UniformsLib.fog,
+    { uAtlas: { value: null }, uGrid: { value: new THREE.Vector2(cols, rows) } },
+  ]);
+  const material = new THREE.ShaderMaterial({
+    fog: true,
+    uniforms,
+    vertexShader: `#include <fog_pars_vertex>
+attribute float aRoom; attribute float aLit; attribute vec2 aSize;
+varying vec2 vUv; varying float vRoom; varying float vLit;
+void main() {
+  mat4 m = modelMatrix * instanceMatrix;
+  vec4 wp = m * vec4(position, 1.0);
+  vUv = uv; vRoom = aRoom; vLit = aLit;
+  vec4 mvPosition = viewMatrix * wp;
+  #include <fog_vertex>
+  gl_Position = projectionMatrix * mvPosition;
+}`,
+    fragmentShader: `#include <fog_pars_fragment>
+uniform sampler2D uAtlas; uniform vec2 uGrid;
+varying vec2 vUv; varying float vRoom; varying float vLit;
+void main() {
+  vec2 q = vUv * 0.5 + 0.25;
+  float c = mod(vRoom, uGrid.x); float r = floor(vRoom / uGrid.x);
+  vec2 uv = vec2((c + q.x) / uGrid.x, 1.0 - (r + 1.0 - q.y) / uGrid.y);
+  vec3 col = texture2D(uAtlas, uv).rgb * (vLit > 0.0 ? 1.0 : 0.55);
+  gl_FragColor = vec4(col, 1.0);
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`,
+  });
+  material.uniforms.uAtlas.value = atlas;
+  return material;
+}
+
+const WIN_GEO = new THREE.PlaneGeometry(1, 1);
+
+export function buildWindowMesh(list, material) {
+  const geometry = WIN_GEO.clone();
+  const mesh = new THREE.InstancedMesh(geometry, material, list.length);
+  mesh.userData.ownGeo = true;
+  const n = list.length;
+  const rooms = new Float32Array(n), lits = new Float32Array(n), sizes = new Float32Array(n * 2);
+  const mat = new THREE.Matrix4(), pos = new THREE.Vector3(), quat = new THREE.Quaternion();
+  const scl = new THREE.Vector3(), dir = new THREE.Vector3(), z = new THREE.Vector3(0, 0, 1);
+  for (let i = 0; i < n; i++) {
+    const it = list[i];
+    dir.copy(it.normal).normalize();
+    pos.copy(it.pos).addScaledVector(dir, 0.02);
+    mesh.setMatrixAt(i, mat.compose(pos, quat.setFromUnitVectors(z, dir), scl.set(it.w, it.h, 1)));
+    rooms[i] = it.room; lits[i] = it.lit; sizes[i * 2] = it.w; sizes[i * 2 + 1] = it.h;
+  }
+  geometry.setAttribute('aRoom', new THREE.InstancedBufferAttribute(rooms, 1));
+  geometry.setAttribute('aLit', new THREE.InstancedBufferAttribute(lits, 1));
+  geometry.setAttribute('aSize', new THREE.InstancedBufferAttribute(sizes, 2));
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  mesh.castShadow = mesh.receiveShadow = false;
+  mesh.name = 'windows';
+  return mesh;
+}
