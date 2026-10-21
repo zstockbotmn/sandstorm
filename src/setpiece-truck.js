@@ -125,7 +125,9 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     const n = 1 + ((Math.random() * 2) | 0), enemies = window.SS && window.SS.enemies;
     let fighters = 0;
     for (let k = 0; k < n; k++) {
-      const e = enemies && enemies.spawnEnemy ? enemies.spawnEnemy('shifter') : null;
+      // A12 (Ultra-low truck run: 0 bail-outs): spawnEnemy returns null when no free cover is in its random range (10-20 m
+      // 80%, else 22-40 m); retry a few draws, then any behaviour, so the wreck always yields its fighters
+      let e = null; for (let t = 0; t < 4 && !e && enemies && enemies.spawnEnemy; t++) e = enemies.spawnEnemy(t < 3 ? 'shifter' : undefined);
       if (!e || !e.group) continue;
       e.group.position.set(run.cx - Math.sign(run.cx || run.side) * 1.2, 0, run.cz + 2.6 + k * 0.9);
       if (enemies.dismount) enemies.dismount(e); // re-path from the wreck (else it slides on its old spawn path)

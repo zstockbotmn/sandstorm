@@ -25,7 +25,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
       const out = { calms: [], waves: [] };
       for (let w = 1; w <= 3; w++) {
         if (!(await waitFor(() => SS.bursting, 90))) { out.err = 'no wave ' + w; return out; }
-        const ws = SS.simTime; out.waves.push({ w, start: +ws.toFixed(1) });
+        const ws = SS.simTime; out.waves.push({ w, start: +ws.toFixed(1) }); const gw = SS.grenades | 0; // A12: count wave-3 grenades from the wave start (Ultra-low threw one before the ducked wait ended)
         if (w < 3) { await waitFor(() => !SS.bursting, 30); await waitFor(() => false, 3); const c0 = SS.waveClears | 0;
           SS.enemies.killAll(); await waitFor(() => (SS.waveClears | 0) > c0 && live() === 0, 20);
           const cs = SS.simTime, sh0 = SS.enemyShots | 0, a0 = Object.values((SS.ambient && SS.ambient.counts) || {}).reduce((a, b) => a + b, 0);
@@ -35,7 +35,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
         } else {
           // wave 3: emulate the tester - stay ducked, kill the nearest two (leaving far / roof shooters)
           await waitFor(() => !SS.bursting, 30); await waitFor(() => !!SS.input.cover, 15); SS.debugKillNearest(); await sleep(600); SS.debugKillNearest();
-          const g0 = SS.grenades | 0, s0 = SS.simTime, nm0 = SS.nearMisses | 0, nk0 = SS.nearMissSkipped | 0; let ring = false, hint = '', gate = null;
+          const g0 = gw, s0 = SS.simTime, nm0 = SS.nearMisses | 0, nk0 = SS.nearMissSkipped | 0; let ring = false, hint = '', gate = null;
           const t0 = performance.now(); while ((SS.grenades | 0) === g0 && SS.simTime - s0 < 30 && performance.now() - t0 < 500000 && live() > 0) { top(); gate = SS.nadeGate; await sleep(120); }
           out.nearMiss = { shown: (SS.nearMisses | 0) - nm0, skipped: (SS.nearMissSkipped | 0) - nk0, gameS: +(SS.simTime - s0).toFixed(1) };
           out.nade = { thrown: (SS.grenades | 0) > g0, after: +(SS.simTime - s0).toFixed(1), live: live(), gate, throw: SS.lastNadeThrow, ducked: !!SS.input.cover };
