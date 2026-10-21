@@ -116,3 +116,84 @@ export function createInteriorAtlas() {
   atlas = tex;
   return tex;
 }
+
+export function createInteriorMaterial({ atlas, cols = ATLAS_COLS, rows = ATLAS_ROWS, back = ATLAS_BACK } = {}) {
+  const uniforms = THREE.UniformsUtils.merge([
+    THREE.UniformsLib.fog,
+    {
+      uAtlas: { value: null },
+      uGrid: { value: new THREE.Vector2(cols, rows) },
+      uBack: { value: back },
+    },
+  ]);
+  const material = new THREE.ShaderMaterial({
+    fog: true,
+    uniforms,
+    vertexShader: `
+#include <fog_pars_vertex>
+attribute float aRoom;
+attribute float aLit;
+attribute vec2 aSize;
+varying vec3 vView;
+varying vec2 vUv;
+varying float vRoom;
+varying float vLit;
+varying vec2 vSize;
+void main() {
+  mat4 m = modelMatrix * instanceMatrix;
+  vec4 wp = m * vec4(position, 1.0);
+  vec3 v = wp.xyz - cameraPosition;
+  vView = vec3(dot(v, normalize(m[0].xyz)), dot(v, normalize(m[1].xyz)), dot(v, normalize(m[2].xyz)));
+  vUv = uv;
+  vRoom = aRoom;
+  vLit = aLit;
+  vSize = aSize;
+  vec4 mv = viewMatrix * wp;
+  vec4 mvPosition = mv;
+  #include <fog_vertex>
+  gl_Position = projectionMatrix * mv;
+}
+`,
+    fragmentShader: `
+#include <fog_pars_fragment>
+uniform sampler2D uAtlas;
+uniform vec2 uGrid;
+uniform float uBack;
+varying vec3 vView;
+varying vec2 vUv;
+varying float vRoom;
+varying float vLit;
+varying vec2 vSize;
+void main() {
+  vec3 rd = normalize(vec3(
+    vView.x / (0.5 * vSize.x),
+    vView.y / (0.5 * vSize.y),
+    vView.z / (0.9 * vSize.x)
+  ));
+  vec3 ro = vec3(vUv * 2.0 - 1.0, 0.0);
+  float tx = abs(rd.x) < 1e-5 ? 1e6 : (sign(rd.x) - ro.x) / rd.x;
+  float ty = abs(rd.y) < 1e-5 ? 1e6 : (sign(rd.y) - ro.y) / rd.y;
+  float tz = (-1.0 - ro.z) / rd.z;
+  float t = min(min(tx, ty), tz);
+  vec3 h = ro + rd * t;
+  float d = clamp(-h.z, 0.0, 1.0);
+  vec2 q = h.xy / mix(1.0, 1.0 / uBack, d) * 0.5 + 0.5;
+  q = clamp(q, vec2(0.012), vec2(0.988));
+  float c = mod(vRoom, uGrid.x);
+  float r = floor(vRoom / uGrid.x);
+  vec2 uv = vec2((c + q.x) / uGrid.x, 1.0 - (r + 1.0 - q.y) / uGrid.y);
+  vec3 col = texture2D(uAtlas, uv).rgb;
+  col *= vLit > 0.0 ? 1.0 : 0.55;
+  col += vLit * vec3(1.0, 0.75, 0.45) * 0.6 * (1.0 - d);
+  float f = pow(1.0 - abs(normalize(vView).z), 3.0) * 0.35;
+  col = mix(col, vec3(0.78, 0.82, 0.86), f);
+  col *= 0.93 + 0.07 * fract(sin(dot(floor(vUv * 24.0), vec2(12.9898, 78.233))) * 43758.5453);
+  gl_FragColor = vec4(col, 1.0);
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}
+`,
+  });
+  material.uniforms.uAtlas.value = atlas;
+  return material;
+}
