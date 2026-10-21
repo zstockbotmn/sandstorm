@@ -94,3 +94,12 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 ## Step 5e/5f (2026-10-21 3:40 PM ET) - code only, nothing run
 - 5e applied by hand 5cfe97f (behind sp=5; ?press=0 kill switch; SS.pressForce for tests). 5f draft test/pressure.js 1eddb35.
 - Run list (one at a time): pressure.js Low (2 runs) + Ultra-low (1); threat.js Low + Ultra-low with sp=5 (and with &press=0) for no regression; rpg-wave + truck Low (grenade/RPG gap with the shorter camp threshold); quick visual of a late wave (SS.pressForce=1) for 4-fighter waves.
+
+## A11 (Oct 21)
+- 1 grenade wave 3 (7bd892d): any thrower within 40 m (roof fallback), starved grenade beats forced RPG/truck, gap 3 s once certain. Trigger = cover.state 'in' (same as HUD IN COVER).
+- 2 RPG damage 10-30 by distance + jitter (direct 24-30, edge 10-13, cover 18-30), 5 HP floor; hurt log names source (rifle / rifle, flank / RPG / grenade / truck). Tester's -18s were rifle hits.
+- 3 truck crash kick 0.55-1.1 + 9 impacts + 7 chunks (Ultra-low 3/3); SS.truckCrash.
+- 4 calm 15-25 game-s after every clear (SS.calmUntil, not cut by 5e); ambient fires 2-3.5 s into calm then every 5-8 s. Root cause: SS.bursting window vs ~5 s gaps.
+- 5 near misses: max 1 per 1.5-2 s, closer louder.
+- 6/7 SET PIECE pinned block in debug sound log (12 s); FORCED tag in debug.
+- Tests: test/a11.js, truck.js crashFx, pressure.js (wave-1 softening normalised).
