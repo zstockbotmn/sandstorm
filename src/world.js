@@ -7,6 +7,19 @@ const START_Z = 24;      // first segment starts behind the spawn so the run ope
 import { Q, LOWQ, ULTRA } from './quality.js';
 import { pbrMaterial, worldBox, triplanarDetail } from './texlib.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { createInteriorAtlas, createInteriorMaterial, createInteriorFallback, buildWindowMesh } from './interior.js';
+
+const BLD4 = typeof location !== 'undefined' && /[?&]bld=4/.test(location.search);
+const BLD4P = BLD4 && /[?&]bld=4p\b/.test(location.search);
+let winMat = null;
+function windowMaterial() {
+  if (!winMat) {
+    const atlas = createInteriorAtlas();
+    winMat = ULTRA ? createInteriorFallback({ atlas }) : createInteriorMaterial({ atlas });
+  }
+  return winMat;
+}
+
 const DRAW_AHEAD = Q.drawAhead;  // segments wholly beyond this (fogged out anyway) are not drawn
 const DRAW_BEHIND = 20;
 
@@ -540,6 +553,7 @@ export function createWorld(scene, seed) {
     while (seg.group.children.length) { const ch = seg.group.children[0]; if (ch.userData.ownGeo && ch.geometry) ch.geometry.dispose(); seg.group.remove(ch); }
 
     const rng = mulberry32((seed ^ Math.imul(seg.gen + 1, 0x9e3779b1) ^ Math.imul(seg.id + 1, 0x85ebca6b)) >>> 0);
+    if (BLD4) { seg._wins = []; seg._wrng = mulberry32((seed ^ Math.imul(seg.gen + 11, 0x2c1b3c6d) ^ Math.imul(seg.id + 5, 0x297a2d39)) >>> 0); } else seg._wins = null;
     const oz = seg.originZ;
 
     addBox(seg, matRoad, 0, -0.05, oz - SEG_LEN / 2, 10, 0.1, SEG_LEN, { cast: false });
@@ -557,6 +571,14 @@ export function createWorld(scene, seed) {
     if (seg._decals && seg._decals.length) {
       const g = mergeGeometries(seg._decals.map((x) => x.index ? x.toNonIndexed() : x)); seg._decals.forEach((x) => x.dispose()); seg._decals = null;
       if (g) { const dm = new THREE.Mesh(g, decalMat); dm.receiveShadow = true; dm.userData.ownGeo = true; seg.group.add(dm); }
+    }
+    if (seg._wins && seg._wins.length) { seg.group.add(buildWindowMesh(seg._wins, windowMaterial())); }
+    seg._winN = seg._wins ? seg._wins.length : 0;
+    seg._wins = null;
+    if (BLD4 && typeof window !== 'undefined' && window.SS) {
+      let w = 0, m = 0;
+      for (const s of segments) if (s._winN) { w += s._winN; m++; }
+      window.SS.bld4 = { windows: w, meshes: m, mode: ULTRA ? 'flat' : 'interior' };
     }
 
     const cars = 1 + (rng() * 3) | 0;
@@ -624,7 +646,7 @@ export function createWorld(scene, seed) {
         continue;
       }
       // Extra roll only once art is in, so low tier and the pre-load fill stay identical.
-      if (buildingsReady() && rng() < 1.01) {
+      if (buildingsReady() && rng() < 1.01 && !BLD4P) {
         placeArtBuilding(seg, rng, pickBuilding(rng), side, z, lot, doors);
         z -= lot;
         continue;
@@ -659,6 +681,7 @@ export function createWorld(scene, seed) {
           const wz = cz - lot * 0.38 + ((w + 0.5) / count) * lot * 0.76;
           if (Math.abs(wz - doorZ) < 0.9 && f === 0) continue;
           addBox(seg, matDark, facadeX - side * 0.1, wy, wz, 0.22, 1.15, 0.85);
+          if (seg._wins) { const wr = seg._wrng; seg._wins.push({ pos: new THREE.Vector3(facadeX - side * 0.215, wy, wz), normal: new THREE.Vector3(-side, 0, 0), w: 0.85, h: 1.15, room: Math.floor(wr() * 8), lit: wr() < 0.3 ? 0.6 + 0.4 * wr() : 0 }); }
           seg.coverPoints.push({
             pos: new THREE.Vector3(facadeX - side * 0.45, wy, wz),
             type: 'window',
