@@ -36,19 +36,19 @@ const QS = process.env.SS_QS || '', SPIN = Number(process.env.SS_SPIN_MS || 800)
   // Case B: last fighter, default 20-25 s timer
   res.B = await p.evaluate(async () => { const L = (SS.enemies.list || []).filter((e) => e.alive); const keep = L.find((x) => !(x.anchor && /roof|window/.test(x.anchor.type))) || L[0];
     if (!keep) return { skipped: 'no fighter' }; SS.debug.noSpawn = true; for (const x of L) if (x !== keep) { x.health = 1; try { x.takeHit('head', x.group.position.clone().setY(1.6)); } catch (_) {} }
-    const t0 = SS.simTime, r0 = keep.repositions | 0; let jump = 0, last = keep.group.position.clone(), runF = 0, exp = 0, why = {};
-    while (SS.simTime - t0 < 34) { await new Promise((r) => requestAnimationFrame(r)); const p2 = keep.group.position; jump = Math.max(jump, p2.distanceTo(last)); last.copy(p2);
+    const t0 = SS.simTime, r0 = keep.repositions | 0; let jump = 0, jumpAt = null, last = keep.group.position.clone(), runF = 0, exp = 0, why = {};
+    while (SS.simTime - t0 < 34) { await new Promise((r) => requestAnimationFrame(r)); const p2 = keep.group.position; const jd = p2.distanceTo(last); if (jd > jump) { jump = jd; jumpAt = { phase: keep.phase, teleports: keep.teleports | 0, last: SS.lastTeleport || null, simS: +(SS.simTime - t0).toFixed(1) }; } last.copy(p2);
       why[keep._reposWhy || '-'] = (why[keep._reposWhy || '-'] | 0) + 1; if (keep._repositioning && keep.moving) { runF++; if (keep.exposed) exp++; }
       if ((keep.repositions | 0) > r0 && runF > 4) break; if (!keep.alive) break; }
     return { repositions: (keep.repositions | 0) - r0, atSimS: +(SS.simTime - t0).toFixed(1), reposAt: keep._reposAt && +keep._reposAt.toFixed(1), fails: keep.reposFails | 0, fellBack: keep.fellBack | 0, rej: keep._reposRej || null, why,
-      jumpM: +jump.toFixed(2), exposedFrac: runF ? +(exp / runF).toFixed(2) : null, alive: keep.alive, phase: keep.phase, anchor: keep.anchor && keep.anchor.type }; });
+      jumpM: +jump.toFixed(2), jumpAt, teleports: keep.teleports | 0, seenForced: keep.seenForced | 0, exposedFrac: runF ? +(exp / runF).toFixed(2) : null, alive: keep.alive, phase: keep.phase, anchor: keep.anchor && keep.anchor.type }; });
   await p.evaluate(() => { window.__spinMs = 0; });
   if (res.overrides.some((t) => t !== 'undefined')) fail.push('timer override set ' + res.overrides);
   const A = res.A; if (A.alive >= 2 || A.squadMoves) { if (A.squadMoves < 1) fail.push('no squad relocation in ' + A.simS + ' sim-s ' + JSON.stringify(A.why)); if (A.twoAtOnce) fail.push(A.twoAtOnce + ' frames with two fighters relocating at once'); }
   else fail.push('case A: fewer than 2 live fighters (' + A.alive + ')');
   if (A.minGapM < 1.5) fail.push('two fighters stacked ' + A.minGapM + ' m apart');
   const B = res.B; if (B.skipped) fail.push('case B ' + B.skipped); else { if (B.repositions < 1) fail.push('last fighter never moved in ' + B.atSimS + ' sim-s ' + JSON.stringify({ why: B.why, rej: B.rej, fails: B.fails }));
-    if (B.jumpM > 1.2) fail.push('last fighter jumped ' + B.jumpM + ' m in one frame'); if (B.exposedFrac != null && B.exposedFrac < 0.8) fail.push('reposition run not exposed (' + B.exposedFrac + ')'); }
+    if (B.jumpM > 1.2) fail.push('last fighter jumped ' + B.jumpM + ' m in one frame ' + JSON.stringify(B.jumpAt)); if (B.exposedFrac != null && B.exposedFrac < 0.8) fail.push('reposition run not exposed (' + B.exposedFrac + ')'); }
   if (res.pageErrors) fail.push('page errors: ' + res.pageErrors.join(' | '));
   console.log(JSON.stringify(res)); console.log(fail.length ? 'LOCORELOC FAIL ' + fail.join(' ; ').slice(0, 1200) : 'LOCORELOC PASS'); srv.close(); await b.close(); process.exit(fail.length ? 1 : 0);
 })().catch((e) => { console.log('LOCORELOC FAIL exception ' + e.message); process.exit(1); });

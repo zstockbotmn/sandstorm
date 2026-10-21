@@ -7,6 +7,7 @@ const BODY_YAW_CAP = 270 * Math.PI / 180, TWIST_RATE = 240 * Math.PI / 180, HEAD
 const REPOS = (() => { try { return !!(LOCO2 || /[?&]repos=1\b/.test(location.search)); } catch (_) { return !!LOCO2; } })();
 const HITS2 = (() => { try { return /[?&]hits=2\b/.test(location.search); } catch (_) { return false; } })();
 import { createRagdollSystem } from './ragdoll.js';
+import { createReactState, kickReact, stepReact, applyReact } from './hitreact.js';
 
 // m1v tunables: wave-1 enemy damage multiplier (tester died at the first cover every run) and the cover grace period
 export const WAVE1_DAMAGE = 0.6;
@@ -507,6 +508,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (yOff) r.position.y += yOff;
       if (yOff || shifted) r.updateMatrixWorld(true);
     }
+    // Hit-react sink. footIK rewrites root y from rootY0 + pelvisOff every frame, so a
+    // one-shot root.y -= drop in stepArt would vanish. Same offset path as cover yOff.
+    if (enemy._reactDrop) { r.position.y -= enemy._reactDrop; r.updateMatrixWorld(true); }
     // pelvis drop runs at every range/tier (cheap); the two-bone solve + locking only on High within 30 m
     if (art.tier !== 'high' || camera.position.distanceToSquared(enemy.group.position) > 900) { enemy.legs.forEach((l) => { l.lock = null; }); return; }
     const ground = enemy.group.position.y + enemy.ankleH, out = enemy.ikDbg || (enemy.ikDbg = []);
@@ -994,9 +998,48 @@ export function createEnemies(scene, camera, world, weapon, player) {
     proceduralLean(enemy, name, dt);
     try { supportArm(enemy, name, dt); } catch (err) { reportErr('support arm', err); }
     if (LOCO2) applyFidget(enemy);
+    if (HITS2 && enemy.reactSt) applyHitReact(enemy, dt);
     if (enemy.hitPlaying && !enemy.actions.hit.enabled) {
       enemy.hitPlaying = false;
       enemy.hitReturning = false;
+    }
+  }
+
+  // stepToward does not test colliders. Reject a stumble whose destination sits in any
+  // world.colliders box expanded by 0.3 m. Road and sand are ground slabs (top <= 5 cm);
+  // expanding those would block every street step.
+  const _reactP = new THREE.Vector3();
+  function reactDestClear(p) {
+    const cols = world.colliders;
+    if (!cols) return true;
+    const x = p.x, y = p.y, z = p.z;
+    for (let i = 0; i < cols.length; i++) {
+      const m = cols[i];
+      const hy0 = Math.abs(m.scale.y) * 0.5;
+      if (m.position.y + hy0 <= 0.05) continue;
+      const hx = Math.abs(m.scale.x) * 0.5 + 0.3;
+      const hy = hy0 + 0.3;
+      const hz = Math.abs(m.scale.z) * 0.5 + 0.3;
+      if (Math.abs(x - m.position.x) < hx && Math.abs(y - m.position.y) < hy && Math.abs(z - m.position.z) < hz) return false;
+    }
+    return true;
+  }
+  function applyHitReact(enemy, dt) {
+    const st = enemy.reactSt;
+    const step = stepReact(st, dt);
+    enemy.reactW = st.w;
+    if (!st.zone && st.w <= 0) { enemy._reactDrop = 0; return; }
+    const dist = camera.position.distanceTo(enemy.group.position);
+    const level = qName() === 'ultra-low' ? 1 : (art.tier === 'high' || dist < 25) ? 2 : 1;
+    enemy.group.updateMatrixWorld(true);
+    _fwdW.set(0, 0, 1).applyQuaternion(enemy.group.quaternion);
+    _rightW.set(1, 0, 0).applyQuaternion(enemy.group.quaternion);
+    const drop = enemy.bones ? applyReact(st, enemy.bones, bendBone, _up, _rightW, _fwdW, level) : 0;
+    enemy._reactDrop = drop || 0;
+    if (step > 0 && !enemy.pinned && !enemy.dying && !isElevated(enemy.anchor && enemy.anchor.type)) {
+      const gp = enemy.group.position;
+      _reactP.copy(gp).addScaledVector(st.stepDir, step);
+      if (reactDestClear(_reactP)) gp.copy(_reactP);
     }
   }
 
@@ -1208,6 +1251,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (HITS2) {
       enemy.wounds = { armL: 0, armR: 0, legL: 0, legR: 0, torso: 0 };
       enemy.lastHitZone = null; enemy.lastHitDir = null; enemy.lastHitT = 0; enemy.react = null;
+      enemy.reactSt = createReactState(); enemy.reactW = 0;
     }
 
     const torso = new THREE.Mesh(geoTorso, matVest);
@@ -1617,6 +1661,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function hitReact(enemy, zone, dir, point) {
     enemy.react = { zone, t: 0, dur: zone === 'torso' ? 0.45 : zone.startsWith('leg') ? 0.6 : 0.35, dir: dir.clone() };
+    _rightW.set(1, 0, 0).applyQuaternion(enemy.group.quaternion);
+    kickReact(enemy.reactSt, zone, dir, _rightW);
   }
 
   function hitEnemy(enemy, part, point) {
@@ -1644,12 +1690,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
         try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {}
       }
       if (LOCO2) forceDuck(enemy, weapon.lastShot);
-      if (enemy.art) playHit(enemy, part === 'head');
+      const springs = HITS2 && enemy.reactSt && enemy.lastHitZone && enemy.lastHitZone !== 'head'; // ?hits=2: zone springs replace the full-body Hit clip and the 0.3 m one-frame shove
+      if (enemy.art && !springs) playHit(enemy, part === 'head');
       // Bigger hit reaction: shove back ~0.3 m from the shooter (ground enemies) + a brief exposed stagger.
       // Never shove into a building: a fighter pushed inside a wall collider became unhittable (false misses).
-      if (enemy.group.position.y < 0.5 && !enemy.pinned) { const gp = enemy.group.position, x0 = gp.x; _aim.copy(gp).sub(camera.position).setY(0).normalize(); gp.addScaledVector(_aim, 0.3);
+      if (!springs && enemy.group.position.y < 0.5 && !enemy.pinned) { const gp = enemy.group.position, x0 = gp.x; _aim.copy(gp).sub(camera.position).setY(0).normalize(); gp.addScaledVector(_aim, 0.3);
         const lim = Math.max(5.6, Math.abs(x0)); if (Math.abs(gp.x) > lim) gp.x = Math.sign(gp.x) * lim; }
-      if (!enemy.pinned) enemy.staggerT = 0.45; enemy.shootCd = Math.max(enemy.shootCd || 0, 0.6);
+      if (!enemy.pinned) enemy.staggerT = springs ? (enemy.lastHitZone === 'torso' ? 0.45 : enemy.lastHitZone.startsWith('leg') ? 0.5 : 0.3) : 0.45; enemy.shootCd = Math.max(enemy.shootCd || 0, 0.6);
       if (point) spray(point);
       if (window.SS && window.SS.hud && window.SS.hud.hitMarker) window.SS.hud.hitMarker(part === 'head' ? 'head' : 'hit');
       if (window.SS) window.SS.lastEnemyHit = { part, dmg, health: enemy.health, t: performance.now() };
@@ -1965,6 +2012,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       e.warps = Math.max(0, (e.warps | 0) - 1); e.seenForced = (e.seenForced | 0) + 1; if (window.SS) window.SS.seenForced = (window.SS.seenForced | 0) + 1;
       startReposition(e, best); return true;
     }
+    e.teleports = (e.teleports | 0) + 1; if (window.SS) window.SS.lastTeleport = { why: 'toSeenSpot', best: !!best, t: window.SS.simTime };
     if (best) { e.anchor = best; e.home = standPos(best); e.group.position.copy(firePoint(e)); }
     else { let pt = null; for (const ah of [16, 13, 19, 10, 22]) { for (const x of [0, -1.5, 1.5, -3, 3]) { _losP.set(camera.position.x + x, 1.25, pz - ah); if (clearToEye(_losP)) { pt = new THREE.Vector3(_losP.x, 0, _losP.z); break; } } if (pt) break; }
       if (!pt) pt = new THREE.Vector3(camera.position.x, 0, pz - 14);
@@ -1989,6 +2037,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const ahead = pz - c.pos.z; if (ahead < 12 || ahead > 30 || occupiedBy(c.pos, e)) continue;
       const d = Math.abs(ahead - 18) + Math.abs(c.pos.x) * 0.3; if (d < bd) { bd = d; best = c; } }
     e.behavior = 'shifter'; e.unseenT = 0; e.seen = true; e.engaged = true; e.afterHide = false;
+    // p1b: a ground fighter hiding in cover RUNS there (the warp popped 9-10 m and reset the hold clock). An exposed one
+    // that is still unseen may be stuck inside geometry, so it keeps the old move.
+    if (best && REPOS && !e.exposed && e.group.position.y < 0.05) { e.seenForced = (e.seenForced | 0) + 1; startReposition(e, best); return; }
+    e.teleports = (e.teleports | 0) + 1; if (window.SS) window.SS.lastTeleport = { why: 'toVisibleCover', exposed: !!e.exposed, t: window.SS.simTime };
     if (best) { e.anchor = best; e.home = standPos(best); }
     else { const side = Math.sign(e.group.position.x) || 1; e.anchor = { type: 'door', pos: new THREE.Vector3(side * 5.4, 1.2, pz - 18) }; e.home = standPos(e.anchor); }
     e.group.position.copy(firePoint(e)); e.group.position.y = 0; e.path = null; e.pathI = 0;
