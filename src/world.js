@@ -209,6 +209,14 @@ export function createWorld(scene, seed) {
   function addBackdrop(seg, rng, side, oz) {
     const nRows = ULTRA ? 1 : LOWQ ? 2 : 3;
     const byMat = shellMats.map(() => []); const roofs = [], wins = [];
+    // Separate stream so BLD4 roof clutter never shifts the backdrop layout rng.
+    const xr = BLD4 ? mulberry32(((oz * 131) | 0) ^ (side * 0x2c1b3c6d) ^ 0x51ed) : null;
+    let nPar = 0, nTank = 0, nAnt = 0, nDome = 0, nMin = 0;
+    const skyPrim = (g, x, y, z, cr, cg, cb) => {
+      g.translate(x, y, z);
+      for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+      return tint(g, cr, cg, cb, 0);
+    };
     for (let r = 0; r < nRows; r++) {
       const [x0, hMin, hMax] = ROWS[r];
       let z = oz + rng() * 4;
@@ -219,8 +227,41 @@ export function createWorld(scene, seed) {
         const cx = side * (x0 + depth / 2 + rng() * 2), cz = z - lot / 2;
         const k = (rng() * WALL_TEX.length) | 0, tr = 0.78 + rng() * 0.22;
         byMat[k].push(tint(boxAt(depth, h, lot - 0.3, cx, h / 2, cz, 3), tr, tr * 0.96, tr * 0.9, 0.3));
-        roofs.push(tint(boxAt(depth + 0.3, 0.4, lot, cx, h + 0.2, cz, 4), 0.85, 0.82, 0.78, 0));
+        const slab = tint(boxAt(depth + 0.3, 0.4, lot, cx, h + 0.2, cz, 4), 0.85, 0.82, 0.78, 0);
+        roofs.push(slab);
         if (rng() < 0.3) roofs.push(tint(boxAt(1.4, 1.2, 1.4, cx + (rng() - 0.5) * depth * 0.5, h + 1, cz + (rng() - 0.5) * lot * 0.5, 2), 0.8, 0.8, 0.78, 0));
+        if (BLD4) {
+          const rt = 0.75 + xr() * 0.15;
+          tint(slab, rt, rt * 0.82 / 0.85, rt * 0.78 / 0.85, 0);
+          if (xr() < 0.55) {
+            const rw = depth + 0.3, rl = lot, t = 0.25, ph = 0.6, py = h + 0.4 + ph / 2;
+            roofs.push(tint(boxAt(t, ph, rl, cx - rw / 2 + t / 2, py, cz, 4), tr, tr * 0.96, tr * 0.9, 0.3));
+            roofs.push(tint(boxAt(t, ph, rl, cx + rw / 2 - t / 2, py, cz, 4), tr, tr * 0.96, tr * 0.9, 0.3));
+            roofs.push(tint(boxAt(rw - 2 * t, ph, t, cx, py, cz - rl / 2 + t / 2, 4), tr, tr * 0.96, tr * 0.9, 0.3));
+            roofs.push(tint(boxAt(rw - 2 * t, ph, t, cx, py, cz + rl / 2 - t / 2, 4), tr, tr * 0.96, tr * 0.9, 0.3));
+            nPar++;
+          }
+          if (r <= 1 && xr() < 0.25) {
+            const tx = cx + (xr() - 0.5) * (depth + 0.3 - 1.4), tz = cz + (xr() - 0.5) * (lot - 1.4);
+            roofs.push(skyPrim(new THREE.CylinderGeometry(0.6, 0.6, 1.3, 8), tx, h + 0.4 + 0.65, tz, 0.55, 0.55, 0.55));
+            nTank++;
+          }
+          if (xr() < 0.2) {
+            const ah = 2 + xr() * 2.5;
+            roofs.push(tint(boxAt(0.06, ah, 0.06, cx, h + 0.4 + ah / 2, cz, 4), 0.3, 0.3, 0.3, 0));
+            nAnt++;
+          }
+          if ((r === 1 || r === 2) && depth > 8 && lot > 7 && xr() < 0.06) {
+            roofs.push(skyPrim(new THREE.SphereGeometry(2.2, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), cx, h + 0.4, cz, 0.85, 0.8, 0.7));
+            nDome++;
+            if (xr() < 0.5) {
+              const mx = cx + side * ((depth + 0.3) / 2 - 0.7), mz = cz - lot / 2 + 0.7;
+              roofs.push(skyPrim(new THREE.CylinderGeometry(0.45, 0.55, 7, 8), mx, h + 0.4 + 3.5, mz, 0.82, 0.78, 0.7));
+              roofs.push(skyPrim(new THREE.ConeGeometry(0.6, 1.2, 8), mx, h + 0.4 + 7 + 0.6, mz, 0.82, 0.78, 0.7));
+              nMin++;
+            }
+          }
+        }
         if (r < 2) {
           const fx = cx - side * (depth / 2 + 0.02), floors = Math.max(1, Math.floor((h - 1) / 3.1)), nw = Math.max(1, Math.floor(lot / 2.6));
           for (let f = 0; f < floors; f++) for (let w = 0; w < nw; w++) {
@@ -228,9 +269,20 @@ export function createWorld(scene, seed) {
             const g = new THREE.PlaneGeometry(0.9, 1.3); g.rotateY(side < 0 ? Math.PI / 2 : -Math.PI / 2);
             g.translate(fx, 1.9 + f * 3.1, cz - lot / 2 + (w + 0.5) * (lot / nw)); g.deleteAttribute('uv'); g.deleteAttribute('normal'); g.computeVertexNormals(); wins.push(g);
           }
+        } else if (BLD4 && nRows === 3 && r === 2) {
+          const fx = cx - side * (depth / 2 + 0.02), floors = Math.max(1, Math.floor((h - 1) / 3.1)), nw = Math.max(1, Math.floor(lot / 2.6));
+          for (let f = 0; f < floors; f += 2) for (let w = 0; w < nw; w++) {
+            if (xr() < 0.5) continue;
+            const g = new THREE.PlaneGeometry(0.9, 1.3); g.rotateY(side < 0 ? Math.PI / 2 : -Math.PI / 2);
+            g.translate(fx, 1.9 + f * 3.1, cz - lot / 2 + (w + 0.5) * (lot / nw)); g.deleteAttribute('uv'); g.deleteAttribute('normal'); g.computeVertexNormals(); wins.push(g);
+          }
         }
         z -= lot;
       }
+    }
+    if (BLD4 && typeof window !== 'undefined' && window.SS) {
+      const s4 = window.SS.bld4sky || (window.SS.bld4sky = { parapets: 0, tanks: 0, antennas: 0, domes: 0, minarets: 0 });
+      s4.parapets += nPar; s4.tanks += nTank; s4.antennas += nAnt; s4.domes += nDome; s4.minarets += nMin;
     }
     const add = (list, mat, shadow) => { if (!list.length) return; const g = mergeGeometries(list.map((x) => x.index ? x.toNonIndexed() : x)); if (!g) return;
       const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.castShadow = false; m.userData.backdrop = true; m.userData.ownGeo = true; seg.group.add(m); };
