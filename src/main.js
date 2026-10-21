@@ -482,7 +482,7 @@ onLow(() => {
   { const msg = (window.SS.quality === 'ultra-low' ? 'Ultra-low' : 'Low') + ' quality on for smoother play'; window.SS.tierToast = msg; if (hud.hint && window.SS.running) hud.hint(msg); else window.SS.pendingTierToast = msg; } // shown now, or at run start if it switched on the menu // names the tier actually applied (fix 8)
 });
 window.SS.gpu = rendererString(renderer.getContext());
-window.SS.THREE = THREE; window.SS.world = world; // tests
+window.SS.THREE = THREE; window.SS.world = world; window.SS.cover = cover; // tests; A8: SS.cover was never set, so enemy cover-lip misses and the SWITCH COVER halves (input.js) never found the cover
 window.SS.camera = camera; // perf/debug probes (test/perf-bldg.js)
 window.SS.goUltra = (r) => { goLow(r || 'debug'); goUltra(r || 'debug'); }; // tests
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT && !PICKED && !/[?&]start=high\b/.test(location.search)) goLow('software-gl'); // ?start=high (tests): act like a weak real GPU

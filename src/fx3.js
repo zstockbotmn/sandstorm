@@ -543,7 +543,7 @@ const SKY_N = 12, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.15
     const fN = (typeof window !== 'undefined' && window.SS) ? (window.SS.frameN | 0) : 0, rN = typeof performance !== 'undefined' ? performance.now() : 0;
     for (let i = kicks.length - 1; i >= 0; i--) {
       const k = kicks[i];
-      if (!k.held) { if (fN - k.f0 >= 2 && rN - k.r0 >= 250) k.held = true; else continue; }
+      if (!k.held) { if (fN - k.f0 >= 3 && rN - k.r0 >= 250) k.held = true; else continue; } // frames f0+1 and f0+2 paint at full strength
       k.age += d;
       if (kicks[i].age * kicks[i].spec.decay > 6.5) kicks.splice(i, 1); // exp(-6.5) ~ 0.0015
     }

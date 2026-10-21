@@ -59,9 +59,9 @@ export function createHud() {
   // A8 tester (A7: 'a top bar that shifts sideways, never a distinct arc'): a filled red wedge on a ring around the
   // crosshair, pointing at the shooter, on top of the edge arc. Same show/hold timing as the arc (dmg-dir).
   const dirWedge = document.createElementNS(SVGNS, 'path'); dirWedge.setAttribute('class', 'wedge'); dirSvg.appendChild(dirWedge);
-  function wedgePath(angle) { const W = window.innerWidth || 844, H = window.innerHeight || 390, cx = W / 2, cy = H / 2, m = Math.min(W, H), r0 = 0.15 * m, r1 = 0.27 * m, rt = 0.33 * m, hs = 22 * Math.PI / 180;
+  function wedgePath(angle) { const W = window.innerWidth || 844, H = window.innerHeight || 390, cx = W / 2, cy = H / 2, m = Math.min(W, H), r0 = 0.17 * m, rt = 0.30 * m, hs = 15 * Math.PI / 180;
     const P = (r, a) => (cx + Math.sin(a) * r).toFixed(1) + ' ' + (cy - Math.cos(a) * r).toFixed(1);
-    dirWedge.setAttribute('d', 'M' + P(r0, angle - hs) + 'A' + r0.toFixed(1) + ' ' + r0.toFixed(1) + ' 0 0 1 ' + P(r0, angle + hs) + 'L' + P(r1, angle + hs) + 'L' + P(rt, angle) + 'L' + P(r1, angle - hs) + 'Z'); }
+    dirWedge.setAttribute('d', 'M' + P(r0, angle - hs) + 'A' + r0.toFixed(1) + ' ' + r0.toFixed(1) + ' 0 0 1 ' + P(r0, angle + hs) + 'L' + P(rt, angle) + 'Z'); } // arrowhead pointing out at the shooter
   // A8: FLANKED tell (App PM): amber label + a long edge streak toward the flanker, >= 1.5 s and >= 4 painted frames.
   const flankEl = document.createElement('div'); flankEl.id = 'flanked'; flankEl.textContent = 'FLANKED';
   // A8: small ducked / exposed indicator next to the health bar (tester A7: no cue for whether you are ducked).

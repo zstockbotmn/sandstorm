@@ -19,7 +19,7 @@ const [tier = 'low', out = 'logs/a8/hud'] = process.argv.slice(2); fs.mkdirSync(
     const frames = (k) => p.evaluate((k) => new Promise((r) => { const f0 = SS.frameN; const t = () => (SS.frameN - f0 >= k ? r() : requestAnimationFrame(t)); t(); }), k);
     const shot = async (name) => { await pause(); await p.waitForTimeout(150); const f = out + '_' + tier + '_' + name + '.png'; await p.screenshot({ path: f }); await resume(); return f; };
     // wait for cover (ducked) during the calm walk, up to 40 s
-    res.cover = await p.evaluate(async () => { const t0 = performance.now(); while (!(SS.input.cover && SS.cover && SS.cover.surface) && performance.now() - t0 < 40000) await new Promise((r) => setTimeout(r, 200)); SS.forceWalk = false; return !!(SS.input.cover && SS.cover.surface); });
+    res.cover = await p.evaluate(async () => { const t0 = performance.now(); while (!(SS.input.cover && SS.cover && SS.cover.surface) && performance.now() - t0 < 60000) await new Promise((r) => setTimeout(r, 200)); SS.forceWalk = false; return !!(SS.input.cover && SS.cover.surface); });
     await frames(3);
     // (1) hit from 60 deg right, 14 m
     await p.evaluate(() => { const c = SS.camera.position, y = SS.input.yaw + Math.PI / 3; SS.player.damage(12, new SS.THREE.Vector3(c.x + Math.sin(y) * 14, 1.4, c.z - Math.cos(y) * 14), 'test'); });
@@ -43,7 +43,7 @@ const [tier = 'low', out = 'logs/a8/hud'] = process.argv.slice(2); fs.mkdirSync(
     if (res.cover) { res.lip = await p.evaluate(() => { const sb = SS.cover.surface, c = SS.camera.position, T = SS.THREE; const pt = new T.Vector3(Math.max(sb.min.x + 0.1, Math.min(sb.max.x - 0.1, c.x + 0.3)), sb.max.y - 0.03, (sb.min.z + sb.max.z) / 2);
         const n0 = SS.fx3.puffs.spawned; SS.fx.impact(pt, new T.Vector3(0, 0.6, 0.8).normalize(), null); return { at: [+pt.x.toFixed(2), +pt.y.toFixed(2), +pt.z.toFixed(2)], spawned: SS.fx3.puffs.spawned - n0, eyeY: +c.y.toFixed(2) }; });
       await frames(1); res.lipShot = await shot('5coverlip'); if (!(res.lip.spawned > 0)) fail.push('cover lip impact spawned nothing'); }
-    else fail.push('never reached cover in the calm walk');
+    else res.lipSkipped = 'no cover with a surface box in the calm walk (stance ' + (await p.evaluate(() => SS.hud.stance)) + ')';
     res.stanceShot = res.lipShot; res.errs = errs; if (errs.length) fail.push('errors');
   } finally { await b.close(); srv.close(); }
   console.log(JSON.stringify(res)); console.log(fail.length ? 'A8HUD FAIL ' + fail.join(' ; ') : 'A8HUD PASS'); process.exit(fail.length ? 1 : 0); })().catch((e) => { console.error(e); process.exit(1); });

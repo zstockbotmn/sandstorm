@@ -490,9 +490,9 @@ body.starting #starting { display: flex; }
 #first-hint b { color: #ffd23a; font-weight: 800; }
 #first-hint.show { opacity: 1; transition: none; }
 /* A8: wedge toward the shooter around the crosshair, FLANKED tell, ducked / exposed indicator */
-#dmg-dir path.wedge { fill: rgba(255, 34, 24, 0.82); stroke: rgba(40, 0, 0, 0.85); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(255, 0, 0, 0.8)); }
+#dmg-dir path.wedge { fill: rgba(255, 34, 24, 0.78); stroke: rgba(40, 0, 0, 0.85); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(255, 0, 0, 0.8)); }
 #flanked { position: fixed; left: 50%; top: 24%; transform: translate(-50%, -50%); padding: 4px 14px; font: 900 26px system-ui, sans-serif; letter-spacing: 3px; color: #ffcf4a; background: rgba(60, 20, 0, 0.55); border: 2px solid rgba(255, 190, 60, 0.9); border-radius: 6px; text-shadow: 0 2px 3px #000; opacity: 0; pointer-events: none; z-index: 5; transition: opacity 0.4s linear; }
 #flanked.show { opacity: 1; transition: none; }
-#stance { position: fixed; top: calc(86px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left)); padding: 2px 8px; font: 800 12px system-ui, sans-serif; letter-spacing: 1px; border-radius: 4px; pointer-events: none; text-shadow: 0 1px 2px #000; }
+#stance { position: fixed; top: calc(20px + env(safe-area-inset-top)); left: calc(104px + env(safe-area-inset-left)); padding: 2px 8px; font: 800 12px system-ui, sans-serif; letter-spacing: 1px; border-radius: 4px; pointer-events: none; text-shadow: 0 1px 2px #000; }
 #stance.ducked { color: #b8f5a0; background: rgba(20, 70, 20, 0.55); border: 1px solid rgba(150, 230, 120, 0.8); }
 #stance.exposed { color: #ffd27a; background: rgba(90, 40, 0, 0.55); border: 1px solid rgba(255, 180, 70, 0.85); }
