@@ -37,3 +37,12 @@ Order: peek polish (3d, done 2a4118d) -> p1b fixes (last-enemy reposition never 
 Step 1 state on step1-movement: blendspace + measured clip directions, facing (yaw capped 270/240/300 deg/s, 40-deg re-plant step OK'd), cover 3a/3b, last-enemy reposition 3c all built and tested (loco-cover, loco-facing green). Internal preview A0 = ss-ee912e469c (tools/preview-step1.sh, localhost:8850; server stopped).
 Not started: peek polish (prompt drafted at tools/prompts/step1/3d-peek-polish.txt), step 2 hit reactions (prompts drafted in tools/prompts/step2/, tool note in DECISIONS.md draft).
 Open: strafe coverage at 26 m (78% vs 90%), crouch-head hit-volume trim (10-14 cm vs 13), deterministic foot-slide test. b1 + 11 s walk are on main 280a9a4, unpublished (bundle rule). Live remains m2a ss-556a20f839.
+
+## Step 4 (buildings) notes from tester A4 (2026-10-21)
+- Far skyline is plain flat sand-coloured boxes (no texture, no silhouette). Give it cheap detail: a window-grid / facade atlas
+  (one shared texture, world-scaled UVs or a shader grid), varied rooflines (parapets, water tanks, stair huts, antennas,
+  domes/minarets as a few instanced shapes), slight colour variation per box. Must stay ~free on iPhone (merged geometry,
+  one material, no extra draw calls per box).
+- Meshy texture residue: bldg2's ground-floor masonry block was a stretched/smudged patch (A4: boarded over with a CC0
+  planks panel); review the other Meshy facades for similar low-res patches when step 4 swaps/extends buildings.
+- Burnt cover car hood map is 512 px stretched (A4: world triplanar CC0 rust detail on top faces); a better car asset is a step 4 option.

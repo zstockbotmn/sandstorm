@@ -2831,8 +2831,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
         // Step D: escalating waves (2, 2, 3, 3, then 3-4) + a reinforcement truck (+2) every 4th wave.
         burstCap = burstIndex <= 2 ? 2 : burstIndex <= 4 ? 3 : (Math.random() < 0.5 ? 4 : 3);
         if (WAVE_ONE) burstCap = 1;
-        waveOpen = true; waveSpawned = 0; waveTotal = burstCap + (burstIndex >= 4 && burstIndex % 4 === 0 ? 2 : 0); if (window.SS) window.SS.waveTotal = waveTotal;
-        if (burstIndex >= 4 && burstIndex % 4 === 0) startTruck();
+        waveOpen = true; waveSpawned = 0; const truckWave = !WAVE_ONE && burstIndex >= 4 && burstIndex % 4 === 0; // A4 tester (enemies=1): ENEMIES 3 = 1 + the every-4th-wave truck's 2; debug single waves get no truck
+        waveTotal = burstCap + (truckWave ? 2 : 0); if (window.SS) window.SS.waveTotal = waveTotal;
+        if (truckWave) startTruck();
         burstSpawned = 0; roofWave = Math.random() < 0.5;
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;
