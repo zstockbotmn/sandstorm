@@ -1,0 +1,31 @@
+I'll read only the named ranges in `src/enemies.js`, then apply the `?sp=5` pressure changes and syntax-check that file.The named ranges are in. I'll check whether `SP5` already exists at the top of `createEnemies`, then apply only the pressure edits.The requested ranges cover pressure, flanks, wave size, grenades, and the breather. Shot interval is not in those lines, so that item stays unchanged. Applying the rest in `src/enemies.js`.`?sp=5` pressure is in `src/enemies.js` only. `node --check src/enemies.js` passed. With the flag off, `pressureP()` is 0, so every formula below stays at its old constant. `window.SS.pressureP` is still written each update (0.00).
+
+**0. Flag, helper, publish**
+- Line 119: `const SP5 = /[?&]sp=5\b/.test(location.search)` at the top of `createEnemies`.
+- Lines 248–252: `pressureP()` is `clamp((waveClears - 2) / 8, 0, 1)` when `SP5` is set, otherwise 0. That is 0 for waves 1–3 and 1 from wave 11.
+- Line 2934: each `update` sets `window.SS.pressureP` to that value rounded to 2 decimal places.
+
+**1. Exposed hit chance** (lines 2127–2129)
+- Slope is `0.05 + 0.02 * p`. Exposed cap is `0.5 + 0.12 * p`. Floor is `0.10 + slope * (dryS - 3)`.
+- Ducked cap stays `0.14`. The front-arc block at line 2135 (`if (hit && ducked && !flankShot) hit = false`) is unchanged.
+- `dmgAmt0`, the damage-cap bucket, hit spacing (`gap`), and the `LOW_HP` rules are unchanged.
+
+**2. Fire cadence — skipped**
+- The ranges you named do not choose the shot interval. The per-shot `shootCd` reset is later, in `tickFire` and the flanker fire path. Those lines were left as they are.
+
+**3. Flanks**
+- Lines 2014–2015: `FLANK_AFTER_S()` is `9 - 3 * p`, `FLANK_GAP_S()` is `18 - 6 * p`.
+- Call sites: line 2021 (arm check) and line 2042 (retry backoff).
+- `FLANK_TELL_S` (1.5) and `FLANK_RESET_S` (5) on line 2012 are unchanged.
+
+**4. Wave size** (lines 2966–2969)
+- For `burstIndex >= 5`, when `p >= 0.5`, the wave is not a `truckWave`, and `window.SS.truckMoment` is not mid-run (`last` set, no fighters, `crashSim == null`), `burstCap` is `Math.random() < 0.5 + 0.4 * p ? 4 : 3`.
+- Otherwise the old 3-or-4 roll stays. Cap is never above 4. `WAVE_ONE` still forces 1.
+
+**5. Grenade camping** (line 2881)
+- Threshold is `campT > 5 - 1.5 * p`. Grenade damage is unchanged.
+
+**6. Breather** (line 3150)
+- Walk is `distance + (10 - 2 * p) + rand * 5` (8–13 m at full pressure).
+
+RPG and truck set pieces were not edited.
