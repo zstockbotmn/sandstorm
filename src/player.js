@@ -36,7 +36,7 @@ export function createPlayer(camera, input, hud) {
     const SS = window.SS;
     if (SS && dmg > 0) {
       if (SS.fx && SS.fx.kick) SS.fx.kick('hit', Math.min(1.4, 0.6 + dmg / 25));
-      if (SS.audio && SS.audio.hurt) SS.audio.hurt(fromPosition, dmg);
+      if (SS.audio && SS.audio.hurt) SS.audio.hurt(fromPosition, dmg, source);
       const L = SS.hitLog || (SS.hitLog = []);
       L.push({ t: +(SS.simTime || 0).toFixed(2), hp0: +hp0.toFixed(1), hp: +player.health.toFixed(1), src: source || 'unknown',
         cues: { flash: !!hud, dir: !!(hud && camera), flinch: !!(SS.fx && SS.fx.kick), sound: !!(SS.audio && SS.audio.hurt) } });

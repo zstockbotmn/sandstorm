@@ -239,8 +239,9 @@ export function createAudio() {
   }
 
   // A6: every hit on the player has its own sound event: a dull body thump + a short ring, panned toward the shooter
-  function hurt(pos, dmg) {
-    alog('hit taken', '-' + Math.round(dmg || 0) + ' hp');
+  const HURT_SRC = { gun: 'rifle', flank: 'rifle, flank', rpg: 'RPG', grenade: 'grenade', truck: 'truck', test: 'test' };
+  function hurt(pos, dmg, src) {
+    alog('hit taken', '-' + Math.round(dmg || 0) + ' hp' + (src ? ' (' + (HURT_SRC[src] || src) + ')' : '')); // A11: the source, so set-piece hits can be told from rifle hits
     if (window.SS) window.SS.hurtSounds = (window.SS.hurtSounds | 0) + 1;
     if (!ctx) return;
     const p = panNode(pos ? bearing(pos) : 0); p.connect(master);

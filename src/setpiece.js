@@ -160,8 +160,12 @@ export function createSetPieces({ scene, camera, player, hud }) {
     else if (a && a.enemyShot) a.enemyShot(target.clone());
     const hpBefore = player.health;
     const d = Math.hypot(camera.position.x - target.x, camera.position.z - target.z);
-    const raw = d > 4.4 ? 0 : 30 - 20 * Math.max(0, Math.min(1, (d - 1.0) / 3.4)); // A10: 30 at <= 1 m -> 10 at 4.4 m
-    const dmg = Math.max(0, Math.min(raw, 30, hpBefore - 5));
+    // A10: 30 at <= 1 m -> 10 at 4.4 m. A11: + jitter (+-4) so the same spot never reads as a fixed number; a cover hit is
+    // judged from the cover lip (the player is ~0.8 m behind it) and rolls 18-30. Clamped 10-30, 5 HP floor below.
+    let raw = d > 4.4 ? 0 : 30 - 20 * Math.max(0, Math.min(1, (d - 1.0) / 3.4)) + (Math.random() * 8 - 4);
+    if (aimCover) raw = 18 + Math.random() * 12;
+    if (raw > 0) raw = Math.max(10, Math.min(30, raw));
+    const dmg = raw > 0 ? Math.max(0, Math.min(raw, 30, hpBefore - 5)) : 0;
     if (rec) rec.aim = aimCover ? 'cover' : 'ground';
     if (aimCover && f && f.impact) for (let i = 0; i < 5; i++) { tmp.copy(target); tmp.x += (Math.random() - 0.5) * 1.4; tmp.y += Math.random() * 0.2; f.impact(tmp.clone(), up, null); } // cover hit: debris shower
     if (window.SS) window.SS.setPieceAt = sim; shooterUntilR = performance.now() + 1200;
