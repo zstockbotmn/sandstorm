@@ -2,6 +2,7 @@
 //  calm  - every wave clear gives >= 15 game-s before the next wave, >= 1 ambient event and no enemy shots in it
 //  nade  - wave 3, ducked, waves 1-2 K-skipped, the two nearest fighters killed: a grenade by ~22 game-s, ring + GRENADE!
 //  rpg   - 6 debug RPGs at 100 HP: damage spread inside 10-30, HP >= 5, hurt log line names (RPG)
+//  nm    - near misses in cover at most ~1 per 1.5 s
 //  tag   - debug HUD tag says FORCED rpg=1 truck=1
 // Usage: node test/a11.js [low|ultra-low] [outPrefix]
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
@@ -34,8 +35,9 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
         } else {
           // wave 3: emulate the tester - stay ducked, kill the nearest two (leaving far / roof shooters)
           await waitFor(() => !SS.bursting, 30); await waitFor(() => !!SS.input.cover, 15); SS.debugKillNearest(); await sleep(600); SS.debugKillNearest();
-          const g0 = SS.grenades | 0, s0 = SS.simTime; let ring = false, hint = '', gate = null;
+          const g0 = SS.grenades | 0, s0 = SS.simTime, nm0 = SS.nearMisses | 0, nk0 = SS.nearMissSkipped | 0; let ring = false, hint = '', gate = null;
           const t0 = performance.now(); while ((SS.grenades | 0) === g0 && SS.simTime - s0 < 30 && performance.now() - t0 < 500000 && live() > 0) { top(); gate = SS.nadeGate; await sleep(120); }
+          out.nearMiss = { shown: (SS.nearMisses | 0) - nm0, skipped: (SS.nearMissSkipped | 0) - nk0, gameS: +(SS.simTime - s0).toFixed(1) };
           out.nade = { thrown: (SS.grenades | 0) > g0, after: +(SS.simTime - s0).toFixed(1), live: live(), gate, throw: SS.lastNadeThrow, ducked: !!SS.input.cover };
           const t1 = performance.now(); while (performance.now() - t1 < 8000 && out.nade.thrown) { const h = (SS.hud && SS.hud.hintText) || ''; if (/GRENADE!/.test(h)) hint = h; if (SS.nadeRingAt >= s0) ring = true; top(); await sleep(100); }
           out.nade.ring = ring; out.nade.hint = hint; out.nade.land = SS.lastGrenade;
@@ -51,6 +53,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
     const r = res.run; if (r.err) fail.push(r.err);
     for (const c of r.calms || []) { if (c.calm < 15) fail.push('calm ' + c.calm + ' s'); if (c.ambient < 1) fail.push('no ambient in calm after wave ' + c.after); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
     if (r.nade && !r.nade.thrown) fail.push('no wave-3 grenade ' + JSON.stringify(r.nade.gate)); else if (r.nade && (!r.nade.ring || !r.nade.hint)) fail.push('grenade ring/callout missing');
+    if (r.nearMiss && r.nearMiss.shown > Math.ceil(r.nearMiss.gameS / 1.4) + 1) fail.push('near misses ' + JSON.stringify(r.nearMiss));
     const hits = (r.rpg || []).filter((x) => x.dmg > 0).map((x) => x.dmg);
     if ((r.rpg || []).some((x) => x.dmg > 30 || x.hp < 5)) fail.push('rpg dmg out of range');
     if (hits.some((d) => d < 10)) fail.push('rpg hit < 10');
