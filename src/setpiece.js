@@ -213,7 +213,11 @@ export function createSetPieces({ scene, camera, player, hud }) {
     stepVfx(dt || 0);
     truck.update(dt || 0, sim);
     ambient.update(dt || 0, sim);
-    const waveOn = !!(SS.running && player.alive && bursting && ((SS.engaged | 0) > 0));
+    // A12 (tester: no RPG at all in waves 1-5 with rpg=1&truck=1): this needed SS.bursting, which is only the 8-14 s spawn
+    // window, so anything that pushed the launch past it (the truck tell + crash, the 8 s shared gap after the crash or a
+    // grenade, a starved grenade) cancelled it for the whole wave, and random fireAt 14-18 s could never fire. Now the RPG may
+    // launch while the wave is alive (SS.waveActive: wave members left) and the player is engaged; it just waits for the gate.
+    const waveOn = !!(SS.running && player.alive && (bursting || SS.waveActive) && ((SS.engaged | 0) > 0));
     if (flying || !waveOn || firedWave || fireAt < 0 || sim - waveT < fireAt) return;
     if (truck.state.phase === 'drive' || truck.state.phase === 'crash') return; // 5c: never an RPG on top of the truck tell
     if (SS.setPieceAt != null && sim - SS.setPieceAt < 8) return; // A10: one shared set-piece gap (RPG / truck / grenade)

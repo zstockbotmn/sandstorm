@@ -3155,6 +3155,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
     if (hold) waveActive = true;
     if (waveActive && aliveCount() === 0 && truckPending === 0) waveActive = false; // clear only when every wave member (incl. truck) is dead
+    if (window.SS) window.SS.waveActive = waveActive; // A12: set pieces key off the whole wave, not the 8-14 s spawn window
     if (waveActive) hold = true;
     if (running) window.SS.walking = window.SS.forceWalk != null ? !!window.SS.forceWalk : !hold; // forceWalk: test hook (fx3 footsteps) // halt from first engage until the last engaged enemy is KILLED
     // Stable ENEMIES counter: rises only when newly engaged appear, falls on engaged deaths (no silent mid-fight bumps from unengaged spawns).
