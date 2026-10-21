@@ -401,8 +401,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     _rightW.set(1, 0, 0).applyQuaternion(g.quaternion);
     // Lean toward the street centre (x = 0) from whichever side the fighter is on.
     const side = g.position.x > 0 ? 1 : -1;
-    const roll = 0.32 * enemy.leanW * side * (_rightW.x >= 0 ? 1 : -1);
-    const hunch = 0.12 * enemy.hunchW;
+    let roll = 0.32 * enemy.leanW * side * (_rightW.x >= 0 ? 1 : -1);
+    let hunch = 0.12 * enemy.hunchW;
+    // Over-the-top pitch (low cover). A crouch-peek hunches a little more. Side roll stays the street lean.
+    if (driven && enemy.peekKind === 'over') {
+      roll *= 0.2;
+      hunch = (enemy.peekHigh === false ? 0.34 : 0.18) * enemy.leanW;
+    } else if (driven && enemy.peekKind && enemy.peekHigh === false) hunch = 0.2 * enemy.leanW;
     g.updateMatrixWorld(true);
     bendBone(b.Spine01 || b.Spine, _fwdW, roll * 0.5);
     bendBone(b.Spine01 || b.Spine, _rightW, hunch * 0.5);
@@ -657,7 +662,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       turnExplicit: true, turnClip: (cmd && cmd.clip) || null,
       turnBlend: cmd && cmd.blend != null ? cmd.blend : 0, turnPlay: (cmd && cmd.play) || 0,
       cover: drive ? (enemy.coverT || 0) : undefined,
-      peek: drive ? (enemy.peekT || 0) : undefined,
+      // Crouch-peek keeps the crouch blend (rise 0). Standing peek still hands weight to lean.
+      peek: drive ? ((enemy.peekKind && enemy.peekHigh === false) ? 0 : (enemy.peekT || 0)) : undefined,
     });
     if (enemy.hitPlaying && enemy.hitReturning && enemy.actions.hit) {
       const hit = enemy.actions.hit;
@@ -691,13 +697,59 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return side > 0 ? -Math.PI / 2 : Math.PI / 2;
   }
   // Standing clip the crouch blend rises toward. Hidden weight sits on crouchIdle via coverT, not this name.
+  // A crouch-peek (peekHigh false) stays in the crouch clip instead of rising into lean.
   function coverBase(enemy) {
     const A = enemy.actions || {};
+    if ((enemy.peekT || 0) > 0 && enemy.peekKind && enemy.peekHigh === false) {
+      if (A.crouchIdle) return 'crouchIdle';
+      if (A.crouch) return 'crouch';
+    }
     if ((enemy.peekT || 0) > 0 && A.lean) return 'lean';
     if ((enemy.peekT || 0) > 0 && A.aim) return 'aim';
     return A.idle ? 'idle' : locoBase(enemy);
   }
-  // Entry 0.35 s, exit 0.30 s, peek rise 0.25 s, duck 0.20 s. Ultra-low: crouch only, and nothing past 30 m.
+  function crouchPeek(enemy) { return !!(enemy.peekKind && enemy.peekHigh === false); }
+  // Wall/door/alley: both corners. Car/barrel: over the top or either end. Null = today's lean (roof/window).
+  function peekChoices(type) {
+    if (type === 'wall' || type === 'door' || type === 'alley') return ['left', 'right'];
+    if (type === 'car' || type === 'barrel') return ['left', 'right', 'over'];
+    return null;
+  }
+  // One peek plan. Skips lastPeekKind when the cover allows more than one spot. Rise 0.2–0.35 s; fire window scale ±30%.
+  function armPeek(enemy) {
+    if (enemy._peekArm) return;
+    enemy._peekArm = true;
+    enemy._peekFired = false;
+    enemy._settleRoll = false;
+    enemy.settleT = 0;
+    enemy._peekRise = 0.2 + Math.random() * 0.15;
+    enemy._fireScale = 0.7 + Math.random() * 0.6;
+    const type = enemy.anchor && enemy.anchor.type;
+    const opts = peekChoices(type);
+    if (!opts) {
+      enemy.peekSide = enemy.peekSide ? -enemy.peekSide : (Math.random() < 0.5 ? -1 : 1);
+      enemy._stepDist = 0.25 + Math.random() * 0.15;
+      return;
+    }
+    let pool = opts;
+    if (enemy.lastPeekKind && opts.length > 1) {
+      const next = [];
+      for (let i = 0; i < opts.length; i++) if (opts[i] !== enemy.lastPeekKind) next.push(opts[i]);
+      if (next.length) pool = next;
+    }
+    const kind = pool[(Math.random() * pool.length) | 0];
+    enemy.peekKind = kind;
+    enemy.lastPeekKind = kind;
+    const low = type === 'car' || type === 'barrel';
+    // A crouched head stays below a car roof, so over a car is always a standing peek. Barrels can be crouched over.
+    if (kind === 'over') enemy.peekHigh = type === 'car' ? true : Math.random() < 0.2;
+    else if (low) enemy.peekHigh = Math.random() < 0.35;
+    else enemy.peekHigh = Math.random() < 0.8;
+    enemy.peekSide = kind === 'left' ? -1 : kind === 'right' ? 1 : 0;
+    enemy._stepDist = kind === 'over' ? (0.12 + Math.random() * 0.1) : (0.25 + Math.random() * 0.15);
+  }
+  // Entry 0.35 s, exit 0.30 s. Peek rise 0.25 s, or 0.2–0.35 s once a LOCO2 peek is armed. Duck 0.20 s.
+  // Ultra-low: crouch only, and nothing past 30 m.
   function tickCover(enemy, dt) {
     if (enemy.pinned) { enemy._coverDrive = false; enemy._coverFace = false; enemy._sideStep = false; return; }
     const ph = enemy.phase;
@@ -708,7 +760,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const ducking = (enemy.duckT || 0) > 0;
     const wantP = !farOff && q !== 'ultra-low' && (ph === 'peek' || ph === 'fire') && !ducking;
     enemy._coverPh = stepPhase(enemy._coverPh, wantC ? 1 : 0, dt, wantC ? 0.35 : 0.30);
-    enemy._peekPh = stepPhase(enemy._peekPh, wantP ? 1 : 0, dt, wantP ? 0.25 : (ducking ? 0.17 : 0.20));
+    const riseS = enemy._peekRise > 0 ? enemy._peekRise : 0.25;
+    enemy._peekPh = stepPhase(enemy._peekPh, wantP ? 1 : 0, dt, wantP ? riseS : (ducking ? 0.17 : 0.20));
     enemy.coverT = smooth01(enemy._coverPh);
     enemy.peekT = smooth01(enemy._peekPh);
     if (ducking) enemy.duckT = Math.max(0, enemy.duckT - dt);
@@ -727,14 +780,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const rising = (ph === 'peek' || ph === 'fire') && enemy.peekT < 0.92 && enemy.coverT > 0.45;
     enemy._coverFace = !!(enemy._coverDrive && Number.isFinite(enemy._coverYaw) && !enemy.pinned && !(enemy.staggerT > 0) && (ph === 'takeCover' || ph === 'hide' || near || rising));
     const type = enemy.anchor && enemy.anchor.type;
-    const sideOk = q === 'high' && !farOff && (type === 'wall' || type === 'door' || type === 'alley');
-    if (wantP && sideOk && !enemy._peekArm) {
-      enemy._peekArm = true;
-      enemy.peekSide = enemy.peekSide ? -enemy.peekSide : (Math.random() < 0.5 ? -1 : 1);
-      enemy._stepDist = 0.25 + Math.random() * 0.15;
+    if (wantP && !enemy._peekArm) armPeek(enemy);
+    if ((enemy.settleT || 0) > 0 && enemy._settleRoll) enemy.settleT = Math.max(0, enemy.settleT - dt);
+    if (wantP && enemy.peekT >= 0.9 && !enemy._settleRoll) {
+      enemy._settleRoll = true;
+      enemy.settleT = 0.25 + Math.random() * 0.2; // look, then the first round of this peek
     }
-    if (!wantP && enemy._peekPh <= 0) enemy._peekArm = false;
-    enemy._sideStep = !!(sideOk && enemy._peekArm && enemy._stepDist > 0 && enemy._peekPh > 0.001 && !enemy.pinned);
+    if (!wantP && enemy._peekPh <= 0) {
+      enemy._peekArm = false;
+      enemy.settleT = 0;
+      enemy._settleRoll = false;
+    }
+    const corner = type === 'wall' || type === 'door' || type === 'alley';
+    const lowC = type === 'car' || type === 'barrel';
+    const stepOk = q === 'high' && !farOff && (corner || lowC);
+    enemy._sideStep = !!(stepOk && enemy._peekArm && enemy._stepDist > 0 && enemy._peekPh > 0.001 && !enemy.pinned);
     tickFidget(enemy, dt);
   }
   // 1 = full braking over the last 1.5 m into cover. Exit: 0 at the first step (~1 m/s) → 1 at run speed.
@@ -861,10 +921,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     let tx = 0, tz = 0;
     if (enemy._sideStep && enemy._stepDist > 0) {
       const yaw = Number.isFinite(enemy._coverYaw) ? enemy._coverYaw : groupYaw(enemy.group);
-      const s = enemy.peekSide < 0 ? -1 : 1;
       const mag = (enemy.peekT || 0) * enemy._stepDist;
-      tx = -Math.cos(yaw) * s * mag;
-      tz = Math.sin(yaw) * s * mag;
+      if (enemy.peekKind === 'over') { tx = Math.sin(yaw) * mag; tz = Math.cos(yaw) * mag; } // crest the low cover
+      else {
+        const s = enemy.peekSide < 0 ? -1 : 1;
+        tx = -Math.cos(yaw) * s * mag;
+        tz = Math.sin(yaw) * s * mag;
+      }
     }
     const dx = tx - have.x, dz = tz - have.z;
     if (dx * dx + dz * dz < 1e-12) return;
@@ -886,7 +949,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const d2 = camera.position.distanceToSquared(enemy.group.position);
     if (art.tier !== 'high' || d2 > 900) return 0;
     const bob = Math.sin(enemy._bobPh) * 0.012 * (enemy._bobW || 0);
-    return bob + (-0.04 * c * (1 - k));
+    // Crouch-peek keeps the cover sink; a standing peek still rises out of it.
+    const sink = (enemy.peekKind && enemy.peekHigh === false && k > 0) ? -0.04 * c : -0.04 * c * (1 - k);
+    return bob + sink;
   }
   function stepArt(enemy, dt) {
     _turnDt = dt;
@@ -1136,6 +1201,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (LOCO2) {
       enemy.bodyYaw = 0; enemy.turning = null; enemy.aimYaw = 0; enemy.twist = 0; enemy.coverT = 0; enemy.peekT = 0;
       enemy.approachK = 0; enemy.exitK = 0; enemy._exitPh = 0; enemy.fidget = null; enemy.fidgets = 0; enemy.duckT = 0; enemy.ducks = 0;
+      enemy.peekKind = null; enemy.peekHigh = false; enemy.lastPeekKind = null; enemy.settleT = 0;
     }
 
     const torso = new THREE.Mesh(geoTorso, matVest);
@@ -1908,6 +1974,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return p;
   }
 
+  // Where this peek stands. Walls keep firePoint (the side-step clears the corner). Cars/barrels:
+  // over = rear centre, left/right = either end. LOS still samples firePoint.
+  function peekDest(enemy) {
+    const a = enemy.anchor;
+    if (!LOCO2 || !enemy.peekKind || !a || !FAR[a.type]) return firePoint(enemy);
+    const far = FAR[a.type], edge = EDGE[a.type], p = a.pos;
+    const z = p.z - far + (enemy.peekKind === 'over' ? 0.35 : 0.25);
+    const x = enemy.peekKind === 'left' ? p.x + edge : enemy.peekKind === 'right' ? p.x - edge : p.x;
+    return new THREE.Vector3(x, 0, z);
+  }
+
   function hidePoint(enemy) {
     if (isElevated(enemy.anchor.type)) return sillTuck(enemy.home, enemy.anchor);
     return tuckOf(enemy.home, enemy.anchor);
@@ -1918,9 +1995,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (enemy.phase !== 'takeCover') enterCover(enemy, Math.max(0.08, enemy.duckT));
       return;
     }
+    if (LOCO2 && qName() !== 'ultra-low') {
+      if ((enemy._peekPh || 0) <= 0.02) enemy._peekArm = false;
+      armPeek(enemy);
+    }
     enemy.phase = 'peek';
-    enemy.posture = 'lean';
-    enemy.path = [firePoint(enemy)];
+    enemy.posture = crouchPeek(enemy) ? 'crouch' : 'lean';
+    enemy.path = [peekDest(enemy)];
     enemy.pathI = 0;
     enemy.exposed = true;
     enemy.goal = enemy.path[0];
@@ -2140,26 +2221,34 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function beginFire(enemy) {
+    if (LOCO2 && qName() !== 'ultra-low' && !enemy._peekArm) armPeek(enemy);
     enemy.phase = 'fire';
-    enemy.phaseT = 0.5 + Math.random() * 0.65;
-    enemy.posture = 'lean';
+    let hold = 0.5 + Math.random() * 0.65;
+    if (LOCO2 && enemy._fireScale > 0) hold *= enemy._fireScale; // ±30% around today's fire window
+    enemy.phaseT = hold;
+    enemy.posture = crouchPeek(enemy) ? 'crouch' : 'lean';
     enemy.moving = false;
     enemy.exposed = true;
     enemy.shootCd = Math.min(enemy.shootCd, (enemy.shotsTaken | 0) < 1 ? 0.45 + Math.random() * 0.3 : 0.12 + Math.random() * 0.1); // first contact: a beat before the first shot
+    if (LOCO2 && !enemy._peekFired && (enemy.settleT || 0) > 0) enemy.shootCd = Math.max(enemy.shootCd, enemy.settleT);
   }
 
   function tickFire(enemy, dt, diff) {
     enemy.moving = false;
-    enemy.posture = 'lean';
+    enemy.posture = crouchPeek(enemy) ? 'crouch' : 'lean';
     enemy.exposed = true;
     facePlayer(enemy);
     enemy.phaseT -= dt;
     if ((enemy.suppressT || 0) > 0) enemy.suppressT = Math.max(0, enemy.suppressT - dt);
     if (player.alive && window.SS.running) {
       const slow = (enemy.suppressT || 0) > 0 ? 0.55 : 1;
-      enemy.shootCd -= dt * slow;
-      if (enemy.shootCd <= 0) {
+      // First round of this peek only: no shot until the rise is full and settleT has run out.
+      const waiting = !!(LOCO2 && enemy._peekArm && !enemy._peekFired && (!enemy._settleRoll || (enemy.settleT || 0) > 0));
+      if (waiting) enemy.shootCd = Math.max(enemy.shootCd || 0, enemy._settleRoll ? (enemy.settleT || 0) : 0.05);
+      else enemy.shootCd -= dt * slow;
+      if (!waiting && enemy.shootCd <= 0) {
         enemyShoot(enemy);
+        if (LOCO2) enemy._peekFired = true;
         let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff) * 1.2; // fix 7: ~20% slower fire
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
