@@ -2885,11 +2885,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // fighters usually hold 26-34 m or a roof, so nobody qualified. Now: the nearest live ground fighter within 36 m (engaged
     // or not); after 12 s camping it is certain. Shared set-piece spacing: none within 8 game-s of an RPG / truck (SS.setPieceAt).
     const spGap = window.SS && window.SS.setPieceAt != null ? (window.SS.simTime || 0) - window.SS.setPieceAt : 1e9;
-    if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, nadeThisWave, spGap: +Math.min(spGap, 999).toFixed(1) };
-    const pN = pressureP(); // 5e: camping is punished sooner later in the run (5 -> 3.5 s, certain at 12 -> 9 s); the shared 8 s set-piece gap still holds
-    if (waveActive && !nadeThisWave && campT > 5 - 1.5 * pN && burstIndex >= 3 && spGap >= 8 && (campT > 12 - 3 * pN || Math.random() < dt * 0.35)) {
-      let th = null, bd = 36; for (const e of list) { if (!e.alive || e.group.position.y >= 0.5) continue; const dd = e.group.position.distanceTo(camera.position); if (dd < bd) { bd = dd; th = e; } }
-      if (th) { nadeThisWave = true; campT = 0; throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
+    const pN = pressureP(); // 5e: camping is punished sooner later in the run (5 -> 3.5 s, certain at 12 -> 9 s)
+    // A11 (tester: no grenade in ~90 game-s ducked in wave 3 with rpg=1&truck=1): (a) after the tester's K kills the nearest
+    // (ground) fighters, the survivors were roof/window shooters, and only ground fighters could throw -> nobody qualified,
+    // forever; (b) forced RPG + truck kept re-stamping the shared 8 s gap. Now any live fighter within 40 m can throw
+    // (ground preferred; a roof shooter lobs from its roof), and a STARVED grenade (camping past the 'certain' time) takes
+    // priority: it only waits 3 s after a set piece, and while starved the RPG / truck hold off (SS.nadeStarved).
+    const certainAt = 12 - 3 * pN, starved = waveActive && !nadeThisWave && burstIndex >= 3 && campT > certainAt - 3;
+    if (window.SS) window.SS.nadeStarved = starved;
+    const gapOk = spGap >= 8 || (campT > certainAt && spGap >= 3);
+    if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, nadeThisWave, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
+    if (waveActive && !nadeThisWave && campT > 5 - 1.5 * pN && burstIndex >= 3 && gapOk && (campT > certainAt || Math.random() < dt * 0.35)) {
+      let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
+        if (e.group.position.y < 0.5) { if (dd < bd) { bd = dd; th = e; } } else if (dd < rd) { rd = dd; roof = e; } }
+      th = th || roof;
+      if (th) { nadeThisWave = true; campT = 0; if (window.SS) window.SS.nadeStarved = false; throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
     }
     for (let i = nades.length - 1; i >= 0; i--) { const n = nades[i]; n.t += dt;
       if (!n.landed) { const k = Math.min(1, n.t / n.flight); n.m.position.lerpVectors(n.from, n.to, k); n.m.position.y += Math.sin(k * Math.PI) * 3.2;

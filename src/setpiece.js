@@ -213,6 +213,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     if (flying || !waveOn || firedWave || fireAt < 0 || sim - waveT < fireAt) return;
     if (truck.state.phase === 'drive' || truck.state.phase === 'crash') return; // 5c: never an RPG on top of the truck tell
     if (SS.setPieceAt != null && sim - SS.setPieceAt < 8) return; // A10: one shared set-piece gap (RPG / truck / grenade)
+    if (SS.nadeStarved) return; // A11: a starved camping grenade goes first (the forced RPG used to keep starving it)
     launchNow(sim);
   }
   function debugRpg() { return launchNow((window.SS && window.SS.simTime) || 0); }

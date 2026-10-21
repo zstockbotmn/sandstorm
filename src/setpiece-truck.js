@@ -144,7 +144,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (run && run.phase === 'drive') stepDrive(sim);
     else if (run && run.phase === 'crash' && sim - run.crashSim >= 0.6) bail();
     else if (run && run.phase === 'wreck' && camera.position.z < run.cz - 25) { scene.remove(run.g); run = null; state.phase = 'idle'; }
-    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt < 8)) start(sim); // A10: shared set-piece gap
+    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt < 8) && !SS.nadeStarved) start(sim); // A11: a starved grenade goes first // A10: shared set-piece gap
   }
   function debugTruck() { return start((window.SS && window.SS.simTime) || 0); }
   function probe() { if (!run) return null; const v = run.g.position.clone(), w = new THREE.Vector3(); run.g.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(run.g); v.project(camera); let vis = true; for (let q = run.g; q; q = q.parent) if (!q.visible) vis = false;
