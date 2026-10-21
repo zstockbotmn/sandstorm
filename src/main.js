@@ -100,7 +100,7 @@ function clearFxPos() {
   camera.position.y -= fxPy;
   fxPx = 0; fxPy = 0;
 }
-if (FX3) { fx = createFx3({ camera, audio }); window.SS.fx = fx; }
+if (FX3) { fx = createFx3({ camera, audio, scene }); window.SS.fx = fx; }
 window.SS.renderer = renderer; // headless shots read info.render.triangles
 
 const priorHit = weapon.onHit;

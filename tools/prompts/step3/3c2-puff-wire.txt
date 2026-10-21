@@ -1,0 +1,4 @@
+STEP 3c2 (behind FX3 = /[?&]fx=3(?:&|$)/): src/fx3.js already has fx.dust / fx.debris / fx.impact and the instanced puff pool (read it: rg -n "dust|debris|impact|nearMiss" src/fx3.js). Only wire it; do not change the pool.
+1) Wire: player rounds that hit the world (rg -n "firstHit" src/weapon.js; the world hit point and face normal; if no normal, use the reverse shot direction) -> fx.impact. Enemy near misses from 3a (fx.nearMiss) also spawn fx.dust at the nearest surface: raycast 2 m along the round's direction past the closest point using the existing world collider meshes (rg -n "colliders" src/world.js); if nothing hit, spawn at ground y=0 under the point. Cap spawns per frame at 24 particles.
+2) Keep window.SS.fx3.puffs as is. Do not touch src/audio.js.
+node --check and node tools/build.js at the end.
