@@ -1,0 +1,1 @@
+I'll read only the three ranges you named, then add `src/setpiece.js` and the `?sp=5` wiring in `src/main.js`.Syntax checks passed. `src/setpiece.js` is 195 lines, so I’m tightening it to stay near the 170-line cap.

@@ -606,5 +606,54 @@ export function createAudio() {
     }
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
+  // Set-pieces share crack/enemyShot's pan -> gain -> master chain, with 10/d distance attenuation.
+  function spat(pos) {
+    const cam = window.SS && window.SS.camera, c = cam && cam.position;
+    const d = (c && pos) ? Math.hypot(pos.x - c.x, (pos.y || 0) - (c.y || 0), pos.z - c.z) : 0;
+    const p = panNode(bearing(pos)), g = ctx.createGain();
+    g.gain.value = Math.min(1, 10 / Math.max(1, d));
+    p.connect(g); g.connect(master);
+    return { d, p };
+  }
+
+  function whoosh(pos, dur = 1.1) {
+    if (!ctx) return;
+    const { d, p } = spat(pos); alog('whoosh', Math.round(d) + 'm');
+    const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(), t = ctx.currentTime;
+    const rise = dur * 0.7, len = Math.max(dur, rise + 0.06);
+    src.buffer = noiseBuffer(len); f.type = 'bandpass'; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(500, t); f.frequency.exponentialRampToValueAtTime(2600, t + dur);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.5, t + rise); g.gain.linearRampToValueAtTime(0, t + rise + 0.06);
+    src.connect(f); f.connect(g); g.connect(p); src.start(t); src.stop(t + len);
+  }
+
+  function boom(pos) {
+    if (!ctx) return;
+    const { d, p } = spat(pos); alog('boom', Math.round(d) + 'm');
+    const t = ctx.currentTime, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    src.buffer = noiseBuffer(1); f.type = 'lowpass';
+    f.frequency.setValueAtTime(2200, t); f.frequency.exponentialRampToValueAtTime(180, t + 1);
+    g.gain.setValueAtTime(0.45, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 1);
+    src.connect(f); f.connect(g); g.connect(p); src.start(t); src.stop(t + 1.02);
+    const o = ctx.createOscillator(), og = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = 52;
+    og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.3, t + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.605);
+    o.connect(og); og.connect(p); o.start(t); o.stop(t + 0.62);
+    burst(0.03, 0.18, 3000, 1.2, 'bandpass', p);
+    if (d <= 10) muffle(0.8 * (1 - d / 10));
+  }
+
+  function thump(pos) {
+    if (!ctx) return;
+    const { d, p } = spat(pos); alog('launch thump', Math.round(d) + 'm');
+    const delay = Math.round((d / 343) * 1000);
+    setTimeout(() => {
+      if (!ctx || !(window.SS && window.SS.running)) return;
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 70;
+      o.connect(envGain(0.28, 0.35, p)); o.start(); o.stop(ctx.currentTime + 0.37);
+      burst(0.08, 0.17, 400, 0.7, 'lowpass', p);
+    }, delay);
+  }
+
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, boom, thump, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
 }

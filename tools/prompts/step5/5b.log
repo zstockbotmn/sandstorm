@@ -1,0 +1,9 @@
+I'll locate the audio helpers first, then add `whoosh`, `boom`, and `thump` in `src/audio.js` only.The helpers sit next to `crack` and `enemyShot`. I'll pull just their signatures so the new synths can reuse the same pan and attenuation path.`whoosh`, `boom`, and `thump` are now on the object returned by `createAudio` in `src/audio.js`. `node --check src/audio.js` passed.
+
+Each one returns immediately when `ctx` is missing, same as `crack`. They share a small `spat()` helper that uses `panNode(bearing(pos))`, attenuates by distance (full level inside 10 m, then `10/d`), and connects into `master` so the existing muffle lowpass still sits on the output.
+
+- **whoosh(pos, dur = 1.1)** — noise through a bandpass sweeping 500 → 2600 Hz (Q 1.2). Gain rises 0 → 0.5 over 70% of `dur`, then cuts in 60 ms.
+- **boom(pos)** — 1 s lowpassed noise (2200 → 180 Hz), a 52 Hz sine (5 ms attack, 0.6 s decay), and a 30 ms 3 kHz crack. The mix peaks around 0.9 before attenuation. Inside 10 m it calls `muffle(0.8 * (1 - d / 10))`.
+- **thump(pos)** — 0.35 s 70 Hz sine plus a 400 Hz lowpassed noise pop, peak about 0.45 before attenuation, delayed by `d / 343` seconds the same way distant shots wait on `setTimeout`.
+
+Each logs `whoosh`, `boom`, or `launch thump` with the distance in metres, rounded.
