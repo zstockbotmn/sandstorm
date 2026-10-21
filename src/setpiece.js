@@ -30,7 +30,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     mesh.visible = false; mesh.frustumCulled = false; scene.add(mesh);
     puffs.push({ mesh, mat, life: 0 });
   }
-  const flashMat = puff(0xfff4cc, 1), flash = new THREE.Mesh(geo, flashMat);
+  const flashMat = puff(0xffa63a, 1) /* A10: hot orange - the pale flash vanished on beige facades and sky */, flash = new THREE.Mesh(geo, flashMat);
   flash.visible = false; flash.frustumCulled = false; scene.add(flash);
   let flashLife = 0, flashDur = 0.15, flashHoldR = 0, flashHoldF = 0;
   // A10: the shooter - a cheap dark silhouette with the tube on its shoulder, shown from launch to ~1.2 s after impact
