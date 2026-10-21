@@ -68,6 +68,8 @@ export function createFx3({ camera, audio, scene }) {
   const api = { puffs: null };
   let mesh = null, cap = 0, live = 0, spawned = 0, parts = null, inited = false;
   const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), vv = new THREE.Vector3(), ss = new THREE.Vector3(), cc = new THREE.Color();
+  const _rd = new THREE.Vector3(), _hitN = new THREE.Vector3(), _gnd = new THREE.Vector3();
+  let surfRay = null;
 
   function ensurePool() {
     if (inited) return mesh;
@@ -163,9 +165,28 @@ export function createFx3({ camera, audio, scene }) {
     }
     publish();
   }
+  const PUFF_FRAME_CAP = 24;
+  let capFrame = null, capUsed = 0;
+  // Impacts and near-miss dust share this many particles per rendered frame (window.SS.frameN).
+  function take(n) {
+    if (!(n > 0)) return 0;
+    const f = puffFrame();
+    if (f == null) return n;
+    if (f !== capFrame) { capFrame = f; capUsed = 0; }
+    const room = PUFF_FRAME_CAP - capUsed;
+    if (room <= 0) return 0;
+    const k = n < room ? n : room;
+    capUsed += k;
+    return k;
+  }
   function impact(point, normal, surface) {
-    dust(point, normal, 6, plasterish(surface) ? 0xd8cfc0 : 0xc9b38a);
-    debris(point, normal, 4);
+    if (!point || poolCap() <= 0) return;
+    const dustN = take(6);
+    const debN = take(4);
+    if (!dustN && !debN) return;
+    const col = plasterish(surface) ? 0xd8cfc0 : 0xc9b38a;
+    if (dustN) dust(point, normal, dustN, col);
+    if (debN) debris(point, normal, debN);
   }
   function puffFrame() {
     try { return (window.SS && window.SS.frameN != null) ? (window.SS.frameN | 0) : null; } catch (e) { return null; }
@@ -284,9 +305,35 @@ export function createFx3({ camera, audio, scene }) {
     publish();
   }
 
-  function nearMiss(point) {
+  function nearMiss(point, dir) {
+    let dx = 0, dy = 0, dz = 0;
+    if (dir) { dx = +dir.x || 0; dy = +dir.y || 0; dz = +dir.z || 0; }
     kick('impact', 0.6);
     if (audio && typeof audio.whizz === 'function') audio.whizz(point);
+    if (!point || poolCap() <= 0) return;
+    const n = take(6);
+    if (!n) return;
+    const px = +point.x || 0, py = +point.y || 0, pz = +point.z || 0;
+    const len = Math.hypot(dx, dy, dz);
+    const meshes = (typeof window !== 'undefined' && window.SS && window.SS.world && window.SS.world.colliders) || null;
+    // 2 m further along the round from the closest point; no hit falls back to the ground under that point.
+    if (len > 1e-8 && meshes && meshes.length) {
+      if (!surfRay) surfRay = new THREE.Raycaster();
+      _rd.set(dx / len, dy / len, dz / len);
+      _gnd.set(px, py, pz);
+      surfRay.set(_gnd, _rd);
+      surfRay.far = 2;
+      const hit = surfRay.intersectObjects(meshes, false)[0];
+      if (hit) {
+        if (hit.face) {
+          _hitN.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+          if (_hitN.lengthSq() > 1e-8) { dust(hit.point, _hitN, n); return; }
+        }
+        dust(hit.point, _hitN.set(-_rd.x, -_rd.y, -_rd.z), n);
+        return;
+      }
+    }
+    dust(_gnd.set(px, 0, pz), _hitN.set(0, 1, 0), n);
   }
 
   publish();

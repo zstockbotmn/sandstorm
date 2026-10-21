@@ -2066,7 +2066,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       let tt = ab2 > 1e-8 ? ((px - ax) * abx + (py - ay) * aby + (pz - az) * abz) / ab2 : 0;
       if (tt < 0) tt = 0; else if (tt > 1) tt = 1;
       const x = ax + abx * tt, y = ay + aby * tt, z = az + abz * tt, dx = x - px, dy = y - py, dz = z - pz;
-      if (dx * dx + dy * dy + dz * dz < 2.25) window.SS.fx.nearMiss(_near.set(x, y, z));
+      if (dx * dx + dy * dy + dz * dz < 2.25) window.SS.fx.nearMiss(_near.set(x, y, z), _fwd.set(abx, aby, abz));
     }
   }
 

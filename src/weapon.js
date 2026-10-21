@@ -225,6 +225,11 @@ export function createWeapon(camera, world, scene) {
         _normal.transformDirection(hit.object.matrixWorld);
       }
       spawnPuff(hit.point, _normal);
+      const fxApi = window.SS && window.SS.fx;
+      if (fxApi && fxApi.impact) {
+        if (!(hit.face && _normal.lengthSq() > 1e-8)) _normal.copy(_dir).multiplyScalar(-1);
+        fxApi.impact(hit.point, _normal, hit.object);
+      }
     }
     if (weapon.ammo <= 0) startReload();
   }
