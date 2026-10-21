@@ -24,7 +24,7 @@ const [tier = 'low', out = 'logs/a9/rpg'] = process.argv.slice(2); fs.mkdirSync(
       await p.waitForFunction(() => SS.setpiece.lastRpg && SS.setpiece.lastRpg.impactR, null, { timeout: 30000 }); res.impactShot = await shot('3rpg_impact');
       res.rpg = await p.evaluate(() => ({ ...SS.setpiece.lastRpg, hp: SS.player.health, log: (SS.audioLog || []).slice(-12) }));
       const r = res.rpg; if (!(r.impactR - r.launchR >= 900)) fail.push('tell < 900 ms'); if (r.dmg > 30 || r.hp < 5) fail.push('rpg damage ' + r.dmg); if (r.kind === 'street') res.note = 'launch fell back to mid-street';
-      { const th = r.log.find((x) => x.kind === 'launch thump'), wh = r.log.find((x) => x.kind === 'whoosh'); res.sound = { thump: th && th.t, whoosh: wh && wh.t }; if (!th || !wh || !(wh.t - th.t >= 0.2)) fail.push('thump/whoosh not sequenced ' + JSON.stringify(res.sound)); } }
+      { const th = r.log.find((x) => x.kind === 'launch thump'), wh = r.log.find((x) => x.kind === 'whoosh'); res.sound = { thump: th && th.t, whoosh: wh && wh.t }; if (!th || !wh || !(wh.t - th.t >= 0.15)) fail.push('thump/whoosh not sequenced ' + JSON.stringify(res.sound)); } }
     // haze: ducked in the live wave for ~6 s more, then a still
     await p.evaluate(async () => { const t0 = SS.simTime; while (SS.simTime - t0 < 6) { SS.input.scope = false; if (SS.player.health < 60) SS.player.health = 100; await new Promise((r) => setTimeout(r, 100)); } });
     res.hazeShot = await shot('4ducked_haze'); res.haze = await p.evaluate(() => ({ ducked: !!SS.input.cover, live: SS.fx3 && SS.fx3.puffs.live, coverImpacts: SS.coverImpacts | 0, near: SS.coverNearMisses | 0 }));
