@@ -1701,7 +1701,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       bendBone(bones[1], _rightW, 0.9 * k);
     }
     const root = e.art && e.art.root;
-    if (root && e.fallRootY != null) root.position.y = e.fallRootY - (torso ? 0.18 : 0.15) * k;
+    // never buckle the hips through the street: an already-crouched fighter has little height left to drop (A3 sink)
+    if (root && e.fallRootY != null) { if (e._buckleRoom == null) { const hy = b && b.Hips ? b.Hips.getWorldPosition(_wA).y : 0.9; const sc = Math.max(1e-3, root.parent ? root.parent.getWorldScale(_wB).y : 1); e._buckleRoom = Math.max(0, Math.min(torso ? 0.18 : 0.15, (hy - 0.45) / sc)); }
+      root.position.y = e.fallRootY - e._buckleRoom * k; }
   }
   function stepFallers(dt) {
     for (let i = fallers.length - 1; i >= 0; i--) {

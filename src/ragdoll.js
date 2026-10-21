@@ -432,6 +432,13 @@ export function createRagdollSystem(scene) {
   const SEG_END = { Hips: 'Spine01', Spine01: 'Head', RightArm: 'RightForeArm', RightForeArm: 'RightHand', LeftArm: 'LeftForeArm', LeftForeArm: 'LeftHand', RightUpLeg: 'RightLeg', RightLeg: 'RightFoot', LeftUpLeg: 'LeftLeg', LeftLeg: 'LeftFoot' };
   function matchPose(doll, bones, byName, partOf) {
     if (!bones) return;
+    // A3 under-street draw (code read): a part centre under 0.12 m was clamped up, but its bone was not, so the bind
+    // offsets kept the skin below its body for good (hips drew 0.1-0.26 m under the street while the pelvis rested at
+    // 0.11). Lift the whole skin model instead, before the parts are placed, so bodies and bones stay together.
+    { let minY = Infinity; for (const boneName in partOf) { const bone = bones[boneName]; if (!bone) continue; bone.getWorldPosition(_mpA); const endName = SEG_END[boneName], end = endName && bones[endName];
+        if (end && boneName !== 'Hips') { end.getWorldPosition(_mpB); _mpA.lerp(_mpB, 0.5); } minY = Math.min(minY, _mpA.y); }
+      const lift = minY < 0.12 ? 0.12 - minY : 0;
+      if (lift > 0 && bones.Hips) { let top = bones.Hips; while (top.parent && !top.parent.isScene) top = top.parent; top.position.y += lift / Math.max(1e-3, top.parent ? top.parent.getWorldScale(_mpB).y : 1); top.updateMatrixWorld(true); doll.skinLift = lift; } }
     for (const boneName in partOf) {
       const bone = bones[boneName], part = byName[partOf[boneName]]; if (!bone || !part || !part.rb) continue;
       const endName = SEG_END[boneName], end = endName && bones[endName];
