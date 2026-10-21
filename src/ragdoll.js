@@ -319,8 +319,8 @@ export function createRagdollSystem(scene) {
       const nz = iz / hlen;
       const zone = opts.zone || 'torso';
       const sc = opts.inCover ? 0.35 : 1;
-      const ax = (opts.inCover && opts.toCover) ? opts.toCover.x * 1.4 : 0;
-      const az = (opts.inCover && opts.toCover) ? opts.toCover.z * 1.4 : 0;
+      const ax = (opts.inCover && opts.toCover) ? opts.toCover.x * 0.7 : 0; // A2: 1.4 m/s into a tall cart slid bodies up its face
+      const az = (opts.inCover && opts.toCover) ? opts.toCover.z * 0.7 : 0;
       const kx = nx * kick;
       const kz = nz * kick;
       if (zone === 'head') {
@@ -453,6 +453,33 @@ export function createRagdollSystem(scene) {
       if (part.mesh) { part.mesh.position.copy(_mpA); part.mesh.quaternion.copy(_mpQ); }
       part.prevP = null; part.curP = null;
     }
+    pushOut(doll);
+    // the brief powered phase holds THIS pose, not the standing one (it stood crouched corpses back up: hips +0.3-0.5 m)
+    if (doll.jdefs) for (const d of doll.jdefs) { const ra = d[0].rb.rotation(), rb = d[1].rb.rotation(); d[3] = new THREE.Quaternion(ra.x, ra.y, ra.z, ra.w).multiply(new THREE.Quaternion(rb.x, rb.y, rb.z, rb.w).invert()); }
+  }
+  // A2 tester: bodies killed behind a car launched up and over it. Crouched against the cover, pose-matched parts started
+  // inside its box and Rapier's depenetration fired them upward. Before the first step the whole doll is slid out
+  // horizontally (never up), away from the box on its shallowest side axis, plus 3 cm.
+  const _poL = new THREE.Vector3(), _poW = new THREE.Vector3(), _poS = new THREE.Vector3(), _poA = new THREE.Vector3(), _poQ = new THREE.Quaternion();
+  function pushOut(doll) {
+    const boxes = doll.boxes; if (!boxes || !boxes.length) return;
+    for (let iter = 0; iter < 4; iter++) {
+      _poS.set(0, 0, 0); let best = 0;
+      for (const part of doll.parts) { if (!part.rb) continue; const t0 = part.rb.translation(), rq = part.rb.rotation(); const r = 0.1;
+        _poQ.set(rq.x, rq.y, rq.z, rq.w); _poA.set(0, 0.13, 0).applyQuaternion(_poQ); // centre and both ends along the part
+        for (let e = -1; e <= 1; e++) { const t = { x: t0.x + _poA.x * e, y: t0.y + _poA.y * e, z: t0.z + _poA.z * e };
+        for (const b of boxes) { _poL.set(t.x - b.p.x, t.y - b.p.y, t.z - b.p.z).applyQuaternion(b.qi);
+          const ox = b.hx + r - Math.abs(_poL.x), oy = b.hy + r - Math.abs(_poL.y), oz = b.hz + r - Math.abs(_poL.z);
+          if (ox <= 0 || oy <= 0 || oz <= 0) continue;
+          if (ox < oz) _poW.set(Math.sign(_poL.x || 1) * (ox + 0.03), 0, 0); else _poW.set(0, 0, Math.sign(_poL.z || 1) * (oz + 0.03));
+          _poW.applyQuaternion(b.q); _poW.y = 0;
+          const m = _poW.length(); if (m > best) { best = m; _poS.copy(_poW); } } } }
+      if (best <= 0) break;
+      if (best > 1.2) _poS.multiplyScalar(1.2 / best);
+      for (const part of doll.parts) { if (!part.rb) continue; const t = part.rb.translation(); const nx = t.x + _poS.x, nz = t.z + _poS.z;
+        part.rb.setTranslation({ x: nx, y: t.y, z: nz }, true); part.body.position.x = nx; part.body.position.z = nz; if (part.mesh) { part.mesh.position.x = nx; part.mesh.position.z = nz; } }
+      doll.pushedOut = (doll.pushedOut || 0) + best;
+    }
   }
   function linkSkin(doll, bones) {
     const byName = Object.create(null);
@@ -572,8 +599,13 @@ export function createRagdollSystem(scene) {
     }
     if (!colliders) return;
     let n = 0;
-    for (let i = 0; i < colliders.length && n < 5; i++) {
-      const m = colliders[i];
+    // nearest first (A2: the first 5 in list order could be walls/steps, leaving the cover the body lay against out)
+    const near = [];
+    for (let i = 0; i < colliders.length; i++) { const m = colliders[i]; if (!m.geometry || m.geometry.type !== 'BoxGeometry') continue; const wp = m.getWorldPosition(new THREE.Vector3());
+      const d = Math.hypot(wp.x - origin.x, wp.z - origin.z); if (d < 6) near.push([d, m]); }
+    near.sort((a, b) => a[0] - b[0]);
+    for (let i = 0; i < near.length && n < 8; i++) {
+      const m = near[i][1];
       if (!m.geometry || m.geometry.type !== 'BoxGeometry') continue;
       // Fix 2: use the collider's real world size and rotation. Half-extents were scale*0.5, which assumed a unit box: a
       // BoxGeometry(3, 0.2, 1) shop step became a 1 m cube, so bodies came to rest ~0.4 m above the step/ground.
@@ -588,7 +620,7 @@ export function createRagdollSystem(scene) {
         RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
         body
       );
-      doll.statics.push(body);
+      doll.statics.push(body); (doll.boxes || (doll.boxes = [])).push({ p: p.clone(), q: q.clone(), qi: q.clone().invert(), hx, hy, hz });
       n += 1;
     }
   }
@@ -627,7 +659,7 @@ export function createRagdollSystem(scene) {
       }
       if (power > 0) {
         // relative error q = qa * inv(qb) (rest relative rotation is identity at spawn)
-        _ib.copy(_qb).invert(); _ia.copy(_qa).multiply(_ib);
+        _ib.copy(_qb).invert(); _ia.copy(_qa).multiply(_ib); if (defs[i][3]) _ia.multiply(_ib.copy(defs[i][3]).invert()); // pose-matched: error vs the takeover pose
         if (_ia.w < 0) { _ia.x = -_ia.x; _ia.y = -_ia.y; _ia.z = -_ia.z; _ia.w = -_ia.w; }
         const k = power * mb * 0.35 * H * 60;
         b.rb.applyTorqueImpulse({ x: _ia.x * k, y: _ia.y * k, z: _ia.z * k }, true);
@@ -661,8 +693,9 @@ export function createRagdollSystem(scene) {
         const ps = doll.parts;
         // speed cap: a part that starts touching cover (pose-matched crouch behind a car) is pushed out, never launched
         for (let i = 0; i < ps.length; i++) { const rb = ps[i].rb; if (!rb) continue; const v = rb.linvel(), s2 = v.x * v.x + v.y * v.y + v.z * v.z;
-          if (s2 > 81) { const k = 9 / Math.sqrt(s2); rb.setLinvel({ x: v.x * k, y: v.y * k, z: v.z * k }, true); } const w = rb.angvel(), w2 = w.x * w.x + w.y * w.y + w.z * w.z;
-          if (w2 > 400) { const k = 20 / Math.sqrt(w2); rb.setAngvel({ x: w.x * k, y: w.y * k, z: w.z * k }, true); } }
+          let vx = v.x, vy = v.y, vz = v.z, cl = false; if (doll.age < 0.6 && vy > 0.8) { vy = 0.8; cl = true; } // no launches: early upward speed capped (depenetration, stacked impulses)
+          const q2 = vx * vx + vy * vy + vz * vz; if (q2 > 49) { const k = 7 / Math.sqrt(q2); vx *= k; vy *= k; vz *= k; cl = true; } if (cl) rb.setLinvel({ x: vx, y: vy, z: vz }, true); const w = rb.angvel(), w2 = w.x * w.x + w.y * w.y + w.z * w.z;
+          if (w2 > 196) { const k = 14 / Math.sqrt(w2); rb.setAngvel({ x: w.x * k, y: w.y * k, z: w.z * k }, true); } }
         for (let i = 0; i < ps.length; i++) snap(ps[i]);
         doll.age += H;
         let calm = true;

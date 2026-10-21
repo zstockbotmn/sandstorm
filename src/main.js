@@ -496,10 +496,22 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     for (const e of L) { if (!e.alive || e.dying) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }
     if (!best) return null; const hp = best.bones && best.bones.Head ? best.bones.Head.getWorldPosition(new THREE.Vector3()) : best.group.position.clone().setY(1.6);
     best.health = Math.min(best.health, 1); best.takeHit('head', hp); return best; };
-  window.addEventListener('keydown', (e) => { if ((e.key === 'k' || e.key === 'K') && window.SS.running) window.SS.debugKillNearest(); });
+  // A2 tester: legs hidden behind a cart could not be hit, so the limp/clutch couldn't be checked. Forced, non-lethal hits on the
+  // nearest fighter's left leg / left arm / torso through the normal hit path (zone, wound, reaction, damage capped to stay alive).
+  const DBG_HIT = { legL: ['limb', 'LeftUpLeg', 'LeftLeg'], armL: ['limb', 'LeftArm', 'LeftForeArm'], torso: ['body', 'Hips', 'Spine02'] };
+  window.SS.debugHitNearest = (zone) => { const spec = DBG_HIT[zone]; if (!spec) return null; const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9;
+    for (const e of L) { if (!e.alive || e.dying) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }
+    if (!best) return null; const B = best.bones || {}, a = B[spec[1]], b = B[spec[2]] || B.Spine01 || B.Spine; let pt;
+    if (a && b) pt = a.getWorldPosition(new THREE.Vector3()).lerp(b.getWorldPosition(new THREE.Vector3()), 0.5); else pt = best.group.position.clone().setY(zone === 'legL' ? 0.6 : zone === 'armL' ? 1.3 : 1.1);
+    best.health = Math.max(best.health, 80); best.takeHit(spec[0], pt); window.SS.lastDebugHit = { zone, got: best.lastHitZone || null }; return best; };
+  window.addEventListener('keydown', (e) => { if (!window.SS.running) return; if (e.key === 'k' || e.key === 'K') window.SS.debugKillNearest();
+    else if (e.key === 'l' || e.key === 'L') window.SS.debugHitNearest('legL'); else if (e.key === 'a' || e.key === 'A') window.SS.debugHitNearest('armL'); else if (e.key === 't' || e.key === 'T') window.SS.debugHitNearest('torso'); });
   if (/[?&]debug\b/.test(location.search)) { const kb = document.createElement('button'); kb.id = 'dbg-kill'; kb.textContent = 'KILL';
     kb.style.cssText = 'position:fixed;right:8px;top:64px;z-index:30;font:600 11px monospace;color:#fff;background:rgba(160,30,30,.8);border:0;border-radius:4px;padding:4px 8px';
-    kb.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (window.SS.running) window.SS.debugKillNearest(); }); document.body.appendChild(kb); }
+    kb.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (window.SS.running) window.SS.debugKillNearest(); }); document.body.appendChild(kb);
+    [['LEG', 'legL', 92], ['ARM', 'armL', 120], ['TORSO', 'torso', 148]].forEach(([label, zone, top]) => { const hb = document.createElement('button'); hb.id = 'dbg-hit-' + zone; hb.textContent = label;
+      hb.style.cssText = 'position:fixed;right:8px;top:' + top + 'px;z-index:30;font:600 11px monospace;color:#fff;background:rgba(150,110,20,.85);border:0;border-radius:4px;padding:4px 8px';
+      hb.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (window.SS.running) window.SS.debugHitNearest(zone); }); document.body.appendChild(hb); }); }
 }
 if (/[?&]debug\b/.test(location.search)) {
   const el = document.createElement('div'); el.id = 'dbg-fps';
