@@ -73,3 +73,10 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - Next: 5b synth whoosh/boom/engine (audio.js), 5c truck moment, 5d quiet-stretch texture, 5e pressure curve, 5f tests.
 - 5a polish to do: rocket is small / hard to see mid-flight at 24-38 m (bigger glow + brighter trail); launch point can sit inside a facade (x 5.2-6.7).
 - A8 follow-ups 1-5 done (q parse + keep q, FLANKED on flanker side, thinner Low ducked haze, Ultra-low chips, DPR floor 0.75).
+
+## A9 (2026-10-21) - preview A9 = ss-5caec8104c on :8850 (sp=5 default, rpg=1 off)
+- 1 camping grenade under set-piece rules (<=30, >=5 HP floor, only inside 3 m; switch/grenade moves >= 3.4 m) - 2f3553f
+- 2 step5 5b audio (whoosh / boom / distance-delayed launch thump) via Grok - 417c23a; boom double-muffle removed - 0fd0f45
+- 3 RPG reads at range (1.6x, motor core+halo, raycast-checked roof/window/alley launch) - 94e28f2; smoke was invisible (light on beige) -> dark 0x4f4943, real-time puff life - 0fd0f45, 7670ed1
+- runs: threat Ultra-low (real) PASS x2; walldust15 Low PASS; rpg-wave Low (real wave sp=5&rpg=1, haze shot, escape + no-escape grenade) PASS
+- next: 5c truck moment, 5d quiet-stretch texture, 5e pressure curve, 5f tests
