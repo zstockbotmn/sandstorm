@@ -3,7 +3,7 @@ import * as THREE from 'three';
 const _ax = new THREE.Vector3();
 const _perp = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
-// Critically damped, sub-stepped at 1/60 s (measured): arm kick 45 peaks 30 deg, back to 10% in 0.32 s; torso spine 23 -> 15 deg; leg buckle 30 -> 0.89, 0.55 s.
+// Critically damped, sub-stepped at 1/60 s (measured): arm kick 54 peaks ~36 deg, back to 10% in 0.32 s; torso spine 23 -> 15 deg; leg buckle 30 -> 0.89, 0.55 s.
 const W_ARM = 16, W_SPINE = 16, W_BUCKLE = 9;
 const PEAK_ARM = 0.55, PEAK_SPINE = 0.3, PEAK_BUCKLE = 1, EPS = 1e-3;
 export function createReactState() {
@@ -36,7 +36,7 @@ export function kickReact(st, zone, dir, rightWorld) {
   else if (zone.endsWith('R')) st.side = 1;
   else st.side = Math.sign(dir.dot(rightWorld)) || 1;
   // Stack on velocity so repeat hits add; position clamps in stepReact.
-  if (zone.startsWith('arm')) st.arm.v += 45;
+  if (zone.startsWith('arm')) st.arm.v += 54;
   st.spine.v += zone === 'torso' ? 23 : 7;
   st.buckle.v += zone.startsWith('leg') ? 30 : 0;
   if (zone === 'torso') {
@@ -63,6 +63,7 @@ export function stepReact(st, dt) {
     spring(st.spine, W_SPINE, PEAK_SPINE, h);
     spring(st.buckle, W_BUCKLE, PEAK_BUCKLE, h);
     t -= h;
+    const wi = Math.max(Math.abs(st.arm.x) / PEAK_ARM, Math.abs(st.spine.x) / PEAK_SPINE, st.buckle.x); if (wi > (st.wPeak || 0)) st.wPeak = Math.min(1, wi); // in-sim peak (tests sample per frame)
   }
   if (st.stepLeft < 0) st.stepLeft = 0;
   const move = Math.min(st.stepLeft, total * (st.stepLeft > 0 ? 0.9 : 0));

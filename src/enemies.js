@@ -673,7 +673,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       turnBlend: cmd && cmd.blend != null ? cmd.blend : 0, turnPlay: (cmd && cmd.play) || 0,
       cover: drive ? (enemy.coverT || 0) : undefined,
       // Crouch-peek keeps the crouch blend (rise 0). Standing peek still hands weight to lean.
-      peek: drive ? ((enemy.peekKind && enemy.peekHigh === false) ? 0 : (enemy.peekT || 0)) : undefined,
+      peek: drive ? ((['peek', 'fire'].includes(enemy.phase) && enemy.peekKind && enemy.peekHigh === false) ? 0 : (enemy.peekT || 0)) : undefined,
       limpSide: (HITS2 && enemy._limpSide && (enemy.limp || 0) > 0 && qName() !== 'ultra-low') ? enemy._limpSide : 0,
     });
     if (enemy.hitPlaying && enemy.hitReturning && enemy.actions.hit) {
@@ -719,7 +719,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if ((enemy.peekT || 0) > 0 && A.aim) return 'aim';
     return A.idle ? 'idle' : locoBase(enemy);
   }
-  function crouchPeek(enemy) { return !!(enemy.peekKind && enemy.peekHigh === false); }
+  function crouchPeek(enemy) { return !!(['peek', 'fire'].includes(enemy.phase) && enemy.peekKind && enemy.peekHigh === false); }
   // Wall/door/alley: both corners. Car/barrel: over the top or either end. Null = today's lean (roof/window).
   function peekChoices(type) {
     if (type === 'wall' || type === 'door' || type === 'alley') return ['left', 'right'];
@@ -1625,7 +1625,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (HITS2) {
       const zone = enemy.lastHitZone || (part === 'head' ? 'head' : 'torso');
       enemy.fallZone = zone;
-      enemy.fallInCover = ['takeCover', 'hide'].includes(enemy.phase) || (enemy.coverT || 0) > 0.5;
+      enemy.fallInCover = !enemy.pinned && (['takeCover', 'hide'].includes(enemy.phase) || ((enemy.coverT || 0) > 0.5 && (enemy.peekT || 0) < 0.5) || (['peek', 'fire'].includes(enemy.phase) && enemy.peekKind && enemy.peekHigh === false)); // hidden or crouch-peeking (coverT is also 1 during a standing peek)
       const pre = zone === 'head' ? 0.12 : zone === 'torso' ? 0.25 : (zone && zone.startsWith('leg') ? 0.35 : 0.3);
       enemy.preFallS = pre;
       if (enemy.art && enemy.art.root) enemy.fallRootY = enemy.art.root.position.y;
@@ -1640,7 +1640,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (enemy.art && enemy.mixer && enemy.actions && !enemy.pinned) {
       enemy.dying = true; enemy.fallT = HITS2 ? enemy.preFallS : 0.3; enemy.fallPart = part; enemy.fallPoint = point;
       const hit = (part === 'head' && enemy.actions.hitHead) || enemy.actions.hitBody || enemy.actions.hit;
-      if (hit) { hit.reset().setEffectiveWeight(1).setEffectiveTimeScale(1.25).play(); if (enemy.currentAction && enemy.currentAction !== hit) enemy.currentAction.crossFadeTo(hit, 0.05, false); enemy.currentAction = hit; }
+      // ?hits=2 torso/limb kills: the live clip carries on under the knee buckle (the hit clip's first frame jumped the hips ~40 cm)
+      if (hit && !(HITS2 && enemy.fallZone && enemy.fallZone !== 'head')) { hit.reset().setEffectiveWeight(1).setEffectiveTimeScale(1.25).play(); if (enemy.currentAction && enemy.currentAction !== hit) enemy.currentAction.crossFadeTo(hit, 0.05, false); enemy.currentAction = hit; }
       if (enemy.bones && enemy.bones.Hips) enemy.hipPrev = enemy.bones.Hips.getWorldPosition(new THREE.Vector3());
       fallers.push(enemy);
     } else fall(enemy, point, part);
@@ -1679,7 +1680,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const b = e.bones;
     const left = zone.endsWith('L');
     const bones = torso
-      ? [b && b.LeftUpLeg, b && b.RightUpLeg, b && b.LeftLeg, b && b.RightLeg]
+      ? [b && b.LeftUpLeg, b && b.RightUpLeg, b && b.LeftLeg, b && b.RightLeg, b && (b.Spine01 || b.Spine)]
       : [b && (left ? b.LeftUpLeg : b.RightUpLeg), b && (left ? b.LeftLeg : b.RightLeg)];
     buckleSave(e, bones);
     if (!(k > 0)) return;
@@ -1689,6 +1690,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       bendBone(bones[1], _rightW, -0.5 * k);
       bendBone(bones[2], _rightW, k);
       bendBone(bones[3], _rightW, k);
+      bendBone(bones[4], _rightW, -0.35 * k); // trunk rocks back off the shot (the aim lean tipped buckled bodies onto the shooter)
     } else {
       bendBone(bones[0], _rightW, -0.4 * k);
       bendBone(bones[1], _rightW, 0.9 * k);
@@ -1750,6 +1752,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       scene.attach(model); // keeps the world transform
       // Freeze the current (hit-clip) pose for the ragdoll skin; the death clip is only sampled when no hit blend ran.
       const death = enemy.actions && enemy.actions.death;
+      if (HITS2) enemy.dying = true; // ?hits=2: the ragdoll takes over the drawn (buckled) pose, no death-clip sample (it popped the hips ~30 cm)
       if (death && enemy.mixer && !enemy.dying) {
         enemy.dying = true;
         enemy.mixer.stopAllAction();

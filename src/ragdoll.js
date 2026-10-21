@@ -335,14 +335,17 @@ export function createRagdollSystem(scene) {
         leg.body.velocity.set(-nx * 3 * sc, 0, -nz * 3 * sc);
       } else {
         const arm = zone === 'armL' || zone === 'armR';
-        const ts = arm ? 0.8 : 0.7;
-        const ps = arm ? 0.4 : 0.35;
+        const ts = arm ? 0.8 : 0.9;
+        const ps = arm ? 0.4 : 0.75;
         torso.body.velocity.set(kx * ts * sc + ax, 0.3 * sc, kz * ts * sc + az);
         pelvis.body.velocity.set(kx * ps * sc, 0, kz * ps * sc);
         head.body.velocity.set(kx * 0.8 * sc + ax, 0, kz * 0.8 * sc + az);
-        byName.llegL.body.velocity.set(-nx * 1.2 * sc, 0, -nz * 1.2 * sc);
-        byName.llegR.body.velocity.set(-nx * 1.2 * sc, 0, -nz * 1.2 * sc);
+        const lg = arm ? 1.2 : 0; // feet kicking toward the shooter levered buckled-knee torso kills forward
+        byName.llegL.body.velocity.set(-nx * lg * sc, 0, -nz * lg * sc);
+        byName.llegR.body.velocity.set(-nx * lg * sc, 0, -nz * lg * sc);
         if (arm) torso.rb.setAngvel({ x: 0, y: zone === 'armL' ? 4 : -4, z: 0 }, true);
+        // torso kills start knee-buckled (pose-matched), which tipped bodies forward onto the shooter: tip the trunk back along the shot
+        else { torso.rb.setAngvel({ x: nz * 5 * sc, y: 0, z: -nx * 5 * sc }, true); }
       }
       for (let i = 0; i < doll.parts.length; i++) {
         const v = doll.parts[i].rb.linvel();
@@ -421,6 +424,36 @@ export function createRagdollSystem(scene) {
     return linkSkin(doll, bones);
   }
 
+  // Pose-matched takeover (?hits=2). The doll is built standing; bound to a crouched or knee-buckled skin, the fixed bone
+  // offsets kept that bend, so a body lying flat drew its hips up to 46 cm under the street (hit-react, Oct 21). Each part is
+  // moved onto its bone segment first (midpoint, +Y along the segment from the far end to the near end, yaw kept), so the
+  // offsets are near zero and the 0.15 s blend hides the joints settling. Velocities set by fillSpawn are kept.
+  const _mpA = new THREE.Vector3(), _mpB = new THREE.Vector3(), _mpD = new THREE.Vector3(), _mpQ = new THREE.Quaternion(), _mpY = new THREE.Quaternion(), _mpUp = new THREE.Vector3(0, 1, 0);
+  const SEG_END = { Hips: 'Spine01', Spine01: 'Head', RightArm: 'RightForeArm', RightForeArm: 'RightHand', LeftArm: 'LeftForeArm', LeftForeArm: 'LeftHand', RightUpLeg: 'RightLeg', RightLeg: 'RightFoot', LeftUpLeg: 'LeftLeg', LeftLeg: 'LeftFoot' };
+  function matchPose(doll, bones, byName, partOf) {
+    if (!bones) return;
+    for (const boneName in partOf) {
+      const bone = bones[boneName], part = byName[partOf[boneName]]; if (!bone || !part || !part.rb) continue;
+      const endName = SEG_END[boneName], end = endName && bones[endName];
+      bone.getWorldPosition(_mpA);
+      const r = part.rb.rotation(); _mpY.set(r.x, r.y, r.z, r.w); // standing yaw
+      if (end) {
+        end.getWorldPosition(_mpB);
+        // arms/legs hang from the near joint: +Y points from the far end up to the near one; spine/pelvis point up the body
+        const upBody = boneName === 'Hips' || boneName === 'Spine01';
+        _mpD.subVectors(upBody ? _mpB : _mpA, upBody ? _mpA : _mpB); const L = _mpD.length();
+        if (L > 1e-4) { _mpD.multiplyScalar(1 / L); _mpQ.setFromUnitVectors(_mpUp, _mpD).multiply(_mpY); } else _mpQ.copy(_mpY);
+        if (boneName !== 'Hips') _mpA.lerp(_mpB, 0.5);
+      } else {
+        const tq = byName.torso && byName.torso.rb ? byName.torso.rb.rotation() : r; _mpQ.set(tq.x, tq.y, tq.z, tq.w); // head follows the torso
+      }
+      _mpA.y = Math.max(_mpA.y, 0.12);
+      part.rb.setTranslation({ x: _mpA.x, y: _mpA.y, z: _mpA.z }, true); part.rb.setRotation({ x: _mpQ.x, y: _mpQ.y, z: _mpQ.z, w: _mpQ.w }, true);
+      part.body.position.x = _mpA.x; part.body.position.y = _mpA.y; part.body.position.z = _mpA.z; part.body.quaternion.copy(_mpQ);
+      if (part.mesh) { part.mesh.position.copy(_mpA); part.mesh.quaternion.copy(_mpQ); }
+      part.prevP = null; part.curP = null;
+    }
+  }
   function linkSkin(doll, bones) {
     const byName = Object.create(null);
     for (let i = 0; i < doll.parts.length; i++) byName[doll.parts[i].name] = doll.parts[i];
@@ -446,6 +479,7 @@ export function createRagdollSystem(scene) {
         }
       }
     }
+    if (doll.blendS > 0) matchPose(doll, bones, byName, partOf); // ?hits=2: bodies start in the drawn (crouched/buckled) pose
     const links = [];
     for (let i = 0; i < SKIN_ORDER.length; i++) {
       const boneName = SKIN_ORDER[i];
@@ -625,6 +659,10 @@ export function createRagdollSystem(scene) {
         const doll = dolls[d];
         if (doll.settled) continue;
         const ps = doll.parts;
+        // speed cap: a part that starts touching cover (pose-matched crouch behind a car) is pushed out, never launched
+        for (let i = 0; i < ps.length; i++) { const rb = ps[i].rb; if (!rb) continue; const v = rb.linvel(), s2 = v.x * v.x + v.y * v.y + v.z * v.z;
+          if (s2 > 81) { const k = 9 / Math.sqrt(s2); rb.setLinvel({ x: v.x * k, y: v.y * k, z: v.z * k }, true); } const w = rb.angvel(), w2 = w.x * w.x + w.y * w.y + w.z * w.z;
+          if (w2 > 400) { const k = 20 / Math.sqrt(w2); rb.setAngvel({ x: w.x * k, y: w.y * k, z: w.z * k }, true); } }
         for (let i = 0; i < ps.length; i++) snap(ps[i]);
         doll.age += H;
         let calm = true;
