@@ -10,7 +10,7 @@ function alog(kind, detail) {
   else { L.push({ t, kind, detail: detail || '', n: 1 }); if (L.length > 30) L.shift(); }
   if (!ALOG_ON || typeof document === 'undefined') return;
   if (!alogEl) { alogEl = document.createElement('div'); alogEl.id = 'dbg-audiolog';
-    alogEl.style.cssText = 'position:fixed;left:calc(14px + env(safe-area-inset-left));top:calc(96px + env(safe-area-inset-top));z-index:31;pointer-events:none;font:11px/1.35 monospace;color:#ffe9b0;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;white-space:pre;max-width:46vw';
+    alogEl.style.cssText = 'position:fixed;left:calc(14px + env(safe-area-inset-left));top:calc(114px + env(safe-area-inset-top));z-index:31;pointer-events:none;font:11px/1.35 monospace;color:#ffe9b0;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;white-space:pre;max-width:46vw';
     document.body.appendChild(alogEl); }
   alogEl.textContent = 'SOUND\n' + L.slice(-6).map((e) => e.t.toFixed(1) + 's ' + e.kind + (e.detail ? ' ' + e.detail : '') + (e.n > 1 ? ' x' + e.n : '')).join('\n');
 }

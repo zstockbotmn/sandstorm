@@ -18,16 +18,26 @@ async function diffBox(a, b) { const A = await sharp(a).raw().toBuffer({ resolve
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true }); const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e).slice(0, 160)));
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&loco=2&hits=2&repos=1&fx=3&q=' + tier); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.tap('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 }); await p.waitForTimeout(2500);
-    res.find = await p.evaluate(() => { SS.player.health = 1e6; window.__freezeCam = true; SS.walkHold = true; const T = SS.THREE; const eye = SS.camera.getWorldPosition(new T.Vector3());
+    await p.evaluate(() => { SS.forceWalk = false; SS.player.health = 1e6; }); await p.waitForTimeout(2500);
+    res.find = await p.evaluate(() => { SS.player.health = 1e6; SS.forceWalk = false; const T = SS.THREE; const eye = SS.camera.getWorldPosition(new T.Vector3());
       for (let k = 0; k < 60; k++) { const yaw = SS.input.yaw + (k % 2 ? 1 : -1) * (0.08 + 0.02 * k); const dir = new T.Vector3(Math.sin(yaw), -0.02, -Math.cos(yaw)).normalize(); const h = SS.weapon.firstHit(eye, dir);
         if (!h) continue; const d = h.point.distanceTo(eye); const n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : dir.clone().negate(); if (d < 13 || d > 17 || Math.abs(n.y) > 0.5) continue;
-        window.__wd = { p: h.point.clone(), n, o: h.object }; return { dist: +d.toFixed(1), name: h.object.name, yaw: +yaw.toFixed(3) }; } return null; });
+        window.__wd = { p: h.point.clone(), n, o: h.object };
+        const rc = new T.Raycaster(eye, dir, 0.3, 40); const vis = []; SS.scene.traverse((o) => { if (o.isMesh && o.visible && !o.isSkinnedMesh && !o.isInstancedMesh && o.material && o.material.visible !== false) vis.push(o); });
+        const vh = rc.intersectObjects(vis, false).filter((x) => { let q = x.object; while (q) { if (!q.visible) return false; q = q.parent; } return true; })[0];
+        return { dist: +d.toFixed(1), name: h.object.name, yaw: +yaw.toFixed(3), visDist: vh ? +vh.distance.toFixed(2) : null, visName: vh ? vh.object.name : null }; } return null; });
     if (!res.find) fail.push('no facade hit at 13-17 m');
     else { const frames = async (k) => { await p.evaluate((k) => new Promise((r) => { const f0 = SS.frameN; const t = () => (SS.frameN - f0 >= k ? r() : requestAnimationFrame(t)); t(); }), k); };
-      await frames(2); const before = out + '_' + tier + '_0before.png'; await p.screenshot({ path: before });
+      // screenshots take ~3 s here: hold the game loop (queue rAF callbacks) while the shot is taken, then release them
+      await p.evaluate(() => { const raf = window.requestAnimationFrame.bind(window); window.__q = null; window.__rafOrig = raf; window.requestAnimationFrame = (cb) => { if (window.__q) { window.__q.push(cb); return 0; } return raf(cb); }; });
+      // ...and the paused wall time is removed from performance.now, so real-time floors are judged as if no shot was taken
+      await p.evaluate(() => { const pn = performance.now.bind(performance); window.__pMs = 0; performance.now = () => pn() - window.__pMs; window.__pn = pn; });
+      const pause = () => p.evaluate(() => { window.__q = []; window.__p0 = window.__pn(); }), resume = () => p.evaluate(() => { const q = window.__q || []; window.__q = null; window.__pMs += window.__pn() - window.__p0; q.forEach((cb) => window.__rafOrig((t) => cb(performance.now()))); });
+      const shotAt = async (f) => { await pause(); await p.waitForTimeout(150); await p.screenshot({ path: f }); };
+      await frames(2); const before = out + '_' + tier + '_0before.png'; await shotAt(before); await resume();
       await p.evaluate(() => { const w = window.__wd; SS.wallPuffs0 = SS.wallPuffs | 0; SS.fx.impact(w.p, w.n, w.o); window.__wdT = performance.now(); window.__wdF = SS.frameN; });
       res.shots = [];
-      for (const [tag, k] of [['f1', 1], ['f3', 2], ['f6', 3]]) { await frames(k); const f = out + '_' + tier + '_' + tag + '.png'; await p.screenshot({ path: f }); const info = await p.evaluate(() => ({ dF: SS.frameN - window.__wdF, ms: Math.round(performance.now() - window.__wdT), live: SS.fx3.puffs.live })); res.shots.push({ tag, ...info, ...(await diffBox(before, f)), file: f }); }
+      for (const [tag, k] of [['f1', 1], ['f3', 2], ['f6', 3]]) { await frames(k); const f = out + '_' + tier + '_' + tag + '.png'; const info = await p.evaluate(() => ({ dF: SS.frameN - window.__wdF, ms: Math.round(performance.now() - window.__wdT), live: SS.fx3.puffs.live })); await shotAt(f); await resume(); res.shots.push({ tag, ...info, ...(await diffBox(before, f)), file: f }); }
       await p.waitForTimeout(Math.max(0, 2000 - (await p.evaluate(() => performance.now() - window.__wdT)))); { const f = out + '_' + tier + '_2s.png'; await p.screenshot({ path: f }); const info = await p.evaluate(() => ({ dF: SS.frameN - window.__wdF, ms: Math.round(performance.now() - window.__wdT), live: SS.fx3.puffs.live })); res.shots.push({ tag: '2s', ...info, ...(await diffBox(before, f)), file: f }); }
       res.wallPuffs = await p.evaluate(() => (SS.wallPuffs | 0) - SS.wallPuffs0);
       const f1 = res.shots[0]; if (!(f1.w >= 40)) fail.push('frame+1 puff only ' + f1.w + ' px wide');

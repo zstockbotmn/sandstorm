@@ -192,8 +192,26 @@ export function createFx3({ camera, audio, scene }) {
     capUsed += k;
     return k;
   }
+  // A8 cause of the faint Low wall dust: art buildings are shot through an INVISIBLE collider set back to the facade's
+  // median depth (world.js), so the impact point sat ~0.3-0.6 m INSIDE the visible facade (walldust15: collider 15.9 m,
+  // painted facade 15.32 m) and the puffs were mostly hidden behind it. Move such a hit out to the first painted surface
+  // on the line from the eye (the collider's own segment group only).
+  let visRay = null; const _vEye = new THREE.Vector3(), _vDir = new THREE.Vector3(), _vOut = new THREE.Vector3(), _vN = new THREE.Vector3();
+  function paintedHit(point, normal, surface) {
+    if (!camera || !surface || !surface.material || surface.material.visible !== false || !surface.parent) return null;
+    camera.getWorldPosition(_vEye); _vDir.subVectors(point, _vEye); const d = _vDir.length(); if (d < 0.5) return null; _vDir.divideScalar(d);
+    if (!visRay) visRay = new THREE.Raycaster(); visRay.set(_vEye, _vDir); visRay.near = Math.max(0, d - 3); visRay.far = d + 0.05;
+    const hh = visRay.intersectObject(surface.parent, true);
+    for (const h of hh) { const o = h.object; if (o === surface || !o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) continue; const m = Array.isArray(o.material) ? o.material[0] : o.material; if (!m || m.visible === false) continue;
+      let q = o, vis = true; while (q) { if (!q.visible) { vis = false; break; } q = q.parent; } if (!vis) continue;
+      if (h.distance > d - 0.05) return null;
+      _vOut.copy(h.point).addScaledVector(_vDir, -0.04); if (h.face) { _vN.copy(h.face.normal).transformDirection(o.matrixWorld); if (_vN.dot(_vDir) > 0) _vN.negate(); } else _vN.copy(_vDir).negate();
+      if (typeof window !== 'undefined' && window.SS) window.SS.paintedHits = (window.SS.paintedHits | 0) + 1;
+      return { point: _vOut, normal: _vN, surface: o }; }
+    return null; }
   function impact(point, normal, surface) {
     if (!point || poolCap() <= 0) return;
+    { const ph = paintedHit(point, normal, surface); if (ph) { point = ph.point; normal = ph.normal; surface = ph.surface; } }
     const wall = normal && Math.abs(normal.y || 0) < 0.5;
     const dustN = take(wall ? 4 : 6);
     const debN = take(5);
@@ -208,11 +226,13 @@ export function createFx3({ camera, audio, scene }) {
     if (cloudN) { // wall hit: a dense, darker cloud (3 stacked billboards) that hangs on the facade (A6: read faint at 10-12 m)
       // A8: 1.1 -> 2.1 m, held >= 2.6 s real time / 5 painted frames, and a real dark brown-grey (the old x0.72 was in
       // LINEAR space: only ~14% darker on screen, tan on a tan facade). Not fogged (material fog off).
+      // readable at range: past 8 m the cloud grows with distance (x1.6 at 15 m, cap x2.2), so it stays ~70-90 px on a phone
+      const dk = camera ? Math.max(1, Math.min(2.2, camera.position.distanceTo(point) / 9.5)) : 1;
       const d = nrm(normal); emitRDur = 2600; emitMinF = 5;
       for (let i = 0; i < cloudN; i++) {
         const c = cc.setHex(i === 0 ? 0x5e5244 : i === 1 ? 0x7a6a55 : 0x8f7d62);
         emit(vv.set(point.x + d.x * (0.15 + 0.1 * i) + (Math.random() - 0.5) * 0.3, point.y + (Math.random() - 0.5) * 0.3, point.z + d.z * (0.15 + 0.1 * i) + (Math.random() - 0.5) * 0.3),
-          d.x * 0.35, 0.08, d.z * 0.35, 1.8 + Math.random() * 0.3, 1.1, 2.1, -0.1, c);
+          d.x * 0.35 * dk, 0.08, d.z * 0.35 * dk, 1.8 + Math.random() * 0.3, 1.1 * dk, 2.1 * dk, -0.1, c);
       }
       emitRDur = 0; emitMinF = 2;
       if (typeof window !== 'undefined' && window.SS) window.SS.wallPuffs = (window.SS.wallPuffs | 0) + 1;
