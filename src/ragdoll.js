@@ -214,7 +214,7 @@ export function createRagdollSystem(scene) {
     part.rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
   }
 
-  function fillSpawn(doll, origin, yaw, impulse) {
+  function fillSpawn(doll, origin, yaw, impulse, opts) {
     const cx = origin.x;
     const cy = origin.y;
     const cz = origin.z;
@@ -308,16 +308,58 @@ export function createRagdollSystem(scene) {
     const iz = impulse ? impulse.z : -1;
     const len = Math.hypot(ix, iy, iz) || 1;
     const kick = 7.5;
-    torso.body.velocity.set((ix / len) * kick, (iy / len) * kick * 0.35 + 0.6, (iz / len) * kick);
-    head.body.velocity.set((ix / len) * kick * 1.15, 1.1, (iz / len) * kick * 1.15);
-    pelvis.body.velocity.set((ix / len) * kick * 0.65, 0.3, (iz / len) * kick * 0.65);
+    if (!opts) {
+      torso.body.velocity.set((ix / len) * kick, (iy / len) * kick * 0.35 + 0.6, (iz / len) * kick);
+      head.body.velocity.set((ix / len) * kick * 1.15, 1.1, (iz / len) * kick * 1.15);
+      pelvis.body.velocity.set((ix / len) * kick * 0.65, 0.3, (iz / len) * kick * 0.65);
+    } else {
+      // Flattened shot dir. Zone scales are fractions of kick; inCover shrinks them and slumps into cover.
+      const hlen = Math.hypot(ix, iz) || 1;
+      const nx = ix / hlen;
+      const nz = iz / hlen;
+      const zone = opts.zone || 'torso';
+      const sc = opts.inCover ? 0.35 : 1;
+      const ax = (opts.inCover && opts.toCover) ? opts.toCover.x * 1.4 : 0;
+      const az = (opts.inCover && opts.toCover) ? opts.toCover.z * 1.4 : 0;
+      const kx = nx * kick;
+      const kz = nz * kick;
+      if (zone === 'head') {
+        head.body.velocity.set(kx * 1.4 * sc + ax, 1.2 * sc, kz * 1.4 * sc + az);
+        torso.body.velocity.set(kx * 0.8 * sc + ax, 0, kz * 0.8 * sc + az);
+        pelvis.body.velocity.set(kx * 0.4 * sc, 0, kz * 0.4 * sc);
+      } else if (zone === 'legL' || zone === 'legR') {
+        torso.body.velocity.set(kx * 0.35 * sc + ax, 0, kz * 0.35 * sc + az);
+        head.body.velocity.set(kx * 0.35 * sc + ax, 0, kz * 0.35 * sc + az);
+        pelvis.body.velocity.set(kx * 0.35 * sc, -1.5 * sc, kz * 0.35 * sc);
+        const leg = zone === 'legL' ? byName.llegL : byName.llegR;
+        leg.body.velocity.set(-nx * 3 * sc, 0, -nz * 3 * sc);
+      } else {
+        const arm = zone === 'armL' || zone === 'armR';
+        const ts = arm ? 0.8 : 0.7;
+        const ps = arm ? 0.4 : 0.35;
+        torso.body.velocity.set(kx * ts * sc + ax, 0.3 * sc, kz * ts * sc + az);
+        pelvis.body.velocity.set(kx * ps * sc, 0, kz * ps * sc);
+        head.body.velocity.set(kx * 0.8 * sc + ax, 0, kz * 0.8 * sc + az);
+        byName.llegL.body.velocity.set(-nx * 1.2 * sc, 0, -nz * 1.2 * sc);
+        byName.llegR.body.velocity.set(-nx * 1.2 * sc, 0, -nz * 1.2 * sc);
+        if (arm) torso.rb.setAngvel({ x: 0, y: zone === 'armL' ? 4 : -4, z: 0 }, true);
+      }
+      for (let i = 0; i < doll.parts.length; i++) {
+        const v = doll.parts[i].rb.linvel();
+        const sp2 = v.x * v.x + v.y * v.y + v.z * v.z;
+        if (sp2 > 81) {
+          const c = 9 / Math.sqrt(sp2);
+          doll.parts[i].rb.setLinvel({ x: v.x * c, y: v.y * c, z: v.z * c }, true);
+        }
+      }
+    }
 
   }
 
   function realize(job) {
     const doll = job.doll;
     if (doll._cancelled) return;
-    fillSpawn(doll, job.origin, job.yaw, job.impulse);
+    fillSpawn(doll, job.origin, job.yaw, job.impulse, job.opts);
     dolls.push(doll);
     if (job.statics) addNearbyStatics(doll, job.statics.colliders, job.statics.origin);
     if (job.bonesRequested) {
@@ -335,14 +377,16 @@ export function createRagdollSystem(scene) {
     doll._job = null;
   }
 
-  function spawn(origin, yaw, impulse) {
+  function spawn(origin, yaw, impulse, opts) {
     if (!rapierPromise) loadRapier();
-    const doll = { parts: [], constraints: [], statics: [], age: 0, frozen: false };
+    const blendS = (opts && opts.blend) || 0;
+    const doll = { parts: [], constraints: [], statics: [], age: 0, frozen: false, calmT: 0, settled: false, blendS, blendW: blendS > 0 ? 0 : 1 };
     const job = {
       doll,
       origin: { x: origin.x, y: origin.y, z: origin.z },
       yaw: yaw || 0,
       impulse: impulse ? { x: impulse.x, y: impulse.y, z: impulse.z } : null,
+      opts: opts || null,
       statics: null,
       bones: null,
       bonesRequested: false,
@@ -352,7 +396,7 @@ export function createRagdollSystem(scene) {
       pending.push(job);
       return doll;
     }
-    fillSpawn(doll, job.origin, job.yaw, job.impulse);
+    fillSpawn(doll, job.origin, job.yaw, job.impulse, job.opts);
     dolls.push(doll);
     return doll;
   }
@@ -418,12 +462,23 @@ export function createRagdollSystem(scene) {
       _pA.y -= body.position.y;
       _pA.z -= body.position.z;
       const offP = _pA.applyQuaternion(_invQ).clone();
-      links.push({ bone, part, offQ, offP, root: boneName === 'Hips' });
+      const link = { bone, part, offQ, offP, root: boneName === 'Hips' };
+      if (doll.blendS > 0) {
+        link.animQ = bone.quaternion.clone();
+        if (link.root) link.animP = bone.position.clone();
+      }
+      links.push(link);
     }
     return links;
   }
 
-  function driveSkin(skinLink) {
+  function driveSkin(skinLink, doll) {
+    let w = 1;
+    if (doll && doll.blendS > 0 && doll.age < doll.blendS) {
+      const t = doll.age / doll.blendS;
+      w = t * t * (3 - 2 * t);
+    }
+    if (doll) doll.blendW = w;
     const links = skinLink.links;
     if (!links || !skinLink.model) return;
     skinLink.model.updateMatrixWorld(true);
@@ -437,12 +492,17 @@ export function createRagdollSystem(scene) {
       if (parent) parent.getWorldQuaternion(_parentQ);
       else _parentQ.identity();
       bone.quaternion.copy(_parentQ.invert()).multiply(_targetQ);
+      if (w < 1 && link.animQ) {
+        _boneQ.copy(bone.quaternion);
+        bone.quaternion.copy(link.animQ).slerp(_boneQ, w);
+      }
       if (link.root) {
         _pA.set(body.position.x, body.position.y, body.position.z);
         _pB.copy(link.offP).applyQuaternion(_bodyQ);
         _pA.add(_pB);
         if (parent) parent.worldToLocal(_pA);
-        bone.position.copy(_pA);
+        if (w < 1 && link.animP) bone.position.copy(link.animP).lerp(_pA, w);
+        else bone.position.copy(_pA);
       }
       bone.updateMatrixWorld(true);
     }
@@ -559,21 +619,43 @@ export function createRagdollSystem(scene) {
     phys.timestep = H;
     let n = 0;
     while (acc >= H && n < 4) {
-      for (let d = 0; d < dolls.length; d++) { limitAndPower(dolls[d]); }
+      for (let d = 0; d < dolls.length; d++) { if (!dolls[d].settled) limitAndPower(dolls[d]); }
       phys.step(); acc -= H; n++;
-      for (let d = 0; d < dolls.length; d++) { const ps = dolls[d].parts; for (let i = 0; i < ps.length; i++) snap(ps[i]); dolls[d].age += H; }
+      for (let d = 0; d < dolls.length; d++) {
+        const doll = dolls[d];
+        if (doll.settled) continue;
+        const ps = doll.parts;
+        for (let i = 0; i < ps.length; i++) snap(ps[i]);
+        doll.age += H;
+        let calm = true;
+        for (let i = 0; i < ps.length; i++) {
+          const rb = ps[i].rb;
+          const lv = rb.linvel();
+          const av = rb.angvel();
+          if (lv.x * lv.x + lv.y * lv.y + lv.z * lv.z >= 0.12 * 0.12 || av.x * av.x + av.y * av.y + av.z * av.z >= 0.4 * 0.4) { calm = false; break; }
+        }
+        if (calm) doll.calmT += H;
+        else doll.calmT = 0;
+        if (doll.calmT > 0.6) {
+          doll.settled = true;
+          doll._settleDraw = true;
+          for (let i = 0; i < ps.length; i++) ps[i].rb.sleep();
+        }
+      }
     }
     if (n === 4) acc = Math.min(acc, H); // spiral-of-death guard on slow devices
     const alpha = acc / H;
     for (let d = dolls.length - 1; d >= 0; d--) {
       const doll = dolls[d];
+      const pose = !doll.settled || doll._settleDraw;
+      if (doll._settleDraw) doll._settleDraw = false;
       let behind = true;
       for (let i = 0; i < doll.parts.length; i++) {
         const part = doll.parts[i];
-        syncPart(part, alpha);
+        if (pose) syncPart(part, alpha);
         if (part.body.position.z < cameraZ + 30) behind = false; // only far behind (360 deg aim: nearby bodies stay visible)
       }
-      if (doll.skin) driveSkin(doll.skin);
+      if (pose && doll.skin) driveSkin(doll.skin, doll);
       // Corpses stay >= 25 s of real time (tester: bodies vanished within seconds); max 8 kept, oldest removed first.
       if (!doll.born) doll.born = performance.now(); // (born at first update)
       const age = performance.now() - doll.born, R = (typeof window !== 'undefined' && window.SS) ? (window.SS.dollRemovals = window.SS.dollRemovals || []) : [];
@@ -589,5 +671,11 @@ export function createRagdollSystem(scene) {
     while (dolls.length) removeDoll(dolls[0]);
   }
 
-  return { spawn, update, addNearbyStatics, dolls, clear, bindSkin };
+  function activeCount() {
+    let n = 0;
+    for (let i = 0; i < dolls.length; i++) if (!dolls[i].settled) n++;
+    return n;
+  }
+
+  return { spawn, update, addNearbyStatics, dolls, clear, bindSkin, activeCount };
 }
