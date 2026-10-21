@@ -32,7 +32,7 @@ function qName() {
 }
 function poolCap() {
   const q = qName();
-  return q === 'ultra-low' ? 0 : q === 'low' ? 48 : 96;
+  return q === 'ultra-low' ? 12 : q === 'low' ? 48 : 96; // A8: Ultra-low gets 12 sprites for cover/wall chips only
 }
 let softRound = null;
 function puffTex() {
@@ -131,6 +131,9 @@ export function createFx3({ camera, audio, scene }) {
     const p = alloc();
     if (!p) return;
     p.r0 = typeof performance !== 'undefined' ? performance.now() : 0; p.rDur = emitRDur; p.minF = emitMinF;
+    // A8 tester (Low, ducked: a dust haze over the lower ~40% of the screen): cover-lip puffs are ~1 m from the eye, where a
+    // 1.3-2 m billboard fills the view. Dust (not chips) shrinks inside 5 m of the camera, down to 0.2x at <= 1.4 m.
+    if (camera && grav > -5) { const dc = camera.position.distanceTo(point), k = Math.max(0.2, Math.min(1, (dc - 0.5) / 4.5)); size0 *= k; size1 *= k; }
     p.pos.set(point.x, point.y, point.z);
     p.vel.set(vx, vy, vz);
     p.life = life; p.max = life;
@@ -213,9 +216,15 @@ export function createFx3({ camera, audio, scene }) {
     if (!point || poolCap() <= 0) return;
     { const ph = paintedHit(point, normal, surface); if (ph) { point = ph.point; normal = ph.normal; surface = ph.surface; } }
     const wall = normal && Math.abs(normal.y || 0) < 0.5;
-    const dustN = take(wall ? 4 : 6);
-    const debN = take(5);
-    const cloudN = wall ? take(3) : 0;
+    const ultra = qName() === 'ultra-low', near = camera ? camera.position.distanceTo(point) < 4 : false;
+    if (ultra) { // A8: Ultra-low = 3-4 dark chips only (cheap), bigger so they read at 0.75 x resolution
+      const n = take(4); if (!n) return; const d = nrm(normal); cc.setHex(0x3a3028); emitRDur = 700; emitMinF = 2;
+      for (let i = 0; i < n; i++) { const spd = 2 + Math.random() * 1.5, r = () => (Math.random() * 2 - 1) * 0.6, sz = 0.14 + Math.random() * 0.1;
+        emit(point, (d.x + r()) * spd, (d.y + r()) * spd + 1.2, (d.z + r()) * spd, 0.7 + Math.random() * 0.3, sz, sz, -9.8, cc); }
+      emitRDur = 0; emitMinF = 2; publish(); return; }
+    const dustN = take(near ? 2 : wall ? 4 : 6);
+    const debN = take(near ? 6 : 5); // chips stay: they are what reads at the cover lip
+    const cloudN = wall && !near ? take(3) : 0;
     if (!dustN && !debN && !cloudN) return;
     const col = plasterish(surface) ? 0xd8cfc0 : 0xc9b38a;
     emitRDur = 1400; emitMinF = 3;
@@ -588,8 +597,8 @@ const SKY_N = 12, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.15
     if (audio && typeof audio.whizz === 'function') audio.whizz(point); else if (audio && typeof audio.crack === 'function' && point) audio.crack(point);
     if (audio && typeof audio.log === 'function') audio.log('near miss', (typeof window !== 'undefined' && window.SS && window.SS.input && window.SS.input.cover) ? 'in cover' : '');
     if (typeof window !== 'undefined' && window.SS) { window.SS.nearMisses = (window.SS.nearMisses | 0) + 1; if (window.SS.input && window.SS.input.cover) window.SS.coverNearMisses = (window.SS.coverNearMisses | 0) + 1; }
-    if (!point || poolCap() <= 0) return;
-    const n = take(6);
+    if (!point || poolCap() <= 0 || qName() === 'ultra-low') return; // Ultra-low: chips on impacts only, no near-miss dust
+    const n = take(inCover ? 3 : 6); // A8: ducked near misses were a big part of the Low haze
     if (!n) return;
     const px = +point.x || 0, py = +point.y || 0, pz = +point.z || 0;
     const len = Math.hypot(dx, dy, dz);

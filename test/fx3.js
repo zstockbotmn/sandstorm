@@ -3,7 +3,7 @@
 // Checks: (a) no ?fx=3 -> SS.fx undefined, no muffle filter; (b) shake: a shot kick rotates the camera <= 3 deg and decays
 // to < 0.05 deg within ~1.2 s of sim;
 // (c) blast at 3 m: muffle > 0.6, recovers below 0.1 within 3.5 s; a 15 m blast does not muffle; (d) near miss: a staged
-// enemy round 0.8 m past the camera kicks shake and spawns dust (SS.fx3.puffs.spawned rises, live <= pool); ultra-low pool 0;
+// enemy round 0.8 m past the camera kicks shake and spawns dust (SS.fx3.puffs.spawned rises, live <= pool); ultra-low pool <= 12 (chips only), no near-miss dust;
 // (e) breathing: health 15 -> SS.fx3Audio.effort > 0.6 and breathsPerMin > 25, heartbeat on; health 100 at rest -> effort < 0.15;
 // (f) footsteps: while walking ~ speed/0.72 steps per s (+-25%), none while stopped; (g) skyline: during the opening approach
 // flashes and tracers rise and lastZ moves closer to the player as SS.approach grows. TODO with 3e: postOff under 24 fps; low-fps shake parity.
@@ -37,7 +37,7 @@ const frames = (p, n) => p.evaluate((n) => new Promise((ok) => { let k = 0; cons
   // (d) near miss -> dust
   res.near = await p.evaluate(async () => { const c = SS.camera.position, s0 = (SS.fx3.puffs && SS.fx3.puffs.spawned) || 0; SS.fx.nearMiss(new SS.THREE.Vector3(c.x + 0.8, c.y, c.z - 1)); await new Promise((r) => setTimeout(r, 300));
     const pf = SS.fx3.puffs || {}; return { spawned: (pf.spawned || 0) - s0, live: pf.live, pool: pf.pool, kicks: SS.fx3.kicks }; });
-  if (tier === 'ultra-low') { if (res.near.pool) fail.push('ultra-low has a particle pool (' + res.near.pool + ')'); }
+  if (tier === 'ultra-low') { if (res.near.pool > 12) fail.push('ultra-low pool over 12 (' + res.near.pool + ')'); if (res.near.spawned > 0) fail.push('ultra-low near miss spawned dust'); } // A8: 12 chips-only sprites
   else { if (!(res.near.spawned > 0)) fail.push('near miss spawned no dust'); if (res.near.live > res.near.pool) fail.push('live puffs over the pool cap'); }
   // (e) breathing + heartbeat
   res.breath = await p.evaluate(async () => { /* through the damage path: it resets the regen timer (setting .health did not, so 22 hp/s regen lifted it to ~26 HP between holds) */ SS.player.damage(SS.player.health - 15, null, 'test'); { const t0 = performance.now(); while (performance.now() - t0 < 2500 && !((SS.fx3Audio || {}).effort > 0.6 && (SS.fx3Audio || {}).breathsPerMin > 25)) await new Promise((r) => setTimeout(r, 100)); } const lo = { ...(SS.fx3Audio || {}) }; SS.player.health = 100; await new Promise((r) => setTimeout(r, 9000)); return { lo, hi: { ...(SS.fx3Audio || {}) } }; });

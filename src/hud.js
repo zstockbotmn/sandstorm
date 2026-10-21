@@ -151,7 +151,15 @@ export function createHud() {
   function warnTick() { if (window.SS && window.SS.hudFreeze) { warnRaf = requestAnimationFrame(warnTick); return; } warnFrames -= 1; if (warnFrames <= 0 && performance.now() >= warnHideAt) { warn.classList.remove('show'); warnRaf = 0; return; } warnRaf = requestAnimationFrame(warnTick); }
   let flankHideAt = 0, flankFrames = 0, flankRaf = 0;
   function flankTick() { if (window.SS && window.SS.hudFreeze) { flankRaf = requestAnimationFrame(flankTick); return; } flankFrames -= 1; if (flankFrames <= 0 && performance.now() >= flankHideAt) { flankEl.classList.remove('show'); flankRaf = 0; return; } if (performance.now() < flankHideAt - 300) { warn.classList.add('show'); warnHideAt = Math.max(warnHideAt, performance.now() + 300); } flankRaf = requestAnimationFrame(flankTick); }
-  function flanked(angle) { edgeWarn(angle); warnHideAt = performance.now() + 1600; warnFrames = 4; flankEl.classList.remove('show'); void flankEl.offsetWidth; flankEl.classList.add('show');
+  // A8 tester: the label sat centre-top, so the direction was vague. It now sits just inside the screen edge on the
+  // flanker's side (the amber streak's spot), with an arrow pointing out at him; 'BEHIND' when he is in the rear arc.
+  const flankArrow = document.createElement('span'); flankArrow.className = 'fa'; flankArrow.textContent = '\u25B2'; const flankTxt = document.createElement('span'); flankTxt.textContent = 'FLANKED';
+  flankEl.textContent = ''; flankEl.append(flankArrow, flankTxt);
+  function placeFlank(angle) { const W = window.innerWidth || 844, H = window.innerHeight || 390, pt = hud.warnPoint || [W / 2, 40], cx = W / 2, cy = H / 2;
+    const k = 0.26, x = Math.max(90, Math.min(W - 90, pt[0] + (cx - pt[0]) * k)), y = Math.max(34, Math.min(H - 34, pt[1] + (cy - pt[1]) * k));
+    flankEl.style.left = x.toFixed(0) + 'px'; flankEl.style.top = y.toFixed(0) + 'px'; flankArrow.style.transform = 'rotate(' + (angle * 180 / Math.PI).toFixed(0) + 'deg)';
+    flankTxt.textContent = Math.abs(angle) > Math.PI * 0.6 ? 'FLANKED \u2013 BEHIND' : 'FLANKED'; hud.flankAt = [Math.round(x), Math.round(y)]; }
+  function flanked(angle) { edgeWarn(angle); placeFlank(angle); warnHideAt = performance.now() + 1600; warnFrames = 4; flankEl.classList.remove('show'); void flankEl.offsetWidth; flankEl.classList.add('show');
     flankHideAt = performance.now() + 1800; flankFrames = 4; hud.flankedCount = (hud.flankedCount | 0) + 1; hud.flankedAngle = angle; if (!flankRaf) flankRaf = requestAnimationFrame(flankTick);
     if (window.SS && window.SS.audio && window.SS.audio.log) try { window.SS.audio.log('FLANKED', ''); } catch (_) {} }
   function setStance(k) { if (k === stanceK) return; stanceK = k; stanceEl.style.display = k ? 'block' : 'none'; stanceEl.className = k || ''; stanceEl.textContent = k === 'ducked' ? 'IN COVER' : k === 'exposed' ? 'EXPOSED' : ''; hud.stance = k; }
