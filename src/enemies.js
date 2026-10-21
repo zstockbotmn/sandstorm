@@ -2103,6 +2103,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if ((e.anchor && isElevated(e.anchor.type)) || e.group.position.y > 0.05) { e.unseenT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} return; } // m1t: never teleport anyone off a roof/window/climb (vertical pop); they peek (hits still need the player's sight) // never teleport a roof/window shooter to the street
     // p1b (Zack: no popping): never rescue a fighter that is firing or that the player can see; it retries later.
     if (REPOS && (e.phase === 'fire' || playerSees(e))) { e.unseenT = UNSEEN_LIMIT * 0.6; e.behindT = 0; return; }
+    // A ground fighter whose own cover has a clear line to the player just steps out (peek/fire) instead of running:
+    // the 5 s unseen clock counts every hidden second, so running each time made fighters hop cover every few seconds.
+    if (REPOS && e.anchor && e.anchor.pos && e.group.position.y < 0.05 && Math.abs(camera.position.z - e.group.position.z) < 40 && e.group.position.z < camera.position.z) {
+      const fp = firePoint(e); _losP.set(fp.x, 1.25, fp.z);
+      const recent = (window.SS ? (window.SS.simTime || 0) : 0) - (e._lastReposS != null ? e._lastReposS : -1e9) < 8;
+      if (clearToEye(_losP) || recent) { e.unseenT = 0; e.behindT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} e.vanishSaved = (e.vanishSaved | 0) + 1; return; }
+    }
     // Never teleport a fighter the player could be looking at (tester: a close fighter vanished mid-turn): within 25 m,
     // or on screen, it steps out and fights from where it is instead.
     { const d = e.group.position.distanceTo(camera.position); camera.updateMatrixWorld(); _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM);
@@ -2318,7 +2325,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       try {
         for (let i = 0; i < pool.length; i++) {
           const c = pool[i];
-          if (c === a0 || !c.pos) { rej.same++; continue; }
+          if (c === a0 || !c.pos || c === e._prevAnchor) { rej.same++; continue; } // never straight back to the cover it just left
           if (occupiedBy(c.pos, e)) { rej.occupied++; continue; }
           const d2 = c.pos.distanceToSquared(a0.pos);
           if (d2 < dMin * dMin || d2 > dMax * dMax) { rej.hop++; continue; }
@@ -2373,6 +2380,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Hand the run to the existing relocate path. Rise overlaps the first steps. No teleport.
   function startReposition(e, c) {
+    e._prevAnchor = e.anchor;
     if (LOCO2) beginCoverExit(e);
     e.anchor = c;
     e.home = standPos(c);
