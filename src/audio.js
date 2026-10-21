@@ -2,6 +2,7 @@
 // (last 6 lines). Repeats of the same kind fold into one line with a count (footsteps would flood it otherwise).
 const ALOG_ON = typeof location !== 'undefined' && /[?&]debug\b/.test(location.search);
 let alogEl = null;
+const SP_KIND = /^(launch thump|whoosh|boom|engine roar|door|bark|heli|crackle)$/, SP_PIN = []; let spPinAt = -1e9;
 function alog(kind, detail) {
   if (typeof window === 'undefined' || !window.SS) return;
   const L = window.SS.audioLog || (window.SS.audioLog = []);
@@ -12,7 +13,12 @@ function alog(kind, detail) {
   if (!alogEl) { alogEl = document.createElement('div'); alogEl.id = 'dbg-audiolog';
     alogEl.style.cssText = 'position:fixed;left:calc(14px + env(safe-area-inset-left));top:calc(96px + env(safe-area-inset-top));z-index:31;pointer-events:none;font:11px/1.35 monospace;color:#ffe9b0;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;white-space:pre;max-width:46vw';
     document.body.appendChild(alogEl); }
-  alogEl.textContent = 'SOUND\n' + L.slice(-6).map((e) => e.t.toFixed(1) + 's ' + e.kind + (e.detail ? ' ' + e.detail : '') + (e.n > 1 ? ' x' + e.n : '')).join('\n');
+  // A11 (tester could not read the 0.3 s thump -> whoosh): set-piece lines are also PINNED in their own block for 12 s
+  // (real time) after the latest one, so footsteps / near misses cannot scroll them away.
+  const fmt = (e) => e.t.toFixed(1) + 's ' + e.kind + (e.detail ? ' ' + e.detail : '') + (e.n > 1 ? ' x' + e.n : '');
+  if (SP_KIND.test(kind) || (kind === 'hit taken' && /\((RPG|grenade|truck)\)/.test(detail || ''))) { SP_PIN.push(fmt(L[L.length - 1])); if (SP_PIN.length > 5) SP_PIN.shift(); spPinAt = performance.now(); }
+  const pin = SP_PIN.length && performance.now() - spPinAt < 12000 ? '\nSET PIECE\n' + SP_PIN.join('\n') : '';
+  alogEl.textContent = 'SOUND\n' + L.slice(-6).map(fmt).join('\n') + pin;
 }
 export function createAudio() {
   let ctx = null;
