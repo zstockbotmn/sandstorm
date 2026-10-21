@@ -19,7 +19,7 @@ import { createSetPieces } from './setpiece.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
 import { preloadRapier } from './ragdoll.js';
-import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, PICKED, isSoftwareRenderer, rendererString, FAST } from './quality.js';
+import { Q, QUALITY, setQuality, goLow, goUltra, onLow, EXPLICIT, Q_URL, PICKED, isSoftwareRenderer, rendererString, FAST } from './quality.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
@@ -37,7 +37,7 @@ camera.rotation.order = 'YXZ';
 scene.add(camera);
 
 const softGL = wantLow(renderer);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5) * Q.res);
+renderer.setPixelRatio(Math.max(FAST ? 0 : 0.75, Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5) * Q.res));
 renderer.shadowMap.enabled = !softGL && Q.shadows;
 renderer.shadowMap.type = PHONE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
@@ -207,6 +207,8 @@ function simStep(dt) {
 }
 
 // Adaptive resolution: every 2 s, if fps < 40 drop the render scale 15% (floor 0.6); if fps > 56 for 6 s, step back up.
+// A8 tester (Ultra-low 'very blurry'): Ultra-low ran at 0.4 x and stepped down to 0.22 x CSS px on slow frames. Floor: 0.75 x CSS px on every tier.
+const DPR_FLOOR = FAST ? 0 : 0.75; // test=fast keeps its tiny render
 function baseDPR() { return Math.min(window.devicePixelRatio || 1, softGL ? 1 : PHONE ? 1.25 : 1.5) * Q.res; }
 let resScale = 1, fpsN = 0, fpsT = 0, goodT = 0;
 function adaptRes(raw) {
@@ -260,7 +262,7 @@ function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(baseDPR() * resScale);
+  renderer.setPixelRatio(Math.max(DPR_FLOOR, baseDPR() * resScale));
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
 }
@@ -474,7 +476,7 @@ function ultraTrim() { let hid = 0; const keep = new Set(world.colliders || []);
   window.SS.ultraHidden = (window.SS.ultraHidden | 0) + hid; }
 // Auto Low: software WebGL at start (unless ?q=high), or fps < 25 for 3 s mid-run. Applied live, no reload.
 onLow(() => {
-  renderer.setPixelRatio(baseDPR() * resScale); renderer.setSize(window.innerWidth, window.innerHeight); post.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.max(DPR_FLOOR, baseDPR() * resScale)); renderer.setSize(window.innerWidth, window.innerHeight); post.setSize(window.innerWidth, window.innerHeight);
   if (world.sun) world.sun.castShadow = false; renderer.shadowMap.enabled = false;
   scene.traverse((o) => { if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m.needsUpdate = true; });
   if (scene.fog && scene.fog.density != null) scene.fog.density = Q.fog;
@@ -492,12 +494,13 @@ window.SS.camera = camera; // perf/debug probes (test/perf-bldg.js)
 window.SS.goUltra = (r) => { goLow(r || 'debug'); goUltra(r || 'debug'); }; // tests
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT && !PICKED && !/[?&]start=high\b/.test(location.search)) goLow('software-gl'); // ?start=high (tests): act like a weak real GPU
 // Remember the auto-chosen tier across reloads (tester): a saved ultra-low starts as ultra-low.
+if (Q_URL === 'ultra-low') { goLow('url'); goUltra('url'); window.SS.autoLow = null; } // A8: ?q=ultra-low honoured on first load
 try { if (!EXPLICIT && localStorage.getItem('ss.quality') === 'ultra-low') { const why = PICKED ? 'picked' : 'saved'; goLow(why); goUltra(why); if (PICKED) window.SS.autoLow = null; } } catch (e) {} // a picked Ultra-low is not 'auto'
 // Startup + ongoing fps benchmark (menu included): average fps over a 2 s window (3 s in a run); < 20 -> Low.
 { let n = 0, t = 0, skip = 3; window.SS.autoLowTick = (raw) => {
     // Ultra-low still too slow (tester box < 3.5 fps): step the render scale down 0.4 -> 0.3 -> 0.22 (ultra-low only).
     if (window.SS.quality === 'ultra-low' && raw > 0 && !EXPLICIT) { n++; t += raw; if (t < 3) return; const fps = n / t; n = t = 0; window.SS.benchFps = Math.round(fps * 10) / 10;
-      if (fps < 4 && Q.res > 0.23) { Q.res = Math.max(0.22, +(Q.res * 0.75).toFixed(2)); window.SS.ultraRes = Q.res; onResize(); } return; }
+      window.SS.ultraRes = Q.res; return; } // A8: no further step-down (it went to 0.22 x and read as a smear)
     if (window.SS.quality === 'ultra-low' || ((EXPLICIT || PICKED) && !/[?&]ultra=1/.test(location.search)) || !(raw > 0)) { n = t = 0; return; } // a menu pick is never auto-lowered
     if (skip > 0) { skip--; return; } // first frames include load/compile
     n++; t += raw; const win = window.SS.running ? 3 : 2; if (t < win) return;

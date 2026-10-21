@@ -1,8 +1,12 @@
 // Low/High quality. Order: ?q=low|high, then localStorage 'ss.quality', then the default:
 // Low on iPhone/iOS and touch devices, High elsewhere. Changing it from the start screen saves and reloads.
 const KEY = 'ss.quality';
+// A8 tester: ?q=ultra-low was ignored (only low|high parsed) and came up on High. Aliases: ultra-low / ultralow / ultra / ul.
+export function qParam(search) { try { const m = /[?&]q=([a-z_-]+)/i.exec(search != null ? search : location.search); if (!m) return null; const v = m[1].toLowerCase().replace(/_/g, '-');
+  if (v === 'ultra-low' || v === 'ultralow' || v === 'ultra' || v === 'ul') return 'ultra-low'; if (v === 'low' || v === 'high') return v; return null; } catch (e) { return null; } }
+export const Q_URL = qParam();
 function detect() {
-  try { const m = /[?&]q=(low|high)\b/.exec(location.search); if (m) return m[1]; } catch (e) {}
+  if (Q_URL) return Q_URL === 'ultra-low' ? 'low' : Q_URL; // Ultra-low = Low + goUltra (main.js)
   try { const m = /[?&]start=(low|high)\b/.exec(location.search); if (m && !localStorage.getItem(KEY)) return m[1]; } catch (e) {} // tests: a fresh profile's starting tier (auto stays on)
   try { const v = localStorage.getItem(KEY); if (v === 'low' || v === 'high') return v; if (v === 'ultra-low') return 'low'; } catch (e) {}
   const ua = navigator.userAgent || '';
@@ -30,7 +34,7 @@ export let LOWQ = QUALITY === 'low';
 // PICKED: the player chose a tier in the menu (tester: auto saved ultra-low with no way out). A pick is never
 // overridden or re-saved by the automatic steps.
 export const PICKED = (() => { try { return localStorage.getItem('ss.qualityPick') === '1'; } catch (e) { return false; } })();
-export const EXPLICIT = (() => { try { return /[?&]q=(low|high)\b/.test(location.search); } catch (e) { return false; } })();
+export const EXPLICIT = !!Q_URL;
 // Low: ~0.85 render scale, no postfx, no shadows, shorter LOD and draw/fog distance.
 const LOW = { res: 0.85, post: false, shadows: false, lodNear: 20, lodNearProp: 12, drawAhead: 95, fog: 0.022, far: 300 };
 const HIGH = { res: 1, post: true, shadows: true, lodNear: 38, lodNearProp: 22, drawAhead: 140, fog: 0.016, far: 420 };
@@ -47,7 +51,7 @@ export function onLow(fn) { lowHooks.push(fn); }
 // Ultra-low: Low still under 10 fps -> half resolution, 60 m draw distance (fewer buildings), thicker fog.
 export let ULTRA = false;
 export function goUltra(reason) {
-  if (ULTRA) return false; ULTRA = true; try { if (!EXPLICIT && !PICKED && !PICK_NOW) localStorage.setItem(KEY, 'ultra-low'); } catch (e) {} Object.assign(Q, LOW, { res: 0.4, drawAhead: 60, fog: 0.03, far: 200, lodNear: 10, lodNearProp: 6 } /* view distance as before: the m1o cut (fog .035, far 85) hid fighters in the haze (m1p stall) */);
+  if (ULTRA) return false; ULTRA = true; try { if (!EXPLICIT && !PICKED && !PICK_NOW) localStorage.setItem(KEY, 'ultra-low'); } catch (e) {} Object.assign(Q, LOW, { res: 0.75 /* A8: was 0.4 (blurry); DPR floor 0.75 in main.js */, drawAhead: 60, fog: 0.03, far: 200, lodNear: 10, lodNearProp: 6 } /* view distance as before: the m1o cut (fog .035, far 85) hid fighters in the haze (m1p stall) */);
   if (typeof window !== 'undefined' && window.SS) { window.SS.quality = 'ultra-low'; window.SS.autoLow = reason; }
   for (const f of lowHooks) { try { f(reason); } catch (e) { console.warn('goUltra', e); } }
   return true;
@@ -61,5 +65,5 @@ export function goLow(reason) {
 }
 let PICK_NOW = false; // set by a menu pick in THIS page: nothing automatic may write after it (the reload is pending)
 export function setQuality(v) { PICK_NOW = true; try { localStorage.setItem(KEY, v); localStorage.setItem('ss.qualityPick', '1'); } catch (e) {}
-  const u = new URL(location.href); u.searchParams.delete('q'); location.replace(u.toString()); }
+  const u = new URL(location.href); if (u.searchParams.has('q')) u.searchParams.set('q', v); location.replace(u.toString()); } // A8: keep q (now = the pick) in the URL
 if (typeof window !== 'undefined') window.SS_QUALITY = QUALITY;
