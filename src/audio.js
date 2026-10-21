@@ -191,17 +191,27 @@ export function createAudio() {
   }
 
   // m1x: near = 0..1 (approaching firefight before first contact): louder, brighter, from ahead
+  // 3d2: FX3 flash now (light), report 0.8-0.5*near s later (sound travel). near < 0 stays immediate.
   function distantShot(near) {
     if (!ctx) return;
     const n = near == null ? -1 : near;
-    const p = panNode(n >= 0 ? (Math.random() * 2 - 1) * (0.5 - 0.3 * n) : (Math.random() * 2 - 1) * 0.85);
-    const g = ctx.createGain();
-    g.gain.value = n >= 0 ? 0.06 + 0.34 * n : 0.16;
-    if (n >= 0) { const g0 = g; p.connect(g0); g0.connect(master); burst(0.12 + 0.08 * n, 0.35, 380 + 1100 * n * n, 0.5, 'lowpass', p); tone(52 + 18 * n, 0.12, 0.08, 'sine', p); return; }
-    p.connect(g);
-    g.connect(master);
-    burst(0.16, 0.35, 480, 0.5, 'lowpass', p);
-    tone(52, 0.12, 0.08, 'sine', p);
+    const play = () => {
+      if (!ctx) return;
+      const p = panNode(n >= 0 ? (Math.random() * 2 - 1) * (0.5 - 0.3 * n) : (Math.random() * 2 - 1) * 0.85);
+      const g = ctx.createGain();
+      g.gain.value = n >= 0 ? 0.06 + 0.34 * n : 0.16;
+      if (n >= 0) { const g0 = g; p.connect(g0); g0.connect(master); burst(0.12 + 0.08 * n, 0.35, 380 + 1100 * n * n, 0.5, 'lowpass', p); tone(52 + 18 * n, 0.12, 0.08, 'sine', p); return; }
+      p.connect(g);
+      g.connect(master);
+      burst(0.16, 0.35, 480, 0.5, 'lowpass', p);
+      tone(52, 0.12, 0.08, 'sine', p);
+    };
+    if (FX3 && n >= 0) {
+      window.SS.fx && window.SS.fx.skylineShot && window.SS.fx.skylineShot(near);
+      setTimeout(() => { if (!(window.SS && window.SS.running)) return; play(); }, (0.8 - 0.5 * near) * 1000);
+      return;
+    }
+    play();
   }
 
   function hit() {
