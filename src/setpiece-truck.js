@@ -29,17 +29,17 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (kenney) {
       art.fitToBox(kenney, 2.3, 2.5, 5.6, { keepAspect: true, alignLong: true });
       kenney.rotation.y += Math.PI; // A10: the Kenney flatbed's cab faces -z; turn it so the cab (and the lamps) lead toward the player
-      kenney.name = 'truck_mil'; kenney.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      kenney.name = 'truck_mil'; kenney.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.material = Array.isArray(o.material) ? o.material.map((m) => { const c = m.clone(); c.fog = false; return c; }) : Object.assign(o.material.clone(), { fog: false }); } }); // A10: no fog on the set-piece truck - at 50-60 m Low fog washed it (and its lamps) into the haze
       g.add(kenney); model = 'kenney';
     } else {
-      const bed = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.3, 3.6), new THREE.MeshStandardMaterial({ color: 0x6b5a3a, roughness: 0.82 }));
-      const cab = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0x3c4a3a, roughness: 0.82 }));
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.3, 3.6), new THREE.MeshStandardMaterial({ color: 0x6b5a3a, roughness: 0.82, fog: false }));
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0x3c4a3a, roughness: 0.82, fog: false }));
       bed.position.set(0, 0.65, -1); cab.position.set(0, 0.8, 1.7); bed.castShadow = cab.castShadow = true; g.add(bed, cab);
     }
     const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff2c0, toneMapped: false, fog: false });
     const sph = new THREE.SphereGeometry(0.22, 8, 6);
     if (!tex) tex = glowMap();
-    const gMat = new THREE.MeshBasicMaterial({ map: tex, color: 0xfff0b0, transparent: true, opacity: 0.7, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide });
+    const gMat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide });
     const geo = new THREE.PlaneGeometry(1, 1), glows = [];
     for (const x of [-0.85, 0.85]) {
       const s = new THREE.Mesh(sph, lampMat); s.position.set(x, 0.95, 2.6); s.frustumCulled = false; g.add(s);
@@ -53,7 +53,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     return { g, lampMat, glows, spot, model };
   }
   function faceGlows() {
-    const d = camera.position.distanceTo(run.g.position), sc = Math.max(1.2, d * 0.04);
+    const d = camera.position.distanceTo(run.g.position), sc = Math.max(1.2, d * 0.05);
     for (let i = 0; i < run.glows.length; i++) { run.glows[i].lookAt(camera.position); run.glows[i].scale.setScalar(sc); }
   }
   function tell(pos, dur) {
