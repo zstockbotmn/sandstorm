@@ -46,3 +46,7 @@ Open: strafe coverage at 26 m (78% vs 90%), crouch-head hit-volume trim (10-14 c
 - Meshy texture residue: bldg2's ground-floor masonry block was a stretched/smudged patch (A4: boarded over with a CC0
   planks panel); review the other Meshy facades for similar low-res patches when step 4 swaps/extends buildings.
 - Burnt cover car hood map is 512 px stretched (A4: world triplanar CC0 rust detail on top faces); a better car asset is a step 4 option.
+
+## Step 5 (set piece / pacing) note from tester A4
+- The quiet rail between waves has little to do. Give it texture without losing the calm: distant skyline fights (3d),
+  radio chatter, civilians/dogs crossing far ahead, a pickup or a look-around moment, a scripted vehicle pass; no combat.
