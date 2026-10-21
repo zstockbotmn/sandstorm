@@ -5,6 +5,7 @@ import { LOCO2, createLoco, updateLoco, aimBody, clipYawRate, turnPlayback, yawR
 // Last fighter only: after ~20 s on one ground cover, run to another. Off unless ?loco=2 or ?repos=1.
 const BODY_YAW_CAP = 270 * Math.PI / 180, TWIST_RATE = 240 * Math.PI / 180, HEAD_RATE = 300 * Math.PI / 180; // ?loco=2 facing rate caps (App PM: no whipping)
 const REPOS = (() => { try { return !!(LOCO2 || /[?&]repos=1\b/.test(location.search)); } catch (_) { return !!LOCO2; } })();
+const HITS2 = (() => { try { return /[?&]hits=2\b/.test(location.search); } catch (_) { return false; } })();
 import { createRagdollSystem } from './ragdoll.js';
 
 // m1v tunables: wave-1 enemy damage multiplier (tester died at the first cover every run) and the cover grace period
@@ -201,6 +202,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   const list = [];
+  const hitZones = HITS2 ? { armL: 0, armR: 0, legL: 0, legR: 0, torso: 0 } : null;
   const api = { list, update };
   // Test hook: pin an enemy at (x, z) facing the camera in a posture, AI frozen (stagger), for hit-registration tests.
   api.debugPose = (e, x, z, posture) => { e.pinned = true; e.group.position.set(x, 0, z); e.staggerT = 1e9; e.moving = false; e.exposed = true; e.posture = posture || 'idle'; e.phase = 'peek'; e.turned = false;
@@ -1203,6 +1205,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.approachK = 0; enemy.exitK = 0; enemy._exitPh = 0; enemy.fidget = null; enemy.fidgets = 0; enemy.duckT = 0; enemy.ducks = 0;
       enemy.peekKind = null; enemy.peekHigh = false; enemy.lastPeekKind = null; enemy.settleT = 0;
     }
+    if (HITS2) {
+      enemy.wounds = { armL: 0, armR: 0, legL: 0, legR: 0, torso: 0 };
+      enemy.lastHitZone = null; enemy.lastHitDir = null; enemy.lastHitT = 0; enemy.react = null;
+    }
 
     const torso = new THREE.Mesh(geoTorso, matVest);
     torso.position.y = 1.15 * S;
@@ -1579,14 +1585,63 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (aliveCount() === 0) { SSx.slowmoUntil = performance.now() + 750; if (SSx.hud && SSx.hud.banner) setTimeout(() => {}, 0); }
   }
 
+  function zoneFromSeg(seg) {
+    if (!seg) return null;
+    const s = Array.isArray(seg) ? seg.join(' ') : String(seg);
+    const side = /Left/.test(s) ? 'L' : /Right/.test(s) ? 'R' : '';
+    if (!side) return null;
+    if (/Arm|Hand/.test(s)) return 'arm' + side;
+    if (/UpLeg|Leg|Foot|Toe/.test(s)) return 'leg' + side;
+    return null;
+  }
+  function nearestLimbSeg(enemy, point) {
+    const boxes = enemy && enemy.limbBoxes;
+    if (!boxes || !boxes.length || !point) return null;
+    let best = null, bestD = Infinity;
+    for (let i = 0; i < boxes.length; i++) {
+      const L = boxes[i];
+      L.ba.getWorldPosition(_pA); L.bb.getWorldPosition(_pB);
+      _wB.subVectors(_pB, _pA);
+      const L2 = _wB.lengthSq();
+      const t = L2 < 1e-12 ? 0 : Math.max(0, Math.min(1, _wA.copy(point).sub(_pA).dot(_wB) / L2));
+      const d = _wA.copy(_pA).addScaledVector(_wB, t).distanceToSquared(point);
+      if (d < bestD) { bestD = d; best = L.m.userData.seg; }
+    }
+    return best;
+  }
+  function hitZoneOf(enemy, part, point) {
+    if (part === 'head') return 'head';
+    if (part === 'body') return 'torso';
+    return zoneFromSeg(nearestLimbSeg(enemy, point));
+  }
+  function hitReact(enemy, zone, dir, point) {
+    enemy.react = { zone, t: 0, dur: zone === 'torso' ? 0.45 : zone.startsWith('leg') ? 0.6 : 0.35, dir: dir.clone() };
+  }
+
   function hitEnemy(enemy, part, point) {
     if (!enemy.alive) return;
     const dmg = part === 'head' ? HEAD_DMG : part === 'limb' ? LIMB_DMG : BODY_DMG;
     enemy.health -= dmg;
+    if (HITS2) {
+      const zone = hitZoneOf(enemy, part, point);
+      _fwd.copy(point || enemy.group.position).sub(camera.position);
+      if (_fwd.lengthSq() < 1e-12) _fwd.set(0, 0, 1); else _fwd.normalize();
+      enemy.lastHitZone = zone;
+      (enemy.lastHitDir || (enemy.lastHitDir = new THREE.Vector3())).copy(_fwd);
+      enemy.lastHitT = (window.SS && window.SS.simTime) || 0;
+    }
     // Fix 3: blood, damage and the hit marker all come from this one registered hit (spray is emitted with the marker below
     // or with the kill marker in kill()); nothing else spawns blood on a live enemy.
     if (enemy.health <= 0) kill(enemy, point, part);
     else {
+      if (HITS2) {
+        const zone = enemy.lastHitZone;
+        if (zone && zone !== 'head') {
+          if (enemy.wounds && zone in enemy.wounds) { enemy.wounds[zone] += 1; hitZones[zone] += 1; }
+          hitReact(enemy, zone, enemy.lastHitDir, point);
+        }
+        try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {}
+      }
       if (LOCO2) forceDuck(enemy, weapon.lastShot);
       if (enemy.art) playHit(enemy, part === 'head');
       // Bigger hit reaction: shove back ~0.3 m from the shooter (ground enemies) + a brief exposed stagger.
@@ -2422,6 +2477,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function update(dt) {
+    if (HITS2) { try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {} }
     updateGrenades(dt); updateTruck(dt);
     const diff = difficulty();
     phaseT -= dt;
@@ -2693,6 +2749,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
     if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
     if (window.SS) window.SS.bursting = false;
+    if (HITS2 && hitZones) {
+      hitZones.armL = hitZones.armR = hitZones.legL = hitZones.legR = hitZones.torso = 0;
+      try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {}
+    }
   }
 
   function killAll() {
