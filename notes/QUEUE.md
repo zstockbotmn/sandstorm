@@ -26,6 +26,12 @@ mesh after the box->cylinder change, limit 13). Candidate fix later: rank body o
 ~0.35 m behind a forearm hit (firstHit rank already does this when the ray reaches the capsule).
 Rules: one heavy job at a time (coordinate with tester), no Meshy spend without me, arms opt-in until gloved grip reads right.
 
+## RESUMED (Oct 20, 10:16 PM ET, Zack via App PM)
+Order: peek polish (3d, done 2a4118d) -> p1b fixes (last-enemy reposition never fired in play, static fights, stacking) -> step 2 hit reactions (2a done) -> internal preview A -> step 3 sensory -> step 4 buildings (preview B) -> step 5 set piece -> ONE bundle release.
+- p1b reposition: hold clock now follows the cover AREA (reset only on a > 5 m move), failed picks retry in 3-5 s, pick widens in 3 tiers with its own 6-42 m pool (was clipped to the last spawn's 10-20 m window). Non-last fighters also move after 15-30 s on one area (x1.6 when suppressed), one at a time, >= 8 s apart. Cover slots reserved + 1.8 m spacing (anchor, stand spot and body) and a spread bonus. Tests: test/loco-relocate.js (real level, ~1 fps, default timers), loco-cover repos leg on the default timer.
+- NOTE for step 3: the opening gunfire build-up is text/audio only. Add VISUAL build-up: distant tracers and muzzle flashes down the street before contact (tester p1b).
+- Box caveat: at 0.7 fps the game advances at most 0.2 sim-s per frame (4 x 50 ms catch-up), so 200 s wall is only ~28 sim-s. Timers are sim time (correct for real phones).
+
 ## PAUSED (Oct 18, 2026, 10:25 AM ET, Zack via App PM)
 Step 1 state on step1-movement: blendspace + measured clip directions, facing (yaw capped 270/240/300 deg/s, 40-deg re-plant step OK'd), cover 3a/3b, last-enemy reposition 3c all built and tested (loco-cover, loco-facing green). Internal preview A0 = ss-ee912e469c (tools/preview-step1.sh, localhost:8850; server stopped).
 Not started: peek polish (prompt drafted at tools/prompts/step1/3d-peek-polish.txt), step 2 hit reactions (prompts drafted in tools/prompts/step2/, tool note in DECISIONS.md draft).

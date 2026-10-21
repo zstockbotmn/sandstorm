@@ -6,7 +6,7 @@
 // 3b/3c (added, not run): approach braking (approachK reaches >= 0.5 before cover, ground speed falls), fidgets while hidden
 // (fidgets >= 1 in 90 s, none while peeking), exitK ramps on leaving cover, a near-miss round 0.8 m beside a peeking fighter makes
 // it duck (ducks +1, peekT < 0.2 within 0.35 s, no new peek for 0.8 s), and the LAST enemy pinned on one cover point repositions
-// (SS_REPOS_S=6 debug override): anchor changes, it moves along a path (no per-frame jump > 1 m at >= 20 fps), exposed while running.
+// (DEFAULT 20-25 s timer, waits up to 34 sim-s; SS_REPOS_S=6 env only for a quick check): anchor changes, it moves along a path (no per-frame jump > 1 m at >= 20 fps), exposed while running.
 // Usage: SS_QS='&q=low&test=fast' node test/loco-cover.js
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const D = path.resolve(__dirname, '../dist'); const PORT = 8836;
@@ -16,10 +16,10 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
 const QS = process.env.SS_QS || '';
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 900000 });
   const res = {}, fail = []; const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }); const p = await ctx.newPage();
-  await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { cb(t); if (window.__post && t !== window.__pfT) { window.__pfT = t; try { window.__post(); } catch (_) {} } }); });
+  await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const sp = window.__spinMs | 0; if (sp) { const w0 = performance.now(); while (performance.now() - w0 < sp) {} } cb(t); if (window.__post && t !== window.__pfT) { window.__pfT = t; try { window.__post(); } catch (_) {} } }); });
   p.on('pageerror', (e) => (res.pageErrors = res.pageErrors || []).push(String(e).slice(0, 160)));
   await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&loco=2' + QS); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
-  await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
+  await p.evaluate((s) => { window.__repoSpin = s; }, Number(process.env.SS_SPIN_MS || 800)); await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
   await p.evaluate(() => { SS.player.health = 1e6; const THREE = SS.THREE; window.__E = [];
     for (let i = 0; i < 3; i++) { const e = SS.debug.spawnEnemy(i === 0 ? 'shifter' : undefined); if (e) { e.health = 1e9; window.__E.push(e); } }
     const R = window.__R = { frames: 0, hooks: {}, coverJump: 0, peekJump: 0, flips: 0, headPop: 0, sinks: [], peaks: [], hv: { head: 0, torso: 0 }, peekFrames: 0 };
@@ -54,14 +54,14 @@ const QS = process.env.SS_QS || '';
   for (let i = 0; i < 2 && res.duck && !res.duck.skipped && res.duck.ducks < 1; i++) res.duck = await p.evaluate(duckLeg); /* the peek can end on its own before the round arrives: up to 3 tries */
   Object.assign(res, await p.evaluate(() => { window.__post = null; const R = window.__R; return { ...R, coverJump: +R.coverJump.toFixed(2), peekJump: +R.peekJump.toFixed(2), headPopCm: +(R.headPop * 100).toFixed(1), sinkMinMs: R.sinks.length ? Math.round(Math.min(...R.sinks)) : null, peaks: R.peaks.slice(0, 20) }; }));
   delete res.headPop;
-  res.repos = await p.evaluate(async () => { const THREE = SS.THREE; window.SS_REPOS_S = 6; const keep = window.__E.find((x) => x.alive && !(x.anchor && /roof|window/.test(x.anchor.type)));
+  res.repos = await p.evaluate(async (ovr) => { const THREE = SS.THREE; if (ovr) window.SS_REPOS_S = ovr; else delete window.SS_REPOS_S; window.__spinMs = Number(window.__repoSpin || 0); /* SS_SPIN_MS: tester-like ~1 fps for this leg */ /* p1b: DEFAULT 20-25 s timer unless SS_REPOS_S is set */ const keep = window.__E.find((x) => x.alive && !(x.anchor && /roof|window/.test(x.anchor.type)));
     if (!keep) return { skipped: 'no ground fighter' }; SS.debug.noSpawn = true; for (const x of SS.enemies.list || []) if (x !== keep && x.alive) { x.health = 1; try { x.takeHit('head', x.group.position.clone().setY(1.6)); } catch (_) {} }
     await new Promise((r) => setTimeout(r, 1500)); const a0 = keep.anchor, r0 = keep.repositions | 0, g0 = (SS.lastRepos | 0); let jump = 0, exposedRun = 0, runF = 0, last = keep.group.position.clone(), lt = performance.now(), holdMax = 0;
-    const t0 = performance.now(); while (performance.now() - t0 < 30000) { await new Promise((r) => requestAnimationFrame(r)); const now = performance.now(), dt = (now - lt) / 1000; lt = now;
+    const t0 = performance.now(), s0 = SS.simTime; while (SS.simTime - s0 < 34 && performance.now() - t0 < 600000) { await new Promise((r) => requestAnimationFrame(r)); const now = performance.now(), dt = (now - lt) / 1000; lt = now;
       const p2 = keep.group.position; if (dt < 0.05) jump = Math.max(jump, p2.distanceTo(last)); last.copy(p2); holdMax = Math.max(holdMax, keep.coverHoldT || 0);
       if (keep._repositioning && keep.moving) { runF++; if (keep.exposed) exposedRun++; } /* only the reposition run itself (not the cover shuffles after it) */ if ((keep.repositions | 0) > r0 && runF > 20) break; }
     return { alive: SS.enemies.list ? SS.enemies.list.filter((x) => x.alive).length : null, repositions: (keep.repositions | 0) - r0, global: (SS.lastRepos | 0) - g0, anchorChanged: keep.anchor !== a0,
-      jumpM: +jump.toFixed(2), exposedFrac: runF ? +(exposedRun / runF).toFixed(2) : null, holdMaxS: +holdMax.toFixed(1), hp: keep.health }; });
+      jumpM: +jump.toFixed(2), exposedFrac: runF ? +(exposedRun / runF).toFixed(2) : null, holdMaxS: +holdMax.toFixed(1), hp: keep.health, simS: +(SS.simTime - s0).toFixed(1), why: keep._reposWhy, rej: keep._reposRej, fails: keep.reposFails | 0 }; }, Number(process.env.SS_REPOS_S || 0)); await p.evaluate(() => { window.__spinMs = 0; });
   if (!res.hooks.coverT || !res.hooks.peekT) fail.push('3a hooks missing (coverT ' + !!res.hooks.coverT + ', peekT ' + !!res.hooks.peekT + ')');
   if (res.flips) fail.push(res.flips + ' coverT/peekT 0<->1 flips in one frame');
   if (res.coverJump > 0.35) fail.push('coverT jumps ' + res.coverJump + ' in one frame'); if (res.peekJump > 0.35) fail.push('peekT jumps ' + res.peekJump + ' in one frame');

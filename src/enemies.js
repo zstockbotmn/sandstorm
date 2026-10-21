@@ -1514,6 +1514,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     } else fall(enemy, point, part);
     killFx(enemy, point, part);
   }
+  let squadReposS = -1e9; // last sim time any fighter repositioned (non-last moves are one at a time, >= 8 s apart)
   const fallers = [];
   function stepFallers(dt) {
     for (let i = fallers.length - 1; i >= 0; i--) {
@@ -1829,8 +1830,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Step B: most enemies 10-20 m away (closer, readable fights); ~20% further (22-40 m), e.g. rooftop shooters.
   let poolRange = [10, 20];
-  function coverPool(types) {
+  function coverPool(types, range) {
     const out = [];
+    const rg = range || poolRange;
     const segs = world.segments || [];
     const pz = camera.position.z;
     for (let s = 0; s < segs.length; s++) {
@@ -1838,7 +1840,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
         const ahead = pz - p.pos.z;
-        if (ahead < poolRange[0] || ahead > poolRange[1]) continue;
+        if (ahead < rg[0] || ahead > rg[1]) continue;
         if (types && types.indexOf(p.type) < 0) continue;
         out.push(p);
       }
@@ -1846,14 +1848,32 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return out;
   }
 
+  // Cover-slot reservation + spacing (tester p1b: two fighters 30 px apart on one barrier, the other cover empty).
+  // A spot is taken when another live fighter's anchor (its reserved slot, set as soon as it picks it), its stand spot,
+  // or where it actually is (a car/barrel hide sits 0.75-2.75 m behind the anchor) is within COVER_GAP of it.
+  const COVER_GAP2 = 1.8 * 1.8;
   function occupiedBy(pos, self) {
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
       if (!e.alive || e === self) continue;
       const h = e.home;
-      if ((h.x - pos.x) ** 2 + (h.z - pos.z) ** 2 < 2.2) return true;
+      if ((h.x - pos.x) ** 2 + (h.z - pos.z) ** 2 < COVER_GAP2) return true;
+      const a = e.anchor && e.anchor.pos;
+      if (a && (a.x - pos.x) ** 2 + (a.z - pos.z) ** 2 < COVER_GAP2) return true;
+      const g = e.group && e.group.position;
+      if (g && g.y < 0.5 && (g.x - pos.x) ** 2 + (g.z - pos.z) ** 2 < COVER_GAP2) return true;
     }
     return false;
+  }
+  // Prefer spread: +1 per other live fighter within 4 m of the spot (anchor or body).
+  function crowdAt(pos, self) {
+    let n = 0;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i]; if (!e.alive || e === self) continue;
+      const a = (e.anchor && e.anchor.pos) || e.group.position;
+      if ((a.x - pos.x) ** 2 + (a.z - pos.z) ** 2 < 16) n++;
+    }
+    return n;
   }
 
   function spawnOne(prefer) { const ts = performance.now(); const r = spawnOne_(prefer); const d = performance.now() - ts; if (d > 40) (window.SS_SPIKES = window.SS_SPIKES || []).push(['spawn', Math.round(ts), Math.round(d)]); return r; }
@@ -1939,6 +1959,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const d = Math.abs(ahead - 16) + Math.abs(c.pos.x) * 0.3; if (d < bd) { bd = d; best = c; } }
     e.anchor = a0; e.home = h0;
     e.behavior = 'shifter'; e.unseenT = 0; e.hiddenT = 0; e.engaged = true; e.afterHide = false; e.vanishSaved = 0;
+    // p1b: a ground fighter RUNS to the seen spot (exposed, 'Moving!') instead of warping. The warp also reset the
+    // last-enemy hold clock, so the 20-25 s reposition never came up.
+    if (best && REPOS && e.group.position.y < 0.05 && !(a0 && isElevated(a0.type))) {
+      e.warps = Math.max(0, (e.warps | 0) - 1); e.seenForced = (e.seenForced | 0) + 1; if (window.SS) window.SS.seenForced = (window.SS.seenForced | 0) + 1;
+      startReposition(e, best); return true;
+    }
     if (best) { e.anchor = best; e.home = standPos(best); e.group.position.copy(firePoint(e)); }
     else { let pt = null; for (const ah of [16, 13, 19, 10, 22]) { for (const x of [0, -1.5, 1.5, -3, 3]) { _losP.set(camera.position.x + x, 1.25, pz - ah); if (clearToEye(_losP)) { pt = new THREE.Vector3(_losP.x, 0, _losP.z); break; } } if (pt) break; }
       if (!pt) pt = new THREE.Vector3(camera.position.x, 0, pz - 14);
@@ -2098,7 +2124,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const d = p.pos.distanceToSquared(enemy.home);
       if (d < 1.2 || d > 81) continue;
       if (occupiedBy(p.pos, enemy)) continue;
-      if (d < bestD) { bestD = d; best = p; }
+      const dS = d + 12 * crowdAt(p.pos, enemy); // nearest, but away from the others
+      if (dS < bestD) { bestD = dS; best = p; }
     }
     if (!best) {
       startPeek(enemy);
@@ -2138,35 +2165,45 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.
+  // Tier 0 is the 3c spec (6-20 m hop, 12-30 m ahead, clear shot). p1b: on the real street that often found nothing
+  // (the pool was also clipped to the last spawn's 10-20 m window), so widen in steps before giving up.
+  // e._reposRej counts why candidates were dropped (tests / ?debug).
+  const REPOS_TIERS = [[6, 20, 12, 30, true], [3, 24, 8, 38, true], [3, 24, 8, 38, false]];
   function pickRepositionCover(e) {
     if (!e.anchor || !e.anchor.pos) return null;
-    const pool = coverPool(['wall', 'barrel', 'car', 'door']);
+    const pool = coverPool(['wall', 'barrel', 'car', 'door'], [6, 42]);
     const pz = camera.position.z, a0 = e.anchor, h0 = e.home;
-    let best = null, bestS = 1e9;
-    try {
-      for (let i = 0; i < pool.length; i++) {
-        const c = pool[i];
-        if (c === a0 || !c.pos) continue;
-        if (occupiedBy(c.pos, e)) continue;
-        const d2 = c.pos.distanceToSquared(a0.pos);
-        if (d2 < 36 || d2 > 400) continue;
-        const ahead = pz - c.pos.z;
-        if (ahead < 12 || ahead > 30) continue;
-        e.anchor = c; e.home = standPos(c);
-        const fp = firePoint(e); _losP.set(fp.x, 1.25, fp.z);
-        if (!clearToEye(_losP)) continue;
-        const dist = Math.sqrt(d2);
-        const score = Math.abs(dist - 12) + 0.3 * Math.abs(c.pos.x);
-        if (score < bestS) { bestS = score; best = c; }
-      }
-    } finally { e.anchor = a0; e.home = h0; }
-    return best;
+    const rej = e._reposRej = { pool: pool.length, same: 0, occupied: 0, hop: 0, ahead: 0, los: 0, tier: -1 };
+    for (let t = 0; t < REPOS_TIERS.length; t++) {
+      const [dMin, dMax, aMin, aMax, needLos] = REPOS_TIERS[t];
+      let best = null, bestS = 1e9;
+      try {
+        for (let i = 0; i < pool.length; i++) {
+          const c = pool[i];
+          if (c === a0 || !c.pos) { rej.same++; continue; }
+          if (occupiedBy(c.pos, e)) { rej.occupied++; continue; }
+          const d2 = c.pos.distanceToSquared(a0.pos);
+          if (d2 < dMin * dMin || d2 > dMax * dMax) { rej.hop++; continue; }
+          const ahead = pz - c.pos.z;
+          if (ahead < aMin || ahead > aMax) { rej.ahead++; continue; }
+          e.anchor = c; e.home = standPos(c);
+          const fp = firePoint(e); _losP.set(fp.x, 1.25, fp.z);
+          const los = clearToEye(_losP);
+          if (needLos && !los) { rej.los++; continue; }
+          const dist = Math.sqrt(d2);
+          const score = Math.abs(dist - 12) + 0.3 * Math.abs(c.pos.x) + 6 * crowdAt(c.pos, e) + (los ? 0 : 8);
+          if (score < bestS) { bestS = score; best = c; }
+        }
+      } finally { e.anchor = a0; e.home = h0; }
+      if (best) { rej.tier = t; return best; }
+    }
+    return null;
   }
 
   // No 12-30 m hop: same pool and filters, but 5-12 m further ahead of the player (still <= 40 m).
   function pickFallbackCover(e) {
     if (!e.anchor || !e.anchor.pos) return null;
-    const pool = coverPool(['wall', 'barrel', 'car', 'door']);
+    const pool = coverPool(['wall', 'barrel', 'car', 'door'], [6, 42]);
     const pz = camera.position.z, a0 = e.anchor, h0 = e.home;
     const aAhead = pz - a0.pos.z;
     let best = null, bestS = 1e9;
@@ -2217,6 +2254,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     e._lastReposS = window.SS ? (window.SS.simTime || 0) : 0;
     e.coverHoldT = 0;
     e._holdAnchor = null;
+    e._holdPos = null;
+    if (window.SS) { const last = aliveCount() === 1; window.SS.reposLast = (window.SS.reposLast | 0) + (last ? 1 : 0); window.SS.reposSquad = (window.SS.reposSquad | 0) + (last ? 0 : 1); }
     squadCall('Moving!');
   }
 
@@ -2591,22 +2630,36 @@ export function createEnemies(scene, camera, world, weapon, player) {
       { const dP = e.group.position.distanceTo(camera.position); // lone far last fighter -> advances (8 s beyond 35 m)
         if (e.engaged && !e.pinned && !e.dying && dP > 35 && e.phase !== 'relocate' && e.group.position.y < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && aliveCount() === 1 && truckPending === 0) { e.farT = (e.farT || 0) + dt;
           if (e.farT > 8) { e.farT = 0; advanceNearer(e); } } else e.farT = 0; } // ground fighters only: they run up (no vertical pop)
-      if (REPOS) { // last fighter pinned on one ground cover (sim time). Off: this block never runs.
+      if (REPOS) { // fighters holding one ground cover move (sim time). Off: this block never runs.
+        // p1b: the hold clock reset on every anchor change (short shuffles, toSeenSpot) and on any phase outside
+        // takeCover/hide/peek/fire, and a failed pick waited a whole new 20-25 s. Now it follows the AREA held (resets
+        // only after a move of > 5 m), a failed pick retries in 3-5 s, and the last fighter's 20-25 s clock is separate
+        // from the 15-30 s clock that moves the others, one at a time.
         const simS = window.SS ? (window.SS.simTime || 0) : 0;
-        const pinned = aliveCount() === 1 && truckPending === 0 && e.alive && !e.dying && !e.pinned && e.anchor && !isElevated(e.anchor.type) && ['takeCover', 'hide', 'peek', 'fire'].includes(e.phase);
-        if (pinned) {
-          if (e._holdAnchor !== e.anchor) { e._holdAnchor = e.anchor; e.coverHoldT = 0; e._reposAt = (typeof window.SS_REPOS_S === 'number' ? window.SS_REPOS_S : 20 + Math.random() * 5); }
-          else e.coverHoldT += dt;
-          if (e.coverHoldT >= e._reposAt && simS - (e._lastReposS != null ? e._lastReposS : -1e9) >= 15) {
+        const last1 = aliveCount() === 1 && truckPending === 0;
+        const ground = e.alive && !e.dying && !e.pinned && e.anchor && e.anchor.pos && !isElevated(e.anchor.type) && e.behavior !== 'flanker';
+        const holding = ['takeCover', 'hide', 'peek', 'fire'].includes(e.phase) || (e.phase === 'relocate' && !e._repositioning && e._holdPos);
+        if (ground && holding) {
+          const ap = e.anchor.pos;
+          const ovr = last1 ? window.SS_REPOS_S : window.SS_RELOC_S;
+          const timer = () => (typeof ovr === 'number' ? ovr : last1 ? 20 + Math.random() * 5 : 15 + Math.random() * 15);
+          if (!e._holdPos || (e.phase !== 'relocate' && e._holdPos.distanceToSquared(ap) > 25)) {
+            (e._holdPos || (e._holdPos = new THREE.Vector3())).copy(ap); e.coverHoldT = 0; e._reposAt = timer(); e._reposLast = last1;
+          } else e.coverHoldT += dt * ((e.suppressT || 0) > 0 ? 1.6 : 1); // pinned down by fire: moves sooner
+          if (last1 && !e._reposLast) { e._reposLast = true; e._reposAt = Math.min(e._reposAt, timer()); } // just became the last one
+          const gap = simS - (e._lastReposS != null ? e._lastReposS : -1e9) >= 15;
+          const token = last1 || (simS - squadReposS >= 8 && !list.some((x) => x !== e && x.alive && x._repositioning));
+          e._reposWhy = e.coverHoldT < e._reposAt ? 'holding' : !gap ? 'cooldown' : !token ? 'waiting-turn' : 'due';
+          if (e._reposWhy === 'due') {
             const spot = pickRepositionCover(e);
-            if (spot) startReposition(e, spot);
+            if (spot) { startReposition(e, spot); squadReposS = simS; e._reposWhy = 'moved'; }
             else {
               const back = pickFallbackCover(e);
-              if (back) { startReposition(e, back); e.fellBack = (e.fellBack | 0) + 1; }
-              else e.coverHoldT = 0;
+              if (back) { startReposition(e, back); e.fellBack = (e.fellBack | 0) + 1; squadReposS = simS; e._reposWhy = 'fell-back'; }
+              else { e.coverHoldT = Math.max(0, e._reposAt - (3 + Math.random() * 2)); e.reposFails = (e.reposFails | 0) + 1; e._reposWhy = 'no-cover'; }
             }
           }
-        } else { e.coverHoldT = 0; e._holdAnchor = null; }
+        } else if (!ground || e.phase === 'approach' || e.phase === 'climb') { e.coverHoldT = 0; e._holdPos = null; e._reposWhy = ground ? 'travelling' : 'not-ground'; }
       }
       if (e.pinned) { if (e.debugVel) { e.group.position.addScaledVector(e.debugVel, dt); e.moving = true; e.moveKind = 'run'; e.moveSpeed = e.debugVel.length(); } }
       // Tester m1r / waves (Ultra-low): a fighter that flanked behind the player and stays out of view kept ENEMIES at 1 and the
@@ -2746,6 +2799,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
+    squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
     if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
     if (window.SS) window.SS.bursting = false;
