@@ -371,6 +371,7 @@ if (/[?&]hitbox/.test(location.search)) {
   weapon.onShotDebug = (s) => { if (!s.hit) return; const m = new THREE.Mesh(gE, s.hit.enemy ? mE : mW); m.position.copy(s.hit.point); m.renderOrder = 99; scene.add(m); mk.push(m); setTimeout(() => { scene.remove(m); }, 2000); };
 }
 art.onReady(() => { document.body.classList.add('ready'); });
+art.onLate((name) => { if ((name === 'rifle_m4' || name === 'rifle_ak47') && weapon.modelName !== 'rifle_m4') { const r = art.staticInstance(name); if (r) { r.name = name; if (weapon.model && weapon.model.parent) weapon.model.parent.remove(weapon.model); weapon.setModel(r, /[?&]rflip=1/.test(location.search)); } } }); // slow start: the real rifle replaces the placeholder when it lands
 art.onReady(() => { const m4 = art.staticInstance('rifle_m4'); if (m4) m4.name = 'rifle_m4'; const r = m4 || art.staticInstance('rifle_ak47'); if (r) weapon.setModel(r, /[?&]rflip=1/.test(location.search));
   if (m4 && weapon.model && art.get('fps_arms') && /[?&]arms=1/.test(location.search) /* hands opt-in (?arms=1) until they read as a gloved soldier grip */) { try { arms = createArms(art.get('fps_arms'), art.anims('fps_arms'), camera);
     if (arms) { weapon.model.parent.add(arms.root); arms.attach(weapon.model); window.SS.arms = arms; } } catch (err) { console.warn('arms', err); arms = null; } } });

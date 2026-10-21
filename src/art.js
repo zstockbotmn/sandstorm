@@ -360,8 +360,24 @@ function withTimeout(promise, ms) {
   });
 }
 
+// tester pA: on a slow box the 12 s soft cap expired before the props group, so the player's rifle stayed the code-built
+// black box and near cover the flat fallback. These never get skipped by the time cap: they keep loading and are swapped
+// in when they land (art.onLate), so a slow start costs a few seconds of placeholder, not a whole run of it.
+const ESSENTIAL = new Set(['rifle_m4', 'rifle_ak47', ...PROP_ART]);
+const lateHooks = [];
+function adoptLate(rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.gltf || art.loaded.indexOf(row.name) >= 0) continue;
+    try { adopt(row.name, row.gltf); } catch (err) { console.warn('art late adopt', row.name, err); continue; }
+    art.loaded.push(row.name); art.bytes = bytesUsed;
+    const k = art.failed.indexOf(row.name); if (k >= 0) art.failed.splice(k, 1);
+    (art.late || (art.late = [])).push(row.name);
+    for (let j = 0; j < lateHooks.length; j++) { try { lateHooks[j](row.name); } catch (err) { console.warn('art onLate', err); } }
+  }
+}
 async function loadOneBudget(name) {
-  if (timedOut || bytesUsed >= BYTE_BUDGET) {
+  if ((timedOut && !ESSENTIAL.has(name)) || bytesUsed >= BYTE_BUDGET) {
     return { name, skipped: true };
   }
   const url = 'assets/models/' + name + '.glb';
@@ -390,12 +406,14 @@ async function loadOneBudget(name) {
 async function loadGroup(names, optional) {
   const remaining = Math.max(500, LOAD_TIMEOUT_MS - (performance.now() - loadStarted));
   let rows;
+  const all = Promise.all(names.map(loadOneBudget));
   try {
-    rows = await withTimeout(Promise.all(names.map(loadOneBudget)), remaining);
+    rows = await withTimeout(all, remaining);
   } catch (err) {
-    timedOut = true;
-    console.warn('art load timeout; falling back to code-built art for remaining assets');
+    timedOut = true; art.timedOut = true;
+    console.warn('art load timeout; falling back to code-built art for remaining assets (essential ones keep loading)');
     rows = names.map((name) => ({ name, skipped: true, timeout: true }));
+    all.then(adoptLate, () => {});
   }
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -422,6 +440,7 @@ const art = {
   get(name) {
     return assets[name] || null;
   },
+  onLate(fn) { lateHooks.push(fn); },
   onReady(fn) {
     if (art.done) fn();
     else waiters.push(fn);
@@ -476,7 +495,8 @@ if (art.tier === 'low') {
   const chain = loadGroup(PRIMARY, false).then(() => {
     return loadGroup([ANIM_FALLBACK], false); // fallback clips if Quaternius failed, else the upper-body layer
   });
-  (LOCO2 ? chain.then(loadLoco) : chain).then(() => loadGroup(PROPS, true)).then(finish).catch((err) => {
+  // Props (rifle, cover) load alongside the loco clips, not after them (tester pA: the extra loco step pushed props past the cap).
+  chain.then(() => Promise.all([LOCO2 ? loadLoco() : null, loadGroup(PROPS, true)])).then(finish).catch((err) => {
     console.warn('art load', err);
     finish();
   });
