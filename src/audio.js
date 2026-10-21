@@ -4,6 +4,10 @@ export function createAudio() {
   let shotBus = null;
   let windGain = null;
   let unlocked = false, live = false;
+  // ?fx=3 only: a lowpass between master and destination, created on the first muffle and left in the chain at 20 kHz.
+  const FX3 = (() => { try { return /[?&]fx=3(?:&|$)/.test(location.search); } catch (e) { return false; } })();
+  let lp = null;
+  let muff = null; // scheduled dip: { t0, wall, f0, f1, rec }
   function go() { live = true; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0.75, t + 0.25); } }
   function hush() { live = false; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + 0.05); } } // m1u: Restart is silent until its first frame
   let chatterT = 10;
@@ -332,6 +336,77 @@ export function createAudio() {
     if (!built && !buildQueued) { buildQueued = true; requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(ensure, 0))); }
   }
 
+  function ensureMuffle() {
+    if (!FX3 || lp) return !!lp;
+    if (!ensureCtx()) return false;
+    lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 0.707;
+    lp.frequency.setValueAtTime(20000, ctx.currentTime);
+    try { master.disconnect(ctx.destination); } catch (e) { /* not wired straight through */ }
+    master.connect(lp);
+    lp.connect(ctx.destination);
+    return true;
+  }
+
+  function muffElapsed() {
+    if (!muff || !ctx) return 0;
+    const audioEl = ctx.currentTime - muff.t0;
+    if (ctx.state === 'running' && audioEl > 0.01) return audioEl;
+    const wallEl = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - muff.wall) / 1000;
+    return Math.max(0, audioEl, wallEl);
+  }
+
+  // Value of the lowpass frequency at `el` seconds into the scheduled dip (linear in, exponential back out).
+  function muffFreqAt(el) {
+    if (!muff) return 20000;
+    if (el <= 0) return muff.f0;
+    if (el < 0.05) return muff.f0 + (muff.f1 - muff.f0) * (el / 0.05);
+    const u = (el - 0.05) / muff.rec;
+    if (u >= 1) return 20000;
+    return muff.f1 * Math.pow(20000 / muff.f1, u);
+  }
+
+  function muffle(strength) {
+    if (!FX3) return;
+    try {
+      if (!ensureMuffle()) return;
+      const s = Math.max(0, Math.min(1, +strength || 0));
+      const t = ctx.currentTime;
+      const f0 = Math.max(30, muff ? muffFreqAt(muffElapsed()) : (lp.frequency.value || 20000));
+      const f1 = Math.max(30, 300 + 900 * (1 - s));
+      const rec = 1.2 + 1.6 * s;
+      muff = { t0: t, wall: (typeof performance !== 'undefined' ? performance.now() : Date.now()), f0, f1, rec };
+      lp.frequency.cancelScheduledValues(t);
+      lp.frequency.setValueAtTime(f0, t);
+      lp.frequency.linearRampToValueAtTime(f1, t + 0.05);
+      lp.frequency.exponentialRampToValueAtTime(20000, t + 0.05 + rec);
+      if (s > 0.001) {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = 3200 + Math.random() * 800; // 3.2–4 kHz tinnitus, around the lowpass
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(Math.max(0.0001, 0.05 * s), t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + rec);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(t);
+        o.stop(t + rec + 0.05);
+      }
+    } catch (e) { /* audio graph not available */ }
+  }
+
+  function muffleLevel() {
+    if (!lp) return 0;
+    let f = muff ? muffFreqAt(muffElapsed()) : 20000;
+    try { const live = lp.frequency.value; if (live > 0 && live < f) f = live; } catch (e) { /* keep the schedule */ }
+    if (!(f > 0) || f >= 19900) return 0;
+    const lo = 300, hi = 20000;
+    const clamped = Math.min(hi, Math.max(lo, f));
+    const n = Math.log(clamped / lo) / Math.log(hi / lo);
+    return Math.max(0, Math.min(1, 1 - n));
+  }
+
   function update(dt) {
     if (!ctx || !unlocked) return;
     const running = !!(window.SS && window.SS.running);
@@ -361,5 +436,5 @@ export function createAudio() {
     }
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup };
+  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel };
 }

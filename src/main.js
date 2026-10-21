@@ -11,6 +11,7 @@ import { createPlayer } from './player.js';
 import { createEnemies } from './enemies.js';
 import { createScore } from './score.js';
 import { createAudio } from './audio.js';
+import { createFx3 } from './fx3.js';
 import { createStakes } from './stakes.js';
 import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
@@ -21,6 +22,7 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 // Phones: no MSAA (postfx/DPR carry the look), DPR <= 1.25, cheap PCF shadows at 1024.
 const PHONE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+const FX3 = /[?&]fx=3(?:&|$)/.test(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: !PHONE, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -90,6 +92,15 @@ window.SS = { fast: FAST,
 };
 // art.js may have started loading before this object existed. Keep the same reference.
 window.SS.art = art;
+let fx = null;
+let fxPx = 0, fxPy = 0;
+function clearFxPos() {
+  if (!fxPx && !fxPy) return;
+  camera.position.x -= fxPx;
+  camera.position.y -= fxPy;
+  fxPx = 0; fxPy = 0;
+}
+if (FX3) { fx = createFx3({ camera, audio }); window.SS.fx = fx; }
 window.SS.renderer = renderer; // headless shots read info.render.triangles
 
 const priorHit = weapon.onHit;
@@ -102,6 +113,7 @@ weapon.onHit = function onHit(info) {
 weapon.onShot = function onShot() {
   score.registerShot();
   audio.gunfire();
+  if (fx) fx.kick('shot', 1);
 };
 weapon.onReload = function onReload(which) {
   audio.reload(which);
@@ -139,14 +151,26 @@ function applyCamera(dt) {
     camera.fov = fov;
     camera.updateProjectionMatrix();
   }
+  if (fx) clearFxPos();
   camera.position.y = eye;
   camera.rotation.y = -st.yaw + (window.SS_VIEW_YAW || 0); // test hook: look sideways/backward for coverage shots
   camera.rotation.x = -st.pitch;
   camera.rotation.z = 0;
+  if (fx) {
+    const o = fx.offsets();
+    camera.rotation.x += o.pitch;
+    camera.rotation.y += o.yaw;
+    camera.rotation.z = o.roll;
+    camera.position.x += o.x;
+    camera.position.y += o.y;
+    fxPx = o.x; fxPy = o.y;
+  }
   camera.updateMatrixWorld();
 }
 
 function simStep(dt) {
+  if (fx && !window.__freezeCam) clearFxPos(); // walk and cover read the unshaken body position
+  if (fx) fx.update(dt || 0);
   if (window.SS.running) window.SS.simTime = (window.SS.simTime || 0) + (dt || 0);
   const frozen = !player.alive; // death freezes the world: no walking, no enemy/world updates
   if (window.SS.walking && !frozen) {

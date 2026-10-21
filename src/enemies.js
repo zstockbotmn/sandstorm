@@ -28,6 +28,7 @@ const MAX_HEALTH = 100;
 const _look = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
 const _aim = new THREE.Vector3();
+const _near = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
 const _wA = new THREE.Vector3();
 const _wB = new THREE.Vector3();
@@ -2035,6 +2036,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle); // cover also softens hits (x0.6, in dmgAmt)
+    } else if (window.SS && window.SS.fx) {
+      // Miss: closest point of the tracer segment to the eye. Under 1.5 m is a near miss (no change to aim or damage).
+      const ax = _muzzle.x, ay = _muzzle.y, az = _muzzle.z, bx = _aim.x, by = _aim.y, bz = _aim.z;
+      const px = camera.position.x, py = camera.position.y, pz = camera.position.z;
+      const abx = bx - ax, aby = by - ay, abz = bz - az, ab2 = abx * abx + aby * aby + abz * abz;
+      let tt = ab2 > 1e-8 ? ((px - ax) * abx + (py - ay) * aby + (pz - az) * abz) / ab2 : 0;
+      if (tt < 0) tt = 0; else if (tt > 1) tt = 1;
+      const x = ax + abx * tt, y = ay + aby * tt, z = az + abz * tt, dx = x - px, dy = y - py, dz = z - pz;
+      if (dx * dx + dy * dy + dz * dz < 2.25) window.SS.fx.nearMiss(_near.set(x, y, z));
     }
   }
 
@@ -2731,6 +2741,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (n.landed && n.t >= n.fuse) { if (n.ring) { scene.remove(n.ring); n.ring = null; }
         for (let j = 0; j < 4; j++) muzzleFlash(n.m.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)));
         const d = n.m.position.distanceTo(camera.position.clone().setY(n.m.position.y)); if (d < 3.5) player.damage(35 * (1 - d / 4.5), n.m.position);
+        if (window.SS && window.SS.fx) window.SS.fx.blast(n.m.position);
         if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);
         scene.remove(n.m); nades.splice(i, 1); } }
   }
