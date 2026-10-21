@@ -67,3 +67,9 @@ a small ducked/exposed HUD indicator. Tester feel sessions: Ultra-low (~40 fps) 
 STATUS 12:40 PM ET: all 5 items coded + pushed (b1ad6a1..HEAD). threat Low PASS (before SS.cover fix), walldust15 Low PASS, a8-hud Low PASS.
 Remaining: rerun threat Low + Ultra-low and fx3 Low on the SS.cover build, rebuild 8850 as 'preview A8', report + tester checklist.
 Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, perf) and the art-building rooms follow-up.
+
+## Step 5 (started Oct 21 1:10 PM ET, behind ?sp=5)
+- Prompts: tools/prompts/step5/5a..5f. 5a RPG strike done (b71149f, Grok, reviewed; smoke-checked via a8-hud: tell ~1.3-2.5 s, dmg ~18, HP 82).
+- Next: 5b synth whoosh/boom/engine (audio.js), 5c truck moment, 5d quiet-stretch texture, 5e pressure curve, 5f tests.
+- 5a polish to do: rocket is small / hard to see mid-flight at 24-38 m (bigger glow + brighter trail); launch point can sit inside a facade (x 5.2-6.7).
+- A8 follow-ups 1-5 done (q parse + keep q, FLANKED on flanker side, thinner Low ducked haze, Ultra-low chips, DPR floor 0.75).
