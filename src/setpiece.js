@@ -204,6 +204,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
       if (s.life <= 0) s.mesh.visible = false;
     }
   }
+  let starvedAt = null;
   function update(dt) {
     const SS = window.SS || {}, sim = SS.simTime || 0, bursting = !!SS.bursting;
     if (bursting && !wasBurst) { state.wave += 1; waveT = sim; firedWave = false; // A10: a random moment in the wave (4-18 s), ~65% of waves from wave 2; ?rpg=1 keeps 6 s every wave
@@ -221,7 +222,9 @@ export function createSetPieces({ scene, camera, player, hud }) {
     if (flying || !waveOn || firedWave || fireAt < 0 || sim - waveT < fireAt) return;
     if (truck.state.phase === 'drive' || truck.state.phase === 'crash') return; // 5c: never an RPG on top of the truck tell
     if (SS.setPieceAt != null && sim - SS.setPieceAt < 8) return; // A10: one shared set-piece gap (RPG / truck / grenade)
-    if (SS.nadeStarved) return; // A11: a starved camping grenade goes first (the forced RPG used to keep starving it)
+    // A11: a starved camping grenade goes first (the forced RPG used to keep starving it). A12: but only for 6 s - with no
+    // thrower in range the grenade can stay 'starved' for the rest of the wave, which cancelled the RPG (wave 3, rpg=1).
+    if (SS.nadeStarved) { if (starvedAt == null) starvedAt = sim; if (sim - starvedAt < 6) return; } else starvedAt = null;
     launchNow(sim);
   }
   function debugRpg() { return launchNow((window.SS && window.SS.simTime) || 0); }

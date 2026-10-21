@@ -22,7 +22,7 @@ const [tier = 'low', out = 'logs/a12/rpg-forced'] = process.argv.slice(2); fs.mk
         if (!(await waitFor(() => SS.bursting, 90))) return { waves, err: 'no wave ' + w };
         const ws = SS.simTime, n0 = (SS.setpiece && SS.setpiece.rpgs) | 0, tr0 = SS.trucks | 0; let truckAt = null;
         const ok = await waitFor(() => { if (truckAt == null && (SS.trucks | 0) > tr0) truckAt = +(SS.simTime - ws).toFixed(1); return ((SS.setpiece && SS.setpiece.rpgs) | 0) > n0; }, 45);
-        const rec = { w, rpg: ok, launchAfter: ok ? +(SS.setpiece.lastRpg.launchSim - ws).toFixed(1) : null, truckAt, live: SS.waveActive, bursting: SS.bursting };
+        const rec = { w, rpg: ok, launchAfter: ok ? +(SS.setpiece.lastRpg.launchSim - ws).toFixed(1) : null, truckAt, live: SS.waveActive, bursting: SS.bursting, engaged: SS.engaged | 0, gate: SS.nadeGate, starved: !!SS.nadeStarved, noThrower: SS.nadeNoThrower, spGap: SS.setPieceAt != null ? +(SS.simTime - SS.setPieceAt).toFixed(1) : null, nades: SS.grenades | 0 };
         if (ok) { await waitFor(() => SS.setpiece.lastRpg.impactR, 20); const L = SS.setpiece.lastRpg; rec.dmg = +(+L.dmg).toFixed(1); rec.hpBefore = L.hpBefore; rec.aim = L.aim;
           const log = SS.audioLog || [], th = [...log].reverse().find((x) => x.kind === 'launch thump'), wh = [...log].reverse().find((x) => x.kind === 'whoosh'); rec.thump = th && th.t; rec.whoosh = wh && wh.t; }
         waves.push(rec); const c0 = SS.waveClears | 0; SS.enemies.killAll(); await waitFor(() => (SS.waveClears | 0) > c0, 30); SS.enemies.killAll();
