@@ -8,7 +8,7 @@ const POS_CAP = 0.06;
 const KIND = {
   shot:   { decay: 12, pitch: 0.25 * DEG, yaw: 0.05 * DEG, roll: 0.03 * DEG, x: 0, y: 0, up: true },
   impact: { decay: 9,  pitch: 0.28 * DEG, yaw: 0.28 * DEG, roll: 0.10 * DEG, x: 0.008, y: 0.008, up: false },
-  hit:    { decay: 7,  pitch: 1.10 * DEG, yaw: 0.70 * DEG, roll: 0.60 * DEG, x: 0.012, y: 0.012, up: true }, // A6: flinch on every hit taken
+  hit:    { decay: 6,  pitch: 1.80 * DEG, yaw: 1.10 * DEG, roll: 0.90 * DEG, x: 0.02, y: 0.016, up: true }, // A6: flinch on every hit taken (A8: ~1.6x, tester saw none)
   blast:  { decay: 4,  pitch: 1.80 * DEG, yaw: 1.40 * DEG, roll: 1.00 * DEG, x: 0.0283, y: 0.0283, up: false },
 };
 const W1 = [11.3, 17.6, 13.1, 9.7, 19.4];
@@ -90,6 +90,7 @@ export function createFx3({ camera, audio, scene }) {
       depthWrite: false,
       // no vertexColors: PlaneGeometry has no colour attribute (it would read black); instanceColor tints on its own
       side: THREE.DoubleSide,
+      fog: false, // A8: Low fog (0.022) hazed the tan puffs toward the pale sky colour at 15-20 m
     });
     mesh = new THREE.InstancedMesh(geo, mat, cap);
     mesh.frustumCulled = false;
@@ -98,7 +99,7 @@ export function createFx3({ camera, audio, scene }) {
     parts = new Array(cap);
     ss.set(0, 0, 0); qq.identity();
     for (let i = 0; i < cap; i++) {
-      parts[i] = { i, on: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), col: new THREE.Color(), life: 0, max: 1, size0: 0, size1: 0, grav: 0, seen: 0, mark: -1 };
+      parts[i] = { i, on: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), col: new THREE.Color(), life: 0, max: 1, size0: 0, size1: 0, grav: 0, seen: 0, mark: -1, r0: 0, rDur: 0, minF: 2 };
       mesh.setMatrixAt(i, m4.compose(vv.set(0, 0, 0), qq, ss));
       mesh.setColorAt(i, cc.setRGB(1, 1, 1));
     }
@@ -122,9 +123,14 @@ export function createFx3({ camera, audio, scene }) {
     spawned++;
     return slot;
   }
+  // A8 (A7 tester: Low wall dust 'a pale 25 px puff that fades within a few frames'): particle life ran on GAME time only
+  // (~0.2 game-s per painted frame at ~1 fps), so a 1.5 s cloud grew/shrank out in ~5-7 frames. rDur (ms) = a REAL-time
+  // floor on the lifetime and the grow/shrink curve; minF = painted frames it must be seen first.
+  let emitRDur = 0, emitMinF = 2;
   function emit(point, vx, vy, vz, life, size0, size1, grav, color) {
     const p = alloc();
     if (!p) return;
+    p.r0 = typeof performance !== 'undefined' ? performance.now() : 0; p.rDur = emitRDur; p.minF = emitMinF;
     p.pos.set(point.x, point.y, point.z);
     p.vel.set(vx, vy, vz);
     p.life = life; p.max = life;
@@ -194,15 +200,21 @@ export function createFx3({ camera, audio, scene }) {
     const cloudN = wall ? take(3) : 0;
     if (!dustN && !debN && !cloudN) return;
     const col = plasterish(surface) ? 0xd8cfc0 : 0xc9b38a;
+    emitRDur = 1400; emitMinF = 3;
     if (dustN) dust(point, normal, dustN, col);
+    emitRDur = 900; emitMinF = 3;
     if (debN) debris(point, normal, debN);
-    if (cloudN) { // wall hit: a dense, darker cloud (3 stacked billboards, ~1-1.5 m, ~1.5 s) that hangs on the facade (A6: read faint at 10-12 m)
-      const d = nrm(normal);
+    emitRDur = 0; emitMinF = 2;
+    if (cloudN) { // wall hit: a dense, darker cloud (3 stacked billboards) that hangs on the facade (A6: read faint at 10-12 m)
+      // A8: 1.1 -> 2.1 m, held >= 2.6 s real time / 5 painted frames, and a real dark brown-grey (the old x0.72 was in
+      // LINEAR space: only ~14% darker on screen, tan on a tan facade). Not fogged (material fog off).
+      const d = nrm(normal); emitRDur = 2600; emitMinF = 5;
       for (let i = 0; i < cloudN; i++) {
-        const c = sandCol(col); c.multiplyScalar(0.72 + 0.1 * i);
-        emit(vv.set(point.x + d.x * (0.15 + 0.1 * i) + (Math.random() - 0.5) * 0.25, point.y + (Math.random() - 0.5) * 0.25, point.z + d.z * (0.15 + 0.1 * i) + (Math.random() - 0.5) * 0.25),
-          d.x * 0.3, 0.06, d.z * 0.3, 1.5 + Math.random() * 0.25, 0.8, 1.5, -0.12, c);
+        const c = cc.setHex(i === 0 ? 0x5e5244 : i === 1 ? 0x7a6a55 : 0x8f7d62);
+        emit(vv.set(point.x + d.x * (0.15 + 0.1 * i) + (Math.random() - 0.5) * 0.3, point.y + (Math.random() - 0.5) * 0.3, point.z + d.z * (0.15 + 0.1 * i) + (Math.random() - 0.5) * 0.3),
+          d.x * 0.35, 0.08, d.z * 0.35, 1.8 + Math.random() * 0.3, 1.1, 2.1, -0.1, c);
       }
+      emitRDur = 0; emitMinF = 2;
       if (typeof window !== 'undefined' && window.SS) window.SS.wallPuffs = (window.SS.wallPuffs | 0) + 1;
       publish();
     }
@@ -230,7 +242,7 @@ export function createFx3({ camera, audio, scene }) {
     if (!ensurePool() || !live) { dbg.puffs.live = live; dbg.puffs.spawned = spawned; return; }
     mesh.visible = true;
     if (camera) qq.copy(camera.quaternion); else qq.identity();
-    const fn = puffFrame();
+    const fn = puffFrame(), nowR = typeof performance !== 'undefined' ? performance.now() : 0;
     for (let i = 0; i < cap; i++) {
       const p = parts[i];
       if (!p.on) continue;
@@ -241,12 +253,14 @@ export function createFx3({ camera, audio, scene }) {
       p.pos.x += p.vel.x * pd; p.pos.y += p.vel.y * pd; p.pos.z += p.vel.z * pd;
       if (p.grav <= -5 && p.pos.y < 0.03 && p.vel.y < 0) { p.pos.y = 0.03; p.vel.y *= -0.3; p.vel.x *= 0.5; p.vel.z *= 0.5; } // chunk bounce
       p.life -= pd;
-      if (p.life <= 0 && p.seen >= 2) {
+      const rAge = p.rDur ? nowR - p.r0 : 0;
+      if (p.life <= 0 && p.seen >= p.minF && rAge >= p.rDur) {
         p.on = false; live--;
         mesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(0, 0, 0)));
         continue;
       }
-      const u = p.max > 0 ? 1 - Math.max(p.life, 0) / p.max : 1;
+      let u = p.max > 0 ? 1 - Math.max(p.life, 0) / p.max : 1;
+      if (p.rDur) u = Math.min(u, rAge / p.rDur); // never shrink out before the real-time floor
       let s = p.size0 + (p.size1 - p.size0) * Math.min(1, Math.max(0, u));
       if (p.grav > -5 && u > 0.8) s *= Math.max(0, (1 - u) / 0.2); // no alpha per instance: shrink out instead of popping
       mesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(s, s, s)));
@@ -482,7 +496,10 @@ const SKY_N = 12, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.15
     if (!(str > 0)) return;
     const ph = new Float64Array(10);
     for (let i = 0; i < 10; i++) ph[i] = Math.random() * Math.PI * 2;
-    kicks.push({ kind, spec, str, age: 0, ph });
+    // A8 (tester A7: no shake in any captured frame): a kick holds full strength for >= 2 painted frames AND >= 250 ms real
+    // time before it starts to decay (at ~1 fps the old game-time decay was over inside one frame).
+    const fN = (typeof window !== 'undefined' && window.SS) ? (window.SS.frameN | 0) : 0;
+    kicks.push({ kind, spec, str, age: 0, ph, held: false, f0: fN, r0: (typeof performance !== 'undefined' ? performance.now() : 0) });
     dbg.last = { kind, t: (typeof performance !== 'undefined' ? performance.now() : 0) };
     publish();
   }
@@ -503,8 +520,11 @@ const SKY_N = 12, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.15
   function update(dt) {
     const d = dt > 0 ? dt : 0;
     time += d;
+    const fN = (typeof window !== 'undefined' && window.SS) ? (window.SS.frameN | 0) : 0, rN = typeof performance !== 'undefined' ? performance.now() : 0;
     for (let i = kicks.length - 1; i >= 0; i--) {
-      kicks[i].age += d;
+      const k = kicks[i];
+      if (!k.held) { if (fN - k.f0 >= 2 && rN - k.r0 >= 250) k.held = true; else continue; }
+      k.age += d;
       if (kicks[i].age * kicks[i].spec.decay > 6.5) kicks.splice(i, 1); // exp(-6.5) ~ 0.0015
     }
     const pd = d > 0.1 ? 0.1 : d;

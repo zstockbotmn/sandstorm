@@ -56,6 +56,16 @@ export function createHud() {
   const SVGNS = 'http://www.w3.org/2000/svg';
   function edgeSvg(cls) { const sv = document.createElementNS(SVGNS, 'svg'); sv.setAttribute('class', cls); const pth = document.createElementNS(SVGNS, 'path'); sv.appendChild(pth); return [sv, pth]; }
   const [dirSvg, dirPath] = edgeSvg('edge-arc'); dir.appendChild(dirSvg);
+  // A8 tester (A7: 'a top bar that shifts sideways, never a distinct arc'): a filled red wedge on a ring around the
+  // crosshair, pointing at the shooter, on top of the edge arc. Same show/hold timing as the arc (dmg-dir).
+  const dirWedge = document.createElementNS(SVGNS, 'path'); dirWedge.setAttribute('class', 'wedge'); dirSvg.appendChild(dirWedge);
+  function wedgePath(angle) { const W = window.innerWidth || 844, H = window.innerHeight || 390, cx = W / 2, cy = H / 2, m = Math.min(W, H), r0 = 0.15 * m, r1 = 0.27 * m, rt = 0.33 * m, hs = 22 * Math.PI / 180;
+    const P = (r, a) => (cx + Math.sin(a) * r).toFixed(1) + ' ' + (cy - Math.cos(a) * r).toFixed(1);
+    dirWedge.setAttribute('d', 'M' + P(r0, angle - hs) + 'A' + r0.toFixed(1) + ' ' + r0.toFixed(1) + ' 0 0 1 ' + P(r0, angle + hs) + 'L' + P(r1, angle + hs) + 'L' + P(rt, angle) + 'L' + P(r1, angle - hs) + 'Z'); }
+  // A8: FLANKED tell (App PM): amber label + a long edge streak toward the flanker, >= 1.5 s and >= 4 painted frames.
+  const flankEl = document.createElement('div'); flankEl.id = 'flanked'; flankEl.textContent = 'FLANKED';
+  // A8: small ducked / exposed indicator next to the health bar (tester A7: no cue for whether you are ducked).
+  const stanceEl = document.createElement('div'); stanceEl.id = 'stance'; stanceEl.style.display = 'none'; let stanceK = '';
   const warn = document.createElement('div'); warn.id = 'edge-warn'; const [warnSvg, warnPath] = edgeSvg('edge-arc'); warn.appendChild(warnSvg);
   // Segment of the viewport rectangle (inset) centred where the ray from the centre toward the shooter meets it, so the
   // arc hugs the real screen edge at any aspect ratio, corners included. halfSpan = fraction of min(W,H) on each side.
@@ -79,7 +89,7 @@ export function createHud() {
 
   const lowhp = document.createElement('div'); lowhp.id = 'lowhp';
   const ring = document.createElement('div'); ring.id = 'reload-ring';
-  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, warn, hs, radioStack, lowhp, ring);
+  root.append(distanceEl, scoreEl, healthWrap, ammoEl, reloadEl, cross, dot, marker, vignette, dir, warn, hs, radioStack, lowhp, ring, flankEl, stanceEl);
 
   let health = 100;
   let score = 0;
@@ -122,7 +132,7 @@ export function createHud() {
   function damageVignette(amount) {
     const a = Math.max(0.6, Math.min(1, amount == null ? 1 : amount));
     vignette.style.transition = 'none'; vignette.style.opacity = String(a);
-    flash.style.transition = 'none'; flash.style.opacity = String(Math.min(1, 0.55 + 0.45 * a));
+    flash.style.transition = 'none'; flash.style.opacity = String(0.6 * Math.min(1, 0.55 + 0.45 * a)); // A8: ~60% of the A7 flash (tester: very strong)
     vigA = a; vigFrames = 3; vigAt = performance.now() + 250; hud.flashCount = (hud.flashCount | 0) + 1;
     if (!vigRaf) vigRaf = requestAnimationFrame(vigTick);
   }
@@ -131,7 +141,7 @@ export function createHud() {
   let dirHideAt = 0, dirFrames = 0, dirRaf = 0;
   function dirTick() { if (window.SS && window.SS.hudFreeze) { dirRaf = requestAnimationFrame(dirTick); return; } dirFrames -= 1; if (dirFrames <= 0 && performance.now() >= dirHideAt) { dir.classList.remove('show'); dirRaf = 0; return; } dirRaf = requestAnimationFrame(dirTick); }
   function damageDirection(angle) {
-    hud.dirPoint = edgePath(dirSvg, dirPath, angle, 0.3, 12); dir.style.transform = 'none'; dir.classList.add('show'); dir.style.opacity = '';
+    hud.dirPoint = edgePath(dirSvg, dirPath, angle, 0.3, 12); wedgePath(angle); hud.wedgeCount = (hud.wedgeCount | 0) + 1; dir.style.transform = 'none'; dir.classList.add('show'); dir.style.opacity = '';
     dirHideAt = performance.now() + 1300; dirFrames = 6; hud.dirCount = (hud.dirCount | 0) + 1; hud.dirAngle = angle;
     if (!dirRaf) dirRaf = requestAnimationFrame(dirTick);
   }
@@ -139,6 +149,12 @@ export function createHud() {
   // m1v: warning streak on the edge toward an off-view shooter (no damage from there; this tells the player to look)
   let warnHideAt = 0, warnFrames = 0, warnRaf = 0;
   function warnTick() { if (window.SS && window.SS.hudFreeze) { warnRaf = requestAnimationFrame(warnTick); return; } warnFrames -= 1; if (warnFrames <= 0 && performance.now() >= warnHideAt) { warn.classList.remove('show'); warnRaf = 0; return; } warnRaf = requestAnimationFrame(warnTick); }
+  let flankHideAt = 0, flankFrames = 0, flankRaf = 0;
+  function flankTick() { if (window.SS && window.SS.hudFreeze) { flankRaf = requestAnimationFrame(flankTick); return; } flankFrames -= 1; if (flankFrames <= 0 && performance.now() >= flankHideAt) { flankEl.classList.remove('show'); flankRaf = 0; return; } if (performance.now() < flankHideAt - 300) { warn.classList.add('show'); warnHideAt = Math.max(warnHideAt, performance.now() + 300); } flankRaf = requestAnimationFrame(flankTick); }
+  function flanked(angle) { edgeWarn(angle); warnHideAt = performance.now() + 1600; warnFrames = 4; flankEl.classList.remove('show'); void flankEl.offsetWidth; flankEl.classList.add('show');
+    flankHideAt = performance.now() + 1800; flankFrames = 4; hud.flankedCount = (hud.flankedCount | 0) + 1; hud.flankedAngle = angle; if (!flankRaf) flankRaf = requestAnimationFrame(flankTick);
+    if (window.SS && window.SS.audio && window.SS.audio.log) try { window.SS.audio.log('FLANKED', ''); } catch (_) {} }
+  function setStance(k) { if (k === stanceK) return; stanceK = k; stanceEl.style.display = k ? 'block' : 'none'; stanceEl.className = k || ''; stanceEl.textContent = k === 'ducked' ? 'IN COVER' : k === 'exposed' ? 'EXPOSED' : ''; hud.stance = k; }
   function edgeWarn(angle) { hud.warnPoint = edgePath(warnSvg, warnPath, angle, 0.18, 6); warn.classList.add('show'); warnHideAt = performance.now() + 700; warnFrames = 3; hud.warnCount = (hud.warnCount | 0) + 1; hud.warnAngle = angle; if (!warnRaf) warnRaf = requestAnimationFrame(warnTick); }
 
   function setHealth(v) {
@@ -266,6 +282,8 @@ export function createHud() {
     damageVignette,
     damageDirection,
     edgeWarn,
+    flanked,
+    setStance,
     setHealth,
     setScore,
     headshotFlash,
