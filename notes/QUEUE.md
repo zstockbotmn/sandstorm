@@ -85,3 +85,8 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - 5c truck moment: 2f432bd (code only, not yet run). Needs: a ?sp=5&truck=1 run (Low + Ultra-low): headlights face the camera (Kenney truck_mil front = +z?), tell >= 1.2 s, crash clear of colliders/props, 1-2 fighters re-path from the wreck, dmg <= 20 & >= 5 HP, no RPG overlap.
 - 5d quiet-stretch texture: prompt rewritten (fire, radio chatter, dog, door slam, far heli; ambient director only with no wave and no live enemy, >= 6 s after a wave); NOT run yet (did not fit the 30-min chunk).
 - 5e pressure curve: NEXT CHUNK (prompt tools/prompts/step5/5e-pressure-curve.txt; review it against the RPG/truck/ambient timings first).
+
+## A10 (2026-10-21 3:30 PM ET) - preview A10 = ss-e6e675ccaa on :8850 (sp=5 default, rpg=1 / truck=1 off)
+- 5d ambient 983fbd3; 5e Grok output parked as tools/prompts/step5/5e.patch (08656f3), NOT applied - next chunk: re-check vs A10 set-piece gap, apply, run threat Low/Ultra-low.
+- A9 tester fixes: 78acace (perf pr, grenade trigger + gap + ring, Ultra chips, quality label), e6bba82 (RPG launch/variety/gap), 12f7ff7 + 8d0013c + 91d49c9 (truck facing, lamps, fog; orange flash)
+- Ultra-low perf (1280x800 swiftshader, live wave): pr 0.4 3.28 fps / 0.5 2.89 / 0.6 2.39 / 0.75 1.89; draws 66, tris ~186k, fx <= 4 -> pixel-bound; Ultra-low now 0.6, 0.5 if < 20 fps 4 s.
