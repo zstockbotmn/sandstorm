@@ -461,6 +461,12 @@ export function createRagdollSystem(scene) {
       part.prevP = null; part.curP = null;
     }
     pushOut(doll);
+    // A4 trace (test/trace-skin.js): the under-street draw was THIS push. pushOut slid the bodies out of the cover but not
+    // the skin, so linkSkin baked the push (0.1-0.33 m, horizontal) into the Hips offset; driveSkin rotates that offset
+    // with the pelvis, so once the body lay down it pointed into the street (hips drawn 0.27 m under a pelvis at 0.11 m).
+    // Slide the skin model by the same push so the offsets stay ~0.
+    if (doll.pushVec && (doll.pushVec.x || doll.pushVec.z) && bones.Hips) { let top = bones.Hips; while (top.parent && !top.parent.isScene) top = top.parent;
+      top.getWorldPosition(_mpA).add(doll.pushVec); if (top.parent) top.parent.worldToLocal(_mpA); top.position.copy(_mpA); top.updateMatrixWorld(true); }
     // the brief powered phase holds THIS pose, not the standing one (it stood crouched corpses back up: hips +0.3-0.5 m)
     if (doll.jdefs) for (const d of doll.jdefs) { const ra = d[0].rb.rotation(), rb = d[1].rb.rotation(); d[3] = new THREE.Quaternion(ra.x, ra.y, ra.z, ra.w).multiply(new THREE.Quaternion(rb.x, rb.y, rb.z, rb.w).invert()); }
   }
@@ -486,6 +492,7 @@ export function createRagdollSystem(scene) {
       for (const part of doll.parts) { if (!part.rb) continue; const t = part.rb.translation(); const nx = t.x + _poS.x, nz = t.z + _poS.z;
         part.rb.setTranslation({ x: nx, y: t.y, z: nz }, true); part.body.position.x = nx; part.body.position.z = nz; if (part.mesh) { part.mesh.position.x = nx; part.mesh.position.z = nz; } }
       doll.pushedOut = (doll.pushedOut || 0) + best;
+      (doll.pushVec || (doll.pushVec = new THREE.Vector3())).add(_poS);
     }
   }
   function linkSkin(doll, bones) {
