@@ -9,7 +9,12 @@ import { LOCO2, LOCO_KEYS } from './locomotion.js';
 const PRIMARY = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter.quaternius.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'];
 const ANIM_FALLBACK = 'fighter1.anim';
 const PROP_ART = ['prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart'];
-const PROPS = ['bldg1.lod', 'bldg2.lod', 'bldg3.lod', 'bldg4.lod', 'rifle_ak47', 'rifle_m4', 'truck_mil', 'fps_arms', ...PROP_ART, ...PROP_ART.map((n) => n + '.lod')];
+// A3 bug (smeared/crumpled orange facades on the right): the building far LOD was geometry-only (no UVs, 30% aggressive
+// simplification) but drew with the full textured material, so every vertex sampled one texel (flat orange/white) on
+// crumpled geometry from 20 m (Low) / 38 m (High). The Meshy meshes are all UV seams, so a UV-keeping simplify only
+// reaches ~80% of the tris; not worth a LOD. Buildings now draw the full mesh at every distance (?blod=1 = old LOD).
+const BLDG_LOD = typeof location !== 'undefined' && /[?&]blod=1/.test(location.search);
+const PROPS = [...(BLDG_LOD ? ['bldg1.lod', 'bldg2.lod', 'bldg3.lod', 'bldg4.lod'] : []), 'rifle_ak47', 'rifle_m4', 'truck_mil', 'fps_arms', ...PROP_ART, ...PROP_ART.map((n) => n + '.lod')];
 const RIGS = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig'];
 const BONE_NAMES = ['Hips', 'Spine01', 'Spine', 'Head', 'RightHand', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'];
 const CLIP_KEYS = {
@@ -272,7 +277,7 @@ function staticInstance(name) {
   // Shares geometry and materials. Do not clone textures.
   const full = src.clone(true);
   const lo = assets[name + '.lod'];
-  if (!lo) return full;
+  if (!lo || (/^bldg/.test(name) && !BLDG_LOD)) return full;
   // Perf LOD: full (UV-correct) mesh within LOD_NEAR m, geometry-only simplified mesh beyond, using the full model's material.
   let mat = null; full.traverse((o) => { if (!mat && o.isMesh) mat = o.material; });
   const far = lo.clone(true); far.traverse((o) => { if (o.isMesh) { o.material = mat || o.material; o.castShadow = false; } });

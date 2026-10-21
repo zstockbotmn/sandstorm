@@ -207,6 +207,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const hitZones = HITS2 ? { armL: 0, armR: 0, legL: 0, legR: 0, torso: 0 } : null;
   const api = { list, update };
   // Test hook: pin an enemy at (x, z) facing the camera in a posture, AI frozen (stagger), for hit-registration tests.
+  // A3 tester: a limped fighter mostly stayed in cover, so the limping stride was never seen. Debug M / MOVE: run this
+  // fighter to the nearest free cover 4-16 m away (prefers ~8 m) through the normal reposition path (no teleport).
+  api.debugMove = (e) => {
+    if (!e || !e.alive || e.dying || (e.group.position.y > 0.05)) return null;
+    const pool = coverPool(['wall', 'barrel', 'car', 'door'], [-15, 70]), gp = e.group.position;
+    let best = null, bs = 1e9;
+    for (const c of pool) { if (!c.pos || c === e.anchor || occupiedBy(c.pos, e)) continue; const d = Math.hypot(c.pos.x - gp.x, c.pos.z - gp.z); if (d < 4 || d > 16) continue; const sc = Math.abs(d - 8); if (sc < bs) { bs = sc; best = c; } }
+    if (!best) return null;
+    e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, best); e._reposWhy = 'debug';
+    return { to: [+best.pos.x.toFixed(2), +best.pos.z.toFixed(2)], type: best.type, dist: +(e._reposDist || 0).toFixed(2), limp: e.limp || 0 };
+  };
   api.debugPose = (e, x, z, posture) => { e.pinned = true; e.group.position.set(x, 0, z); /* drop the cover side-step of the fighter's real cover (it crept posed fighters ~0.25 m on High) */ if (e._stepVec) { e._stepVec.x = 0; e._stepVec.z = 0; } e._sideStep = false; e._stepDist = 0; e._peekArm = false; e.staggerT = 1e9; e.moving = false; e.exposed = true; e.posture = posture || 'idle'; e.phase = 'peek'; e.turned = false;
   api.playerSees = (e) => playerSees(e);
     turnTo(e, camera.position.x, camera.position.z, 100); e.shootCd = 1e9; return e; };
@@ -932,6 +943,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Lateral clear of a wall/corner edge. World offset follows peekT so the duck reverses it.
   function applyCoverStep(enemy) {
     const have = enemy._stepVec || (enemy._stepVec = { x: 0, z: 0 });
+    enemy._stepMv = 0; // this frame's peek side-step length (the limp dips on it too)
     if (enemy.dying || enemy.pinned) return;
     let tx = 0, tz = 0;
     if (enemy._sideStep && enemy._stepDist > 0) {
@@ -948,6 +960,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (dx * dx + dz * dz < 1e-12) return;
     enemy.group.position.x += dx;
     enemy.group.position.z += dz;
+    enemy._stepMv = Math.sqrt(dx * dx + dz * dz);
     have.x = tx;
     have.z = tz;
   }
@@ -1118,7 +1131,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (b.Spine && b.Spine01) { b.Spine01.updateMatrixWorld(true); bendBone(b.Spine, _rightW, bend * 0.5); }
     }
     if ((enemy.clutchW || 0) > 0.01) clutchWound(enemy);
-    if ((enemy.limp || 0) > 0 && enemy._limpSide && enemy.moving) enemy._limpDip = 0.05 * enemy.limp * stanceW(enemy.animPhase || 0, enemy._limpSide);
+    // limp on every stride: path runs (cover to cover) use the gait phase; a peek side-step (group slides, no loco
+    // phase) advances its own phase by distance, 0.7 m per stride cycle, so the wounded-leg dip shows on peek steps too
+    if ((enemy.limp || 0) > 0 && enemy._limpSide && (enemy.moving || (enemy._stepMv || 0) > 1e-4)) {
+      let ph = enemy.animPhase || 0;
+      if (!enemy.moving) { enemy._limpPh = ((enemy._limpPh || 0) + enemy._stepMv / 0.7) % 1; ph = enemy._limpPh; }
+      enemy._limpDip = 0.05 * enemy.limp * stanceW(ph, enemy._limpSide);
+    }
   }
 
   function playHit(enemy, head) {
