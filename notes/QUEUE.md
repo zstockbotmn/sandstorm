@@ -90,3 +90,7 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - 5d ambient 983fbd3; 5e Grok output parked as tools/prompts/step5/5e.patch (08656f3), NOT applied - next chunk: re-check vs A10 set-piece gap, apply, run threat Low/Ultra-low.
 - A9 tester fixes: 78acace (perf pr, grenade trigger + gap + ring, Ultra chips, quality label), e6bba82 (RPG launch/variety/gap), 12f7ff7 + 8d0013c + 91d49c9 (truck facing, lamps, fog; orange flash)
 - Ultra-low perf (1280x800 swiftshader, live wave): pr 0.4 3.28 fps / 0.5 2.89 / 0.6 2.39 / 0.75 1.89; draws 66, tris ~186k, fx <= 4 -> pixel-bound; Ultra-low now 0.6, 0.5 if < 20 fps 4 s.
+
+## Step 5e/5f (2026-10-21 3:40 PM ET) - code only, nothing run
+- 5e applied by hand 5cfe97f (behind sp=5; ?press=0 kill switch; SS.pressForce for tests). 5f draft test/pressure.js 1eddb35.
+- Run list (one at a time): pressure.js Low (2 runs) + Ultra-low (1); threat.js Low + Ultra-low with sp=5 (and with &press=0) for no regression; rpg-wave + truck Low (grenade/RPG gap with the shorter camp threshold); quick visual of a late wave (SS.pressForce=1) for 4-fighter waves.
