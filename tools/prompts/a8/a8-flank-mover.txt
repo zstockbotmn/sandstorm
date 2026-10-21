@@ -1,0 +1,17 @@
+A8 flank mover. Edit ONLY src/enemies.js. Do not explore the repo: read only these ranges with sed -n: 205,222p (debugMove), 2002,2020p (A8 front-arc helpers inFrontArc / flankCue / FLANK_TELL_S, just added), 2134,2160p (coverPool, occupiedBy), 2232,2240p (clearToEye), 2590,2620p (startReposition), 2879,2884p (top of update(dt)). Then write the edit in one go and run node --check src/enemies.js. No tests, browsers, builds; do NOT git commit.
+Goal (App PM ruling): a player ducked behind cover is safe from the front arc, so hiding forever must not be safe: now and then ONE ground fighter runs to a flank spot with a clear line to the ducked player.
+1) Module-level-in-closure state next to the other A8 consts: let duckSinceSim = null, lastFlankSim = -1e9; const FLANK_AFTER_S = 9, FLANK_GAP_S = 18;
+2) function flankTick(): const SSx = window.SS; if (!SSx || !SSx.running) return; const t = SSx.simTime || 0; const ducked = !!(SSx.input && SSx.input.cover);
+   if (!ducked) { duckSinceSim = null; return; } if (duckSinceSim == null) duckSinceSim = t;
+   if (t - duckSinceSim < FLANK_AFTER_S || t - lastFlankSim < FLANK_GAP_S) return;
+   if (list.some((e) => e.alive && e._flankMove && e.phase === 'relocate')) return;
+   Candidates: live, not dying, not pinned, e.group.position.y <= 0.05, phase !== 'relocate', e.anchor && !isElevated(e.anchor.type). Pick the nearest to the camera. If none return.
+   Flank spot: try pool = coverPool(['wall', 'barrel', 'car', 'door', 'alley'], [-12, 30]) filtered by: !occupiedBy(c.pos, e); horizontal distance from camera 5..18 m; !inFrontArc(c.pos) (note inFrontArc takes a Vector3-like with x,z); clear line: _losP.set(standPos(c).x, 1.25, standPos(c).z) and clearToEye(_losP). Score = |dist - 9| + 0.15 * distance from e; take the best.
+   If none: synthetic spot c = { pos: new THREE.Vector3(side * 5.6, 0, camera.position.z + 1.5), type: 'wall' } where side = Math.sign(e.group.position.x) || 1; accept it only if !inFrontArc(c.pos) and clearToEye(_losP.set(c.pos.x - side * 0.3, 1.25, c.pos.z)); else set lastFlankSim = t - FLANK_GAP_S + 3 (retry in 3 s) and return.
+   Then: e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, c); e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; lastFlankSim = t; squadCall('Flanking!');
+   SSx.flankMoves = (SSx.flankMoves | 0) + 1; SSx.lastFlank = { id: e.id, to: [+c.pos.x.toFixed(1), +c.pos.z.toFixed(1)], t: +t.toFixed(1) };
+   if (SSx.hud && SSx.hud.callout) SSx.hud.callout('Flanking!', true).
+3) Call flankTick() inside a try/catch (reportErr('flankTick', err)) once per update(dt), right after `const alive = aliveCount();`.
+4) When a fighter with e._flankMove finishes its relocate (wherever the relocate phase ends and it enters cover / fire; find it with one rg -n "_repositioning = false" src/enemies.js and read only those lines +-3), clear e._flankMove = false and, if window.SS.input.cover and !inFrontArc(e.group.position), call flankCue(e) once so the FLANKED tell starts on arrival (set e._flankTellSim = window.SS.simTime, e._flankTellR = performance.now() / 1000, e._flankLastSim = window.SS.simTime right after the cue).
+5) api.debugFlank = () => { lastFlankSim = -1e9; duckSinceSim = -1e9; flankTick(); return window.SS && window.SS.lastFlank; }; (test hook).
+Keep the edit under ~45 added lines. Use existing helpers only (coverPool, occupiedBy, standPos, clearToEye, inFrontArc, flankCue, startReposition, parkCoverStep, squadCall, isElevated, reportErr, _losP, list, camera, THREE).

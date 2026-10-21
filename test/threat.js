@@ -28,10 +28,18 @@ const QS = process.env.SS_QS || '&q=low', RUNS = +(process.env.SS_RUNS || 2), MI
       // A6 phase 2 (ducked, 20 game-s): incoming fire must still be felt in cover (near misses at the cover line / overhead,
       // impacts on the lip or the wall behind). Phase 3 (25 game-s, still ducked, wave alive): no top-up; HP set to 40 via
       // the debug hurt path must regenerate mid-fight, and EVERY HP drop (polled) must come with a hitLog cue entry.
-      pl.damage = orig; const c0 = SS.coverNearMisses | 0, i0 = SS.coverImpacts | 0, sh2 = SS.enemyShots | 0, s2 = SS.simTime; let duckN = 0, duckK = 0;
-      while (SS.simTime - s2 < 20 && performance.now() - t0 < 800000 && pl.alive) { if (SS.input) SS.input.scope = false; duckN++; if (SS.input && SS.input.cover) duckK++; await new Promise((ok) => setTimeout(ok, 200)); }
+      // A8 (App PM ruling): ducked = no hits from the front arc; a flanker (forced once via debugFlank) may hit only after
+      // its FLANKED tell has run >= 1 s. Every ducked hit is classified by where it came from; HP is topped up after each.
+      const fr = { front: 0, flank: 0, exposedHits: 0, cues0: SS.hud ? (SS.hud.flankedCount | 0) : 0, forced: null };
+      pl.damage = function (a, from, src) { const ducked = !!(SS.input && SS.input.cover); if (!ducked) fr.exposedHits++; else if (from && SS.enemies.inFrontArc && SS.enemies.inFrontArc(from)) fr.front++; else fr.flank++; orig.call(this, a, from, src); if (pl.alive) pl.health = 100; };
+      const c0 = SS.coverNearMisses | 0, i0 = SS.coverImpacts | 0, sh2 = SS.enemyShots | 0, s2 = SS.simTime; let duckN = 0, duckK = 0;
+      while (SS.simTime - s2 < 30 && performance.now() - t0 < 850000 && pl.alive) { if (SS.input) SS.input.scope = false; duckN++; if (SS.input && SS.input.cover) duckK++;
+        if (!fr.forced && SS.simTime - s2 > 2 && SS.enemies.debugFlank) fr.forced = SS.enemies.debugFlank() || 'none';
+        await new Promise((ok) => setTimeout(ok, 200)); }
+      fr.cues = (SS.hud ? (SS.hud.flankedCount | 0) : 0) - fr.cues0; fr.log = (SS.flankLog || []).slice(-6); fr.moves = SS.flankMoves | 0; fr.tellBlocked = SS.flankTellBlocked | 0; fr.frontBlocked = SS.frontArcBlocked | 0; fr.flankHits = SS.flankHits | 0;
+      pl.damage = orig;
       const g2 = Math.max(0.1, SS.simTime - s2);
-      const duck = { gameS: +g2.toFixed(1), shots: (SS.enemyShots | 0) - sh2, nearPer10: +(((SS.coverNearMisses | 0) - c0) / g2 * 10).toFixed(2), impacts: (SS.coverImpacts | 0) - i0, duckedFrac: +(duckK / Math.max(1, duckN)).toFixed(2), mix: SS.coverMiss || null };
+      const duck = { flank: fr, gameS: +g2.toFixed(1), shots: (SS.enemyShots | 0) - sh2, nearPer10: +(((SS.coverNearMisses | 0) - c0) / g2 * 10).toFixed(2), impacts: (SS.coverImpacts | 0) - i0, duckedFrac: +(duckK / Math.max(1, duckN)).toFixed(2), mix: SS.coverMiss || null };
       while (pl.health > 45 && pl.alive) SS.debugHurt(); if (pl.health < 40 && pl.alive) pl.health = 40; else if (pl.alive) { pl.damage(pl.health - 40, null, 'test'); }
       const s3 = SS.simTime, r0 = SS.fightRegen || 0; let lastHp = pl.health, lastLog = (SS.hitLog || []).length, silent = 0, drops = 0, minAlive = 99;
       while (SS.simTime - s3 < 25 && performance.now() - t0 < 1000000 && pl.alive) { if (SS.input) SS.input.scope = false;
@@ -44,6 +52,10 @@ const QS = process.env.SS_QS || '&q=low', RUNS = +(process.env.SS_RUNS || 2), MI
     if (r.firstDmgS == null || r.firstDmgS > 20) fail.push('run ' + run + ': first damage ' + r.firstDmgS + ' game-s'); if (r.shotsPer10 < MIN) fail.push('run ' + run + ': ' + r.shotsPer10 + ' shots / 10 s');
     if (!r.nearMisses) fail.push('run ' + run + ': no near misses');
     if (r.duck.shots > 0 && !(r.duck.nearPer10 > 0)) fail.push('run ' + run + ': ducked, ' + r.duck.shots + ' rounds fired but no near misses');
+    { const f = r.duck.flank; if (f.front > 0) fail.push('run ' + run + ': ' + f.front + ' front-arc hits while ducked');
+      const early = (f.log || []).filter((x) => x.firstHitSim != null && x.firstHitSim - x.tellSim < 1.0); if (early.length) fail.push('run ' + run + ': flank hit < 1 s after the FLANKED tell ' + JSON.stringify(early));
+      if (f.flank > 0 && !(f.cues > 0)) fail.push('run ' + run + ': flank hits without a FLANKED cue');
+      if (!(f.moves > 0)) fail.push('run ' + run + ': no flank move (' + JSON.stringify(f.forced) + ')'); }
     if (r.regen.alive && !(r.regen.fightRegen > 0)) fail.push('run ' + run + ': no mid-wave regen (' + JSON.stringify(r.regen) + ')');
     if (r.regen.silent || r.regen.badCues) fail.push('run ' + run + ': HP drops without a cue (silent ' + r.regen.silent + ', bad cues ' + r.regen.badCues + ')'); if (errs.length) fail.push('run ' + run + ' errors ' + errs.join(' | '));
   }

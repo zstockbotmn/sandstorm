@@ -2003,6 +2003,43 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // cover's facing, seen from the player). Damage while ducked only from a flanker with a clear line, after a FLANKED tell
   // (cue + arc toward it) that has run FLANK_TELL_S in both real and game time. The tell re-arms after FLANK_RESET_S of quiet.
   const FRONT_ARC_DEG = 60, FRONT_ARC_COS = Math.cos(FRONT_ARC_DEG * Math.PI / 180), FLANK_TELL_S = 1.5, FLANK_RESET_S = 5;
+  let duckSinceSim = null, lastFlankSim = -1e9;
+  const FLANK_AFTER_S = 9, FLANK_GAP_S = 18;
+  function flankTick() {
+    const SSx = window.SS; if (!SSx || !SSx.running) return;
+    const t = SSx.simTime || 0, ducked = !!(SSx.input && SSx.input.cover);
+    if (!ducked) { duckSinceSim = null; return; }
+    if (duckSinceSim == null) duckSinceSim = t;
+    if (t - duckSinceSim < FLANK_AFTER_S || t - lastFlankSim < FLANK_GAP_S) return;
+    if (list.some((f) => f.alive && f._flankMove && f.phase === 'relocate')) return;
+    let e = null, bd = 1e9; const cam = camera.position;
+    for (const f of list) {
+      if (!f.alive || f.dying || f.pinned || f.group.position.y > 0.05 || f.phase === 'relocate' || !f.anchor || isElevated(f.anchor.type)) continue;
+      const d = Math.hypot(f.group.position.x - cam.x, f.group.position.z - cam.z); if (d < bd) { bd = d; e = f; }
+    }
+    if (!e) return;
+    let best = null, bs = 1e9;
+    for (const c of coverPool(['wall', 'barrel', 'car', 'door', 'alley'], [-12, 30])) {
+      if (!c.pos || occupiedBy(c.pos, e)) continue;
+      const d = Math.hypot(c.pos.x - cam.x, c.pos.z - cam.z);
+      if (d < 5 || d > 18 || inFrontArc(c.pos)) continue;
+      const sp = standPos(c); if (!clearToEye(_losP.set(sp.x, 1.25, sp.z))) continue;
+      const sc = Math.abs(d - 9) + 0.15 * Math.hypot(c.pos.x - e.group.position.x, c.pos.z - e.group.position.z);
+      if (sc < bs) { bs = sc; best = c; }
+    }
+    let spot = best;
+    if (!spot) {
+      const side = Math.sign(e.group.position.x) || 1;
+      spot = { pos: new THREE.Vector3(side * 5.6, 0, cam.z + 1.5), type: 'wall' };
+      if (inFrontArc(spot.pos) || !clearToEye(_losP.set(spot.pos.x - side * 0.3, 1.25, spot.pos.z))) { lastFlankSim = t - FLANK_GAP_S + 3; return; }
+    }
+    e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, spot);
+    e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; lastFlankSim = t; squadCall('Flanking!');
+    SSx.flankMoves = (SSx.flankMoves | 0) + 1;
+    SSx.lastFlank = { id: e.id, to: [+spot.pos.x.toFixed(1), +spot.pos.z.toFixed(1)], t: +t.toFixed(1) };
+    if (SSx.hud && SSx.hud.callout) SSx.hud.callout('Flanking!', true);
+  }
+  api.debugFlank = () => { lastFlankSim = -1e9; duckSinceSim = -1e9; flankTick(); return window.SS && window.SS.lastFlank; };
   function coverFacing(out) { const SSx = window.SS, c = camera.position, sb = SSx && SSx.cover && SSx.cover.surface; out.x = 0; out.z = -1;
     if (sb) { const qx = Math.max(sb.min.x, Math.min(sb.max.x, c.x)), qz = Math.max(sb.min.z, Math.min(sb.max.z, c.z)), l = Math.hypot(qx - c.x, qz - c.z); if (l > 0.05) { out.x = (qx - c.x) / l; out.z = (qz - c.z) / l; } }
     return out; }
@@ -2393,6 +2430,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function enterCover(enemy, hold) {
     enemy._repositioning = false;
+    if (enemy._flankMove) { enemy._flankMove = false; const SSx = window.SS; if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
     enemy.phase = 'takeCover';
     enemy.phaseT = hold != null ? hold : 0.22 + Math.random() * 0.2;
     enemy.posture = 'crouch';
@@ -2882,6 +2920,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const diff = difficulty();
     phaseT -= dt;
     const alive = aliveCount();
+    try { flankTick(); } catch (err) { reportErr('flankTick', err); }
     const dNow = window.SS ? window.SS.distance : 0;
     if (burstIndex === 0 && window.SS && window.SS.running) { // m1x: opening quiet walk (real time, capped per frame)
       const nr = performance.now(); quietRunT += quietRealAt ? Math.min(2.0, (nr - quietRealAt) / 1000) : 0; /* m1z: cap 2 s/frame (was 0.5: at 0.6 fps the then-24 s quiet walk took ~77 s of wall time) - a tab switch still cannot skip it */ quietRealAt = nr;
