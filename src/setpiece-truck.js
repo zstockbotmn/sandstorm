@@ -92,7 +92,8 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     // A11 (tester: the crash needs more weight): a real camera kick at the usual 9-14 m (fx.blast's own shake fades to ~0
     // by 12 m), more and wider debris, plus heavy chunks (scrap boxes) that tumble and bounce. Ultra-low: fewer of each.
     const ultra = window.SS && window.SS.quality === 'ultra-low', dCam = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
-    if (f && f.kick) f.kick('blast', Math.max(0.55, Math.min(1.1, 1.1 - (dCam - 9) * 0.06)));
+    const kickA = Math.max(0.55, Math.min(1.1, 1.1 - (dCam - 9) * 0.06)); if (f && f.kick) f.kick('blast', kickA);
+    if (window.SS) window.SS.truckCrash = { kick: +kickA.toFixed(2), dCam: +dCam.toFixed(1), impacts: f && f.impact ? (ultra ? 3 : 9) : 0, chunks: ultra ? 3 : 7, ultra: !!ultra };
     if (f && f.impact) for (let i = 0, n = ultra ? 3 : 9; i < n; i++) {
       tmp.set(p.x + (Math.random() - 0.5) * 4, p.y + Math.random() * 1.8, p.z + (Math.random() - 0.5) * 4);
       f.impact(tmp.clone(), up, null);

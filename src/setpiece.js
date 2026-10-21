@@ -162,7 +162,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     const d = Math.hypot(camera.position.x - target.x, camera.position.z - target.z);
     // A10: 30 at <= 1 m -> 10 at 4.4 m. A11: + jitter (+-4) so the same spot never reads as a fixed number; a cover hit is
     // judged from the cover lip (the player is ~0.8 m behind it) and rolls 18-30. Clamped 10-30, 5 HP floor below.
-    let raw = d > 4.4 ? 0 : 30 - 20 * Math.max(0, Math.min(1, (d - 1.0) / 3.4)) + (Math.random() * 8 - 4);
+    let raw = d > 4.4 ? 0 : 27 - 17 * Math.max(0, Math.min(1, (d - 1.0) / 3.4)) + (Math.random() * 6 - 3);
     if (aimCover) raw = 18 + Math.random() * 12;
     if (raw > 0) raw = Math.max(10, Math.min(30, raw));
     const dmg = raw > 0 ? Math.max(0, Math.min(raw, 30, hpBefore - 5)) : 0;
