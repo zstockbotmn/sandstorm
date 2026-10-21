@@ -1,6 +1,8 @@
 #!/bin/sh
 # Compress accepted raw art: assets-src/meshy/*.raw.glb -> assets/models/<name>.glb (WebP textures sized by kind via
 # tools/compress.mjs, then gltfpack meshopt -cc). Skips assets-src/meshy/rejected/ and *.thumb.png (thumbnails are review-only).
+# A4: building far LODs are now UV-preserving: for b in bldg1 bldg2 bldg3 bldg4; do node tools/lod-uv.mjs assets/models/$b.glb assets/models/$b.lod.glb 0.35 0.02 16; done
+# (the geometry-only LOD below drew one texel of the shared texture = the A3 smeared facades; do not regenerate bldg LODs with it)
 set -e; cd "$(dirname "$0")/.."; mkdir -p assets/models
 for f in $(find assets-src/meshy -maxdepth 1 -name '*.raw.glb' 2>/dev/null | sort); do b=$(basename "$f" .raw.glb)
   # Perf: simplify static art (buildings 35%, props 40%); rigged fighters/anims untouched.

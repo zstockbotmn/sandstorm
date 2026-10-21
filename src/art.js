@@ -9,11 +9,12 @@ import { LOCO2, LOCO_KEYS } from './locomotion.js';
 const PRIMARY = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig', 'fighter.quaternius.anim', 'bldg1', 'bldg2', 'bldg3', 'bldg4'];
 const ANIM_FALLBACK = 'fighter1.anim';
 const PROP_ART = ['prop_sandbags', 'prop_burnedcar', 'prop_drum', 'prop_crates', 'prop_cart'];
-// A3 bug (smeared/crumpled orange facades on the right): the building far LOD was geometry-only (no UVs, 30% aggressive
-// simplification) but drew with the full textured material, so every vertex sampled one texel (flat orange/white) on
-// crumpled geometry from 20 m (Low) / 38 m (High). The Meshy meshes are all UV seams, so a UV-keeping simplify only
-// reaches ~80% of the tris; not worth a LOD. Buildings now draw the full mesh at every distance (?blod=1 = old LOD).
-const BLDG_LOD = typeof location !== 'undefined' && /[?&]blod=1/.test(location.search);
+// A3 bug (smeared/crumpled orange facades on the right): the old building far LOD was geometry-only (no UVs, 30% aggressive
+// simplification) yet drew with the full textured material, so every vertex sampled one texel (flat orange/white) on
+// crumpled geometry from 20 m (Low) / 38 m (High). A4: the far LOD is rebuilt UV-preserving (tools/lod-uv.mjs: meshopt
+// simplifyWithAttributes, UV-weighted, ~35-41% of the tris, same quantized UV space as the full mesh, so the full material maps
+// it correctly). Full meshes everywhere cost ~1.7x the frame's triangles (test/perf-bldg.js). ?blod=0 = full meshes only.
+const BLDG_LOD = !(typeof location !== 'undefined' && /[?&]blod=0/.test(location.search));
 const PROPS = [...(BLDG_LOD ? ['bldg1.lod', 'bldg2.lod', 'bldg3.lod', 'bldg4.lod'] : []), 'rifle_ak47', 'rifle_m4', 'truck_mil', 'fps_arms', ...PROP_ART, ...PROP_ART.map((n) => n + '.lod')];
 const RIGS = ['fighter1.rig', 'fighter2.rig', 'fighter3.rig'];
 const BONE_NAMES = ['Hips', 'Spine01', 'Spine', 'Head', 'RightHand', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'];
