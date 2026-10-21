@@ -1620,10 +1620,23 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const origin = enemy.group.position;
     spray(point || origin.clone().setY(origin.y + 1.3));
     dropDecal(origin);
+    if (HITS2) {
+      const zone = enemy.lastHitZone || (part === 'head' ? 'head' : 'torso');
+      enemy.fallZone = zone;
+      enemy.fallInCover = ['takeCover', 'hide'].includes(enemy.phase) || (enemy.coverT || 0) > 0.5;
+      const pre = zone === 'head' ? 0.12 : zone === 'torso' ? 0.25 : (zone && zone.startsWith('leg') ? 0.35 : 0.3);
+      enemy.preFallS = pre;
+      if (enemy.art && enemy.art.root) enemy.fallRootY = enemy.art.root.position.y;
+      try {
+        const SS = window.SS;
+        if (SS) SS.lastFall = enemy._fallRec = { zone, preFallS: pre, inCover: enemy.fallInCover, t: SS.simTime };
+      } catch (_) {}
+    }
     // Hit-to-ragdoll blend: the native Gunshot_Reaction clip plays on the live skeleton for ~0.3 s, then the ragdoll takes
     // over from that pose (bindSkin offsets absorb it, no pop) with the hips' measured velocity + the shot impulse.
+    // ?hits=2 shortens that beat by zone (head 0.12, torso 0.25, leg 0.35, arm 0.3) and buckles into the pose.
     if (enemy.art && enemy.mixer && enemy.actions && !enemy.pinned) {
-      enemy.dying = true; enemy.fallT = 0.3; enemy.fallPart = part; enemy.fallPoint = point;
+      enemy.dying = true; enemy.fallT = HITS2 ? enemy.preFallS : 0.3; enemy.fallPart = part; enemy.fallPoint = point;
       const hit = (part === 'head' && enemy.actions.hitHead) || enemy.actions.hitBody || enemy.actions.hit;
       if (hit) { hit.reset().setEffectiveWeight(1).setEffectiveTimeScale(1.25).play(); if (enemy.currentAction && enemy.currentAction !== hit) enemy.currentAction.crossFadeTo(hit, 0.05, false); enemy.currentAction = hit; }
       if (enemy.bones && enemy.bones.Hips) enemy.hipPrev = enemy.bones.Hips.getWorldPosition(new THREE.Vector3());
@@ -1633,12 +1646,70 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   let squadReposS = -1e9; // last sim time any fighter repositioned (non-last moves are one at a time, >= 8 s apart)
   const fallers = [];
+  // Undo last frame's buckle before the mixer so an unkeyed leg does not stack the bend.
+  function buckleRestore(e) {
+    const saved = e._buckleQ;
+    if (!saved) return;
+    for (let i = 0; i < saved.length; i += 2) saved[i].quaternion.copy(saved[i + 1]);
+  }
+  function buckleSave(e, bones) {
+    const saved = e._buckleQ || (e._buckleQ = []);
+    let n = 0;
+    for (let i = 0; i < bones.length; i++) {
+      const b = bones[i];
+      if (!b) continue;
+      const q = saved[n + 1] || (saved[n + 1] = new THREE.Quaternion());
+      saved[n] = b;
+      q.copy(b.quaternion);
+      n += 2;
+    }
+    saved.length = n;
+  }
+  // Pre-fall knee buckle. k eases 0->1 over the beat; bindSkin takes this pose over.
+  function fallBuckle(e) {
+    const zone = e.fallZone;
+    if (!zone || qName() === 'ultra-low') return;
+    const torso = zone === 'torso';
+    const leg = zone.startsWith('leg');
+    if (!torso && !leg) return;
+    const pre = e.preFallS > 0 ? e.preFallS : 0.3;
+    const k = smooth01(1 - e.fallT / pre);
+    const b = e.bones;
+    const left = zone.endsWith('L');
+    const bones = torso
+      ? [b && b.LeftUpLeg, b && b.RightUpLeg, b && b.LeftLeg, b && b.RightLeg]
+      : [b && (left ? b.LeftUpLeg : b.RightUpLeg), b && (left ? b.LeftLeg : b.RightLeg)];
+    buckleSave(e, bones);
+    if (!(k > 0)) return;
+    _rightW.set(1, 0, 0).applyQuaternion(e.group.quaternion);
+    if (torso) {
+      bendBone(bones[0], _rightW, -0.5 * k);
+      bendBone(bones[1], _rightW, -0.5 * k);
+      bendBone(bones[2], _rightW, k);
+      bendBone(bones[3], _rightW, k);
+    } else {
+      bendBone(bones[0], _rightW, -0.4 * k);
+      bendBone(bones[1], _rightW, 0.9 * k);
+    }
+    const root = e.art && e.art.root;
+    if (root && e.fallRootY != null) root.position.y = e.fallRootY - (torso ? 0.18 : 0.15) * k;
+  }
   function stepFallers(dt) {
     for (let i = fallers.length - 1; i >= 0; i--) {
       const e = fallers[i]; e.fallT -= dt;
+      if (HITS2) buckleRestore(e);
       try { e.mixer.update(dt); proceduralLean(e, 'hit', dt); } catch (err) { e.fallT = 0; }
+      if (HITS2) fallBuckle(e);
       if (e.bones && e.bones.Hips) { const h = e.bones.Hips.getWorldPosition(_wA); if (e.hipPrev && dt > 0) { e.hipVel = (e.hipVel || new THREE.Vector3()).subVectors(h, e.hipPrev).multiplyScalar(1 / dt); } (e.hipPrev || (e.hipPrev = new THREE.Vector3())).copy(h); }
-      if (e.fallT <= 0) { fallers.splice(i, 1); fall(e, e.fallPoint, e.fallPart); }
+      if (!HITS2 && e.fallT <= 0) { fallers.splice(i, 1); fall(e, e.fallPoint, e.fallPart); }
+    }
+    // Oldest first, so the newest of a same-frame batch is the one that hits the live-ragdoll cap.
+    if (HITS2) {
+      for (let i = 0; i < fallers.length; ) {
+        const e = fallers[i];
+        if (e.fallT <= 0) { fallers.splice(i, 1); fall(e, e.fallPoint, e.fallPart); }
+        else i++;
+      }
     }
   }
   function fall(enemy, point, part) {
@@ -1649,7 +1720,28 @@ export function createEnemies(scene, camera, world, weapon, player) {
     let doll = null;
     _aim.copy(origin).sub(camera.position).normalize();
     if (enemy.hipVel) { const hv = enemy.hipVel; if (hv.lengthSq() < 36) _aim.addScaledVector(hv, 0.12); }
-    try { doll = ragdolls.spawn(origin, yaw, _aim); ragdolls.addNearbyStatics(doll, world.colliders, origin); }
+    let canned = false;
+    if (HITS2) {
+      // Ultra-low: no physics. Low quality or low art: at most 3 unsettled ragdolls, then the death clip.
+      const over = ragdolls.activeCount && ragdolls.activeCount() >= 3;
+      canned = qName() === 'ultra-low' || ((art.tier !== 'high' || qName() !== 'high') && over);
+      enemy.fallMode = canned ? 'canned' : 'ragdoll';
+      if (enemy._fallRec) enemy._fallRec.mode = enemy.fallMode;
+      else try { if (window.SS && window.SS.lastFall) window.SS.lastFall.mode = enemy.fallMode; } catch (_) {}
+    }
+    if (!canned) try {
+      if (HITS2) {
+        let toCover = null;
+        if (enemy.fallInCover) {
+          _wB.set(camera.position.x - origin.x, 0, camera.position.z - origin.z);
+          const len = Math.hypot(_wB.x, _wB.z);
+          if (len < 1e-6) _wB.set(0, 0, 1); else { _wB.x /= len; _wB.z /= len; }
+          toCover = { x: _wB.x, y: 0, z: _wB.z };
+        }
+        doll = ragdolls.spawn(origin, yaw, _aim, { zone: enemy.fallZone || (part === 'head' ? 'head' : 'torso'), inCover: !!enemy.fallInCover, toCover, blend: 0.15 });
+      } else doll = ragdolls.spawn(origin, yaw, _aim);
+      ragdolls.addNearbyStatics(doll, world.colliders, origin);
+    }
     catch (err) { reportErr('ragdoll spawn', err); doll = null; }
     if (enemy.art && doll) try {
       const model = enemy.art.root;
@@ -1672,8 +1764,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       model.traverse((obj) => { if (obj.isMesh) obj.frustumCulled = false; });
       doll.skin = { model, links: ragdolls.bindSkin(doll, enemy.bones) };
     } catch (err) { reportErr('ragdoll skin', err); if (enemy.art && enemy.art.root.parent) enemy.art.root.parent.remove(enemy.art.root); }
-    else if (enemy.art) { // no ragdoll (physics failed): leave the body in its death pose for 25 s instead of vanishing
-      try { const model = enemy.art.root; scene.attach(model); const death = enemy.actions && enemy.actions.death;
+    else if (enemy.art) { // no ragdoll (physics failed, or ?hits=2 tier cap): leave the body in its death pose for 25 s instead of vanishing
+      try { const model = enemy.art.root; if (HITS2 && enemy.fallRootY != null) model.position.y = enemy.fallRootY; scene.attach(model); const death = enemy.actions && enemy.actions.death;
         if (death && enemy.mixer) { enemy.mixer.stopAllAction(); death.reset().setLoop(THREE.LoopOnce, 1); death.clampWhenFinished = true; death.play(); enemy.mixer.update((death.getClip().duration || 1) * 0.99); }
         stopMixer(model, enemy.mixer); setTimeout(() => { if (model.parent) model.parent.remove(model); }, 25000); } catch (err) { reportErr('static corpse', err); } }
     enemy.group.visible = false;
