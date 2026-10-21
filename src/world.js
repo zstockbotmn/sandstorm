@@ -5,7 +5,7 @@ const SEG_LEN = 60;
 const SEG_COUNT = 5;
 const START_Z = 24;      // first segment starts behind the spawn so the run opens in a street, not open desert
 import { Q, LOWQ, ULTRA } from './quality.js';
-import { pbrMaterial, worldBox } from './texlib.js';
+import { pbrMaterial, worldBox, triplanarDetail } from './texlib.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 const DRAW_AHEAD = Q.drawAhead;  // segments wholly beyond this (fogged out anyway) are not drawn
 const DRAW_BEHIND = 20;
@@ -389,6 +389,27 @@ export function createWorld(scene, seed) {
     grp.add(m, m2);
     return grp;
   }
+  let plankMat = null;
+  const _ppO = new THREE.Vector3(), _ppD = new THREE.Vector3(0, 0, -1);
+  function plankPatch(model, raw, s, yMul) {
+    const P = (window.SS && window.SS.plankPatch) || [0.5, 0.97, 0.0, 0.31]; // x0, x1, y0, y1 as fractions of the raw bbox
+    const w = raw.max.x - raw.min.x, h = raw.max.y - raw.min.y;
+    const x0 = raw.min.x + w * P[0], x1 = raw.min.x + w * P[1], y0 = raw.min.y + h * P[2], y1 = raw.min.y + h * P[3];
+    let front = -Infinity;
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
+      _ppO.set(x0 + (x1 - x0) * (0.15 + 0.7 * i / 3), y0 + (y1 - y0) * (0.2 + 0.6 * j / 2), raw.max.z + 1); _rc.set(_ppO, _ppD); _rc.far = raw.max.z - raw.min.z + 1;
+      const hit = _rc.intersectObject(model, true)[0]; if (hit) front = Math.max(front, hit.point.z);
+    }
+    if (!Number.isFinite(front)) return null;
+    if (!plankMat) { plankMat = pbrMaterial('weathered_planks'); plankMat.color.setRGB(2.5, 2.3, 2.1) /* the CC0 planks are dark (sRGB ~80): sun-bleached boards next to the ~180 plaster */; plankMat.polygonOffset = true; plankMat.polygonOffsetFactor = -2; }
+    // panel dims in metres after the model's scale (s, s*yMul, s); worldBox tiles every 1.6 m, so build it in metres and undo the scale
+    const mw = (x1 - x0) * s, mh = (y1 - y0) * s * yMul, md = 0.12;
+    const m = new THREE.Mesh(worldBox(mw, mh, md, 1.6), plankMat);
+    m.scale.set(1 / s, 1 / (s * yMul), 1 / s);
+    m.position.set((x0 + x1) / 2, (y0 + y1) / 2, front + md / 2 / s + 0.01 / s);
+    m.receiveShadow = true; m.name = 'plankPatch';
+    return m;
+  }
   // Front (+Z) faces the street. Width (local X) becomes the lot length along Z.
   function placeArtBuilding(seg, rng, name, side, zCursor, lot, doors) {
     const model = art.staticInstance(name);
@@ -404,7 +425,11 @@ export function createWorld(scene, seed) {
     const h = sizeY * s;
     if (h < 3.6) yMul = Math.min(1.12, 3.6 / h); // max 12% vertical stretch (tester: stretched facades)
     else if (h > 11) yMul = Math.max(1 / 1.12, 11 / h);
+    // A4 tester: bldg2's ground-floor masonry block (front, lower right) is a stretched, lumpy Meshy texel patch with a dark
+    // smudge. Board it over with a clean CC0 planks panel (world-scaled UVs) placed on the block's front face (raycast).
+    const patch = name === 'bldg2' ? plankPatch(model, raw, s, yMul) : null;
     model.scale.set(s, s * yMul, s);
+    if (patch) model.add(patch);
     // bldg3's Meshy texture bakes AI-gibberish shop lettering ('NAIVATS'); the glyphs are not mirrored, so a UV flip
     // would make it worse. Cover the main sign board with a readable painted sign instead.
     if (name === 'bldg3') model.add(shopSign(raw));
@@ -654,6 +679,7 @@ export function createWorld(scene, seed) {
     if (useProp('prop_burnedcar')) {
       const jitter = (rng() - 0.5) * 0.3;
       const obj = art.staticInstance('prop_burnedcar');
+      obj.traverse((o) => { if (o.isMesh) triplanarDetail(o.material, 'rust_coarse_01', { tile: 0.9, mix: 0.5, top: 0.7 }); }); // A4: stretched 512 px hood map
       art.fitToBox(obj, 1.8, 1.5, 4.3, { keepAspect: true, alignLong: true });
       const pivot = new THREE.Group();
       pivot.add(obj);
