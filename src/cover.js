@@ -34,7 +34,7 @@ export function createCover(scene, camera, world, input) {
     for (const seg of world.segments || []) for (const p of seg.coverPoints || []) {
       if (p.type !== 'barrel' && p.type !== 'car') continue;
       const ahead = pz - p.pos.z; if (ahead < (exclude ? -1 : 1.5) || ahead > (exclude ? SEARCH_AHEAD + 3 : SEARCH_AHEAD) || Math.abs(p.pos.x) > STREET_X) continue;
-      if (exclude && Math.hypot(p.pos.x - exclude.x, p.pos.z - exclude.z) < 1.6) continue;
+      if (exclude && Math.hypot(p.pos.x - exclude.x, p.pos.z - exclude.z) < 3.4) continue; // A9: a switch / grenade move clears the 3 m grenade radius
       if (dir && Math.sign(p.pos.x - camera.position.x) !== dir) continue;
       const d = ahead + Math.abs(p.pos.x - camera.position.x); if (d < bd) { bd = d; best = p.pos; bestType = p.type; }
     }
@@ -53,7 +53,7 @@ export function createCover(scene, camera, world, input) {
     // none close: drop a sandbag-style wall just ahead of the halt point
     c.kind = 'sandbag';
     clearSpawned();
-    const bx = dir ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + dir * 3)) : exclude ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + (camera.position.x > 0 ? -3 : 3))) : camera.position.x;
+    const bx = dir ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + dir * 4)) : exclude ? Math.max(-STREET_X, Math.min(STREET_X, camera.position.x + (camera.position.x > 0 ? -3 : 3))) : camera.position.x;
     const m = new THREE.Mesh(geo, mat.clone()); m.position.set(bx, BAG_H / 2, pz - 2.2); m.castShadow = m.receiveShadow = true;
     m.name = 'sandbag'; scene.add(m); world.colliders.push(m); c.spawned = m;
     c.surface = new THREE.Box3().setFromObject(m);

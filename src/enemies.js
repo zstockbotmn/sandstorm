@@ -2878,7 +2878,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
       else if (n.ring && n.t < n.fuse) { n.ring.visible = Math.floor(n.t * 6) % 2 === 0; }
       if (n.landed && n.t >= n.fuse) { if (n.ring) { scene.remove(n.ring); n.ring = null; }
         for (let j = 0; j < 4; j++) muzzleFlash(n.m.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)));
-        const d = n.m.position.distanceTo(camera.position.clone().setY(n.m.position.y)); if (d < 3.5) player.damage(35 * (1 - d / 4.5), n.m.position, 'grenade');
+        // A9 (set-piece rules, App PM): blast capped at 30 and never below 5 HP in one blast; damage only inside 3 m, so the
+        // forced cover move (or a SWITCH COVER tap) that ends >= 3 m away escapes it. While still running, judge the spot
+        // the player is running TO (cover target), so a move that will clear the radius is not punished mid-run.
+        const cv = window.SS && window.SS.cover, at = (cv && cv.state === 'moving' && cv.target) ? cv.target : camera.position;
+        const d = Math.hypot(n.m.position.x - at.x, n.m.position.z - at.z), hp0 = player.health;
+        const dmg = d < 3 ? Math.max(0, Math.min(34 * (1 - d / 3.2), 30, hp0 - 5)) : 0; if (dmg > 0) player.damage(dmg, n.m.position, 'grenade');
+        if (window.SS) window.SS.lastGrenade = { d: +d.toFixed(2), dmg: +dmg.toFixed(1), hpBefore: +hp0.toFixed(1), escaped: d >= 3, moving: !!(cv && cv.state === 'moving') };
         if (window.SS && window.SS.fx) window.SS.fx.blast(n.m.position);
         if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);
         scene.remove(n.m); nades.splice(i, 1); } }
