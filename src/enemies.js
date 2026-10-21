@@ -1644,8 +1644,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (enemy.art && enemy.mixer && enemy.actions && !enemy.pinned) {
       enemy.dying = true; enemy.fallT = HITS2 ? enemy.preFallS : 0.3; enemy.fallPart = part; enemy.fallPoint = point;
       const hit = (part === 'head' && enemy.actions.hitHead) || enemy.actions.hitBody || enemy.actions.hit;
-      // ?hits=2 torso/limb kills: the live clip carries on under the knee buckle (the hit clip's first frame jumped the hips ~40 cm)
-      if (hit && !(HITS2 && enemy.fallZone && enemy.fallZone !== 'head')) { hit.reset().setEffectiveWeight(1).setEffectiveTimeScale(1.25).play(); if (enemy.currentAction && enemy.currentAction !== hit) enemy.currentAction.crossFadeTo(hit, 0.05, false); enemy.currentAction = hit; }
+      // ?hits=2 kills: the live clip carries on under the knee buckle (the standing hit clip's first frame jumped the hips ~40 cm,
+      // and stood crouched head-shot fighters up behind cover before they fell: A2 'launch')
+      if (hit && !HITS2) { hit.reset().setEffectiveWeight(1).setEffectiveTimeScale(1.25).play(); if (enemy.currentAction && enemy.currentAction !== hit) enemy.currentAction.crossFadeTo(hit, 0.05, false); enemy.currentAction = hit; }
       if (enemy.bones && enemy.bones.Hips) enemy.hipPrev = enemy.bones.Hips.getWorldPosition(new THREE.Vector3());
       fallers.push(enemy);
     } else fall(enemy, point, part);
@@ -1748,7 +1749,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         }
         doll = ragdolls.spawn(origin, yaw, _aim, { zone: enemy.fallZone || (part === 'head' ? 'head' : 'torso'), inCover: !!enemy.fallInCover, toCover, blend: 0.15 });
       } else doll = ragdolls.spawn(origin, yaw, _aim);
-      ragdolls.addNearbyStatics(doll, world.colliders, origin);
+      ragdolls.addNearbyStatics(doll, world.colliders, origin); if (window.SS) window.SS.lastDoll = doll; // tests: pushedOut, boxes
     }
     catch (err) { reportErr('ragdoll spawn', err); doll = null; }
     if (enemy.art && doll) try {

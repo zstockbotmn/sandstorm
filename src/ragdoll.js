@@ -615,12 +615,13 @@ export function createRagdollSystem(scene) {
       const gp = m.geometry.parameters || { width: 1, height: 1, depth: 1 };
       const hx = Math.abs(sc.x) * (gp.width || 1) * 0.5, hy = Math.abs(sc.y) * (gp.height || 1) * 0.5, hz = Math.abs(sc.z) * (gp.depth || 1) * 0.5;
       if (p.y + hy < 0.02) continue; // buried (ground handles it)
-      const body = phys.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(p.x, p.y, p.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
+      let py = p.y, hy2 = hy; const bottom = p.y - hy; if (bottom > 0 && bottom < 0.35) { hy2 = (p.y + hy) / 2; py = hy2; } // car body sits 0.17 m up: close the gap so bodies don't wedge under it into the street
+      const body = phys.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(p.x, py, p.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
       phys.createCollider(
-        RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
+        RAPIER.ColliderDesc.cuboid(hx, hy2, hz).setFriction(0.55).setRestitution(0.02).setCollisionGroups(GROUP_WORLD),
         body
       );
-      doll.statics.push(body); (doll.boxes || (doll.boxes = [])).push({ p: p.clone(), q: q.clone(), qi: q.clone().invert(), hx, hy, hz });
+      doll.statics.push(body); (doll.boxes || (doll.boxes = [])).push({ p: new THREE.Vector3(p.x, py, p.z), q: q.clone(), qi: q.clone().invert(), hx, hy: hy2, hz });
       n += 1;
     }
   }
