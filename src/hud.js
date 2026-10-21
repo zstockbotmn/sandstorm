@@ -156,7 +156,7 @@ export function createHud() {
   const flankArrow = document.createElement('span'); flankArrow.className = 'fa'; flankArrow.textContent = '\u25B2'; const flankTxt = document.createElement('span'); flankTxt.textContent = 'FLANKED';
   flankEl.textContent = ''; flankEl.append(flankArrow, flankTxt);
   function placeFlank(angle) { const W = window.innerWidth || 844, H = window.innerHeight || 390, pt = hud.warnPoint || [W / 2, 40], cx = W / 2, cy = H / 2;
-    const k = 0.26, x = Math.max(90, Math.min(W - 90, pt[0] + (cx - pt[0]) * k)), y = Math.max(34, Math.min(H - 34, pt[1] + (cy - pt[1]) * k));
+    const k = 0.26, x = Math.max(170, Math.min(W - 170, pt[0] + (cx - pt[0]) * k)), y = Math.max(34, Math.min(H - 150, pt[1] + (cy - pt[1]) * k)); // clear of FIRE / RELOAD / SWITCH COVER
     flankEl.style.left = x.toFixed(0) + 'px'; flankEl.style.top = y.toFixed(0) + 'px'; flankArrow.style.transform = 'rotate(' + (angle * 180 / Math.PI).toFixed(0) + 'deg)';
     flankTxt.textContent = Math.abs(angle) > Math.PI * 0.6 ? 'FLANKED \u2013 BEHIND' : 'FLANKED'; hud.flankAt = [Math.round(x), Math.round(y)]; }
   function flanked(angle) { edgeWarn(angle); placeFlank(angle); warnHideAt = performance.now() + 1600; warnFrames = 4; flankEl.classList.remove('show'); void flankEl.offsetWidth; flankEl.classList.add('show');

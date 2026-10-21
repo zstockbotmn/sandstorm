@@ -11,7 +11,7 @@ const [tier = 'low', out = 'logs/a8/hud'] = process.argv.slice(2); fs.mkdirSync(
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 600000 });
   const res = { tier }, fail = [];
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true }); const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e).slice(0, 160)));
-    await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&loco=2&hits=2&repos=1&fx=3&q=' + tier); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+    await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&loco=2&hits=2&repos=1&fx=3&sp=5&q=' + tier); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.tap('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 }); await p.waitForTimeout(2000);
     await p.evaluate(() => { const raf = window.requestAnimationFrame.bind(window); window.__q = null; window.__rafOrig = raf; window.requestAnimationFrame = (cb) => { if (window.__q) { window.__q.push(cb); return 0; } return raf(cb); };
       const pn = performance.now.bind(performance); window.__pMs = 0; performance.now = () => pn() - window.__pMs; window.__pn = pn; SS.player.health = 100; });
@@ -44,6 +44,14 @@ const [tier = 'low', out = 'logs/a8/hud'] = process.argv.slice(2); fs.mkdirSync(
         const n0 = SS.fx3.puffs.spawned; SS.fx.impact(pt, new T.Vector3(0, 0.6, 0.8).normalize(), null); return { at: [+pt.x.toFixed(2), +pt.y.toFixed(2), +pt.z.toFixed(2)], spawned: SS.fx3.puffs.spawned - n0, eyeY: +c.y.toFixed(2) }; });
       await frames(1); res.lipShot = await shot('5coverlip'); if (!(res.lip.spawned > 0)) fail.push('cover lip impact spawned nothing'); }
     else res.lipSkipped = 'no cover with a surface box in the calm walk (stance ' + (await p.evaluate(() => SS.hud.stance)) + ')';
+    res.quality = await p.evaluate(() => ({ q: SS.quality, dpr: SS.renderer && SS.renderer.getPixelRatio ? +SS.renderer.getPixelRatio().toFixed(2) : null, flankAt: SS.hud.flankAt || null }));
+    if (tier === 'ultra-low' && res.quality.q !== 'ultra-low') fail.push('?q=ultra-low gave ' + res.quality.q);
+    if (res.quality.dpr != null && res.quality.dpr < 0.74) fail.push('pixel ratio ' + res.quality.dpr);
+    // step 5a smoke: one forced RPG (debugRpg), shots mid-flight and after impact
+    if (await p.evaluate(() => !!SS.setpieces)) { await p.evaluate(() => { SS.player.health = 100; SS.setpieces.debugRpg(); }); await frames(2); res.rpgShot = await shot('6rpg_flight');
+      await p.waitForTimeout(1600); await frames(2); res.rpgImpactShot = await shot('7rpg_after'); res.rpg = await p.evaluate(() => ({ ...(SS.setpiece && SS.setpiece.lastRpg), hp: SS.player.health }));
+      const r = res.rpg; if (!(r.impactR - r.launchR >= 900)) fail.push('rpg tell < 900 ms ' + JSON.stringify(r)); if (r.dmg > 30 || r.hp < 5) fail.push('rpg damage ' + JSON.stringify(r)); }
+    else fail.push('no SS.setpieces with sp=5');
     res.stanceShot = res.lipShot; res.errs = errs; if (errs.length) fail.push('errors');
   } finally { await b.close(); srv.close(); }
   console.log(JSON.stringify(res)); console.log(fail.length ? 'A8HUD FAIL ' + fail.join(' ; ') : 'A8HUD PASS'); process.exit(fail.length ? 1 : 0); })().catch((e) => { console.error(e); process.exit(1); });
