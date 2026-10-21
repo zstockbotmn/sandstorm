@@ -1,0 +1,4 @@
+STEP 3d2 (behind FX3 = /[?&]fx=3(?:&|$)/): sync the skyline flashes to the synth build-up. src/fx3.js already has api.skylineShot(near) (rg -n skylineShot src/fx3.js); main.js exposes it as window.SS.fx. Edit src/audio.js only.
+1) Read distantShot and the approach scheduler (rg -n "distantShot|SS.approach" src/audio.js). When FX3 (audio.js already has an FX3 const) and near >= 0: call window.SS.fx && window.SS.fx.skylineShot && window.SS.fx.skylineShot(near) immediately, and play that shot's sound LATER by a sound-travel lag of 0.8 - 0.5 * near seconds (setTimeout; light travels first). Without FX3, or for near < 0 (the plain background shot), behaviour is unchanged (no lag, no flash).
+2) Guard: if the game is paused/not running when the timer fires (window.SS.running false), skip the delayed sound.
+node --check src/audio.js and node tools/build.js at the end.

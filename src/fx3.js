@@ -33,7 +33,9 @@ function poolCap() {
   const q = qName();
   return q === 'ultra-low' ? 0 : q === 'low' ? 48 : 96;
 }
+let softRound = null;
 function puffTex() {
+  if (softRound) return softRound;
   const c = document.createElement('canvas');
   c.width = c.height = 32;
   const g = c.getContext('2d');
@@ -44,6 +46,7 @@ function puffTex() {
   g.fillStyle = rg; g.fillRect(0, 0, 32, 32);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  softRound = t;
   return t;
 }
 function plasterish(surface) {
@@ -59,7 +62,7 @@ function plasterish(surface) {
 export function createFx3({ camera, audio, scene }) {
   const kicks = [];
   let time = 0;
-  const dbg = { kicks: 0, last: null, muffle: 0, puffs: { live: 0, pool: 0, spawned: 0 } };
+  const dbg = { kicks: 0, last: null, muffle: 0, puffs: { live: 0, pool: 0, spawned: 0 }, skyline: { flashes: 0, tracers: 0, lastZ: null } };
   if (typeof window !== 'undefined') {
     const SS = window.SS || (window.SS = {});
     SS.fx3 = dbg;
@@ -69,6 +72,7 @@ export function createFx3({ camera, audio, scene }) {
   let mesh = null, cap = 0, live = 0, spawned = 0, parts = null, inited = false;
   const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), vv = new THREE.Vector3(), ss = new THREE.Vector3(), cc = new THREE.Color();
   const _rd = new THREE.Vector3(), _hitN = new THREE.Vector3(), _gnd = new THREE.Vector3();
+  const _sx = new THREE.Vector3(), _sy = new THREE.Vector3(), _sz = new THREE.Vector3(), _scam = new THREE.Vector3();
   let surfRay = null;
 
   function ensurePool() {
@@ -233,6 +237,163 @@ export function createFx3({ camera, audio, scene }) {
     dbg.puffs.live = live; dbg.puffs.spawned = spawned;
   }
 
+  // Distant skyline shots. Own 6-slot pools, not the puff cap. Ultra-low still flashes; tracers stay off.
+  const SKY_N = 6, TR_W = 0.08, TR_SPEED = 300;
+  let skyInited = false, flashMesh = null, tracerMesh = null, flashParts = null, tracerParts = null;
+  let flashLive = 0, tracerLive = 0;
+  function ensureSky() {
+    if (skyInited) return flashMesh;
+    skyInited = true;
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const flashMat = new THREE.MeshBasicMaterial({
+      map: puffTex(),
+      color: 0xffd27a,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+      side: THREE.DoubleSide,
+    });
+    const tracerMat = new THREE.MeshBasicMaterial({
+      color: 0xffd27a,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+      opacity: 0.8,
+      side: THREE.DoubleSide,
+    });
+    flashMesh = new THREE.InstancedMesh(geo, flashMat, SKY_N);
+    tracerMesh = new THREE.InstancedMesh(geo, tracerMat, SKY_N);
+    flashParts = new Array(SKY_N);
+    tracerParts = new Array(SKY_N);
+    ss.set(0, 0, 0); qq.identity();
+    for (let i = 0; i < SKY_N; i++) {
+      flashParts[i] = { i, on: false, pos: new THREE.Vector3(), life: 0, size: 1, seen: 0, mark: -1 };
+      tracerParts[i] = { i, on: false, pos: new THREE.Vector3(), dir: new THREE.Vector3(), life: 0, len: 6, seen: 0, mark: -1 };
+      flashMesh.setMatrixAt(i, m4.compose(vv.set(0, 0, 0), qq, ss));
+      tracerMesh.setMatrixAt(i, m4);
+    }
+    flashMesh.instanceMatrix.needsUpdate = tracerMesh.instanceMatrix.needsUpdate = true;
+    flashMesh.frustumCulled = tracerMesh.frustumCulled = false;
+    flashMesh.castShadow = flashMesh.receiveShadow = false;
+    tracerMesh.castShadow = tracerMesh.receiveShadow = false;
+    flashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    tracerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    flashMesh.visible = tracerMesh.visible = false;
+    if (scn) { scn.add(flashMesh); scn.add(tracerMesh); }
+    return flashMesh;
+  }
+  function grab(parts) {
+    for (let i = 0; i < SKY_N; i++) if (!parts[i].on) return parts[i];
+    let slot = parts[0];
+    for (let i = 1; i < SKY_N; i++) if (parts[i].life < slot.life) slot = parts[i];
+    return slot;
+  }
+  // Spawn is after fx.update, and that frame is drawn. Pin mark to it so seen counts later frames only.
+  function arm(slot) {
+    const fn0 = puffFrame();
+    slot.on = true;
+    slot.seen = 0;
+    slot.mark = fn0 == null ? -1 : fn0;
+  }
+  function noteSeen(p, fn) {
+    if (fn == null) p.seen++;
+    else if (p.mark !== fn) { p.seen++; p.mark = fn; }
+  }
+  function writeTracer(slot) {
+    _sy.copy(slot.dir);
+    if (camera) _scam.copy(camera.position).sub(slot.pos); else _scam.set(0, 1, 0);
+    if (_scam.lengthSq() < 1e-8) _scam.set(0, 1, 0);
+    _sx.crossVectors(_sy, _scam);
+    if (_sx.lengthSq() < 1e-8) {
+      _sx.crossVectors(_sy, _scam.set(0, 1, 0));
+      if (_sx.lengthSq() < 1e-8) _sx.crossVectors(_sy, _scam.set(1, 0, 0));
+    }
+    _sx.normalize();
+    _sz.crossVectors(_sx, _sy).normalize();
+    m4.makeBasis(_sx, _sy, _sz);
+    m4.scale(ss.set(TR_W, slot.len, 1));
+    m4.setPosition(slot.pos);
+    tracerMesh.setMatrixAt(slot.i, m4);
+  }
+  function skylineShot(near) {
+    if (!camera) return;
+    let n = +near;
+    if (!(n >= 0)) n = 0; else if (n > 1) n = 1;
+    ensureSky();
+    const x = (Math.random() * 2 - 1) * 25;
+    const y = 3 + Math.random() * 15;
+    const z = camera.position.z - (120 - 90 * n);
+    const slot = grab(flashParts);
+    if (!slot.on) flashLive++;
+    arm(slot);
+    slot.life = 0.08;
+    slot.size = 1.2 + 1.5 * n;
+    slot.pos.set(x, y, z);
+    if (camera) qq.copy(camera.quaternion); else qq.identity();
+    flashMesh.setMatrixAt(slot.i, m4.compose(slot.pos, qq, ss.set(slot.size, slot.size, slot.size)));
+    flashMesh.instanceMatrix.needsUpdate = true;
+    flashMesh.visible = true;
+    dbg.skyline.flashes++;
+    dbg.skyline.lastZ = z;
+    if (qName() !== 'ultra-low' && Math.random() < 0.6) {
+      const t = grab(tracerParts);
+      if (!t.on) tracerLive++;
+      arm(t);
+      t.life = 0.25;
+      t.len = 6 + Math.random() * 6;
+      const hy = (Math.random() * 2 - 1) * 0.2;
+      const heading = Math.random() * Math.PI * 2;
+      const horiz = Math.sqrt(Math.max(0, 1 - hy * hy));
+      t.dir.set(Math.cos(heading) * horiz, hy, Math.sin(heading) * horiz);
+      t.pos.set(x, y, z);
+      writeTracer(t);
+      tracerMesh.instanceMatrix.needsUpdate = true;
+      tracerMesh.visible = true;
+      dbg.skyline.tracers++;
+    }
+  }
+  function updateSky(pd) {
+    if (!skyInited || (flashLive === 0 && tracerLive === 0)) return;
+    const fn = puffFrame();
+    if (flashLive > 0) {
+      if (camera) qq.copy(camera.quaternion); else qq.identity();
+      for (let i = 0; i < SKY_N; i++) {
+        const p = flashParts[i];
+        if (!p.on) continue;
+        noteSeen(p, fn);
+        p.life -= pd;
+        if (p.life <= 0 && p.seen >= 2) {
+          p.on = false; flashLive--;
+          flashMesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(0, 0, 0)));
+          continue;
+        }
+        flashMesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(p.size, p.size, p.size)));
+      }
+      flashMesh.instanceMatrix.needsUpdate = true;
+      if (flashLive === 0) flashMesh.visible = false;
+    }
+    if (tracerLive > 0) {
+      const step = TR_SPEED * pd;
+      for (let i = 0; i < SKY_N; i++) {
+        const p = tracerParts[i];
+        if (!p.on) continue;
+        noteSeen(p, fn);
+        p.pos.x += p.dir.x * step; p.pos.y += p.dir.y * step; p.pos.z += p.dir.z * step;
+        p.life -= pd;
+        if (p.life <= 0 && p.seen >= 2) {
+          p.on = false; tracerLive--;
+          tracerMesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(0, 0, 0)));
+          continue;
+        }
+        writeTracer(p);
+      }
+      tracerMesh.instanceMatrix.needsUpdate = true;
+      if (tracerLive === 0) tracerMesh.visible = false;
+    }
+  }
+
   function publish() {
     dbg.kicks = kicks.length;
     let m = 0;
@@ -275,7 +436,9 @@ export function createFx3({ camera, audio, scene }) {
       kicks[i].age += d;
       if (kicks[i].age * kicks[i].spec.decay > 6.5) kicks.splice(i, 1); // exp(-6.5) ~ 0.0015
     }
-    updatePuffs(d > 0.1 ? 0.1 : d);
+    const pd = d > 0.1 ? 0.1 : d;
+    updatePuffs(pd);
+    updateSky(pd);
     publish();
   }
 
@@ -338,7 +501,7 @@ export function createFx3({ camera, audio, scene }) {
 
   publish();
   api.kick = kick; api.update = update; api.offsets = offsets; api.blast = blast; api.nearMiss = nearMiss;
-  api.dust = dust; api.debris = debris; api.impact = impact;
+  api.dust = dust; api.debris = debris; api.impact = impact; api.skylineShot = skylineShot;
   try { Promise.resolve().then(() => { ensurePool(); publish(); }); } catch (e) { ensurePool(); publish(); }
   return api;
 }
