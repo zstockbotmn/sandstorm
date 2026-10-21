@@ -19,7 +19,7 @@ const QS = process.env.SS_QS || '&q=low&test=fast', RUNS = +(process.env.SS_RUNS
   await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&loco=2&hits=2' + QS); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
   await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
   for (let run = 0; run < RUNS; run++) {
-    cases.push(await p.evaluate(async (run) => { SS.walking = false; SS.player.health = 1e6; const THREE = SS.THREE, c = SS.camera.position; let box = null;
+    cases.push(await p.evaluate(async ([run, RUNS]) => { SS.walking = false; SS.player.health = 1e6; const THREE = SS.THREE, c = SS.camera.position; let box = null;
       for (const m of SS.world.colliders || []) { if (m.name !== 'car' || !m.geometry || m.geometry.type !== 'BoxGeometry') continue; m.updateWorldMatrix(true, false); const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); m.matrixWorld.decompose(pos, q, sc);
         const g = m.geometry.parameters, dz = c.z - pos.z; if (dz < 8 || dz > 90) continue; if (!box || dz < box.dz) box = { pos, q, qi: q.clone().invert(), hx: Math.abs(sc.x) * g.width / 2, hy: Math.abs(sc.y) * g.height / 2, hz: Math.abs(sc.z) * g.depth / 2, dz }; }
       if (!box) return { run, skipped: 'no car' };
@@ -48,7 +48,7 @@ const QS = process.env.SS_QS || '&q=low&test=fast', RUNS = +(process.env.SS_RUNS
       let endOnHood = false; const d = SS.lastDoll; if (d && d.parts) for (const part of d.parts) if (part.rb && part.name === 'torso') { const t = part.rb.translation(); endOnHood = endZone(new THREE.Vector3(t.x, t.y, t.z)); }
       const hp = e.bones.Hips.getWorldPosition(new THREE.Vector3());
       return { run, mode: (SS.lastFall || {}).mode, align, side: +side.toFixed(2), carTop: +(box.pos.y + box.hy).toFixed(2), reached, torsoOnHoodS: +(hoodMs / 1000).toFixed(1), maxTorsoY: +maxTorsoY.toFixed(2), endOnHood, endHipY: +hp.y.toFixed(2),
-        maxPenCm: Math.round(maxPen * 100), settleJitCm: Math.round(jit * 100), maxFrameJumpCm: Math.round(maxJump * 100) }; }, run));
+        maxPenCm: Math.round(maxPen * 100), settleJitCm: Math.round(jit * 100), maxFrameJumpCm: Math.round(maxJump * 100) }; }, [run, RUNS]));
   }
   await b.close(); srv.close();
   for (const r of cases) { console.log(JSON.stringify(r)); if (r.skipped) { fail.push('run ' + r.run + ': ' + r.skipped); continue; }
