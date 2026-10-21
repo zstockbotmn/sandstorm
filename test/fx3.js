@@ -51,5 +51,9 @@ const frames = (p, n) => p.evaluate((n) => new Promise((ok) => { let k = 0; cons
     out.push({ a, flashes: (s.flashes | 0) - (s0.flashes | 0), tracers: (s.tracers | 0) - (s0.tracers | 0), dz: s.lastZ != null ? +(SS.camera.position.z - s.lastZ).toFixed(1) : null }); } SS.approachForce = null; return out; });
   if (!(res.sky[0].flashes > 0 && res.sky[1].flashes > 0)) fail.push('no skyline flashes ' + JSON.stringify(res.sky)); else if (!(res.sky[1].dz < res.sky[0].dz)) fail.push('skyline fire did not move closer ' + JSON.stringify(res.sky));
   if (tier !== 'ultra-low' && !(res.sky[0].tracers + res.sky[1].tracers > 0)) fail.push('no skyline tracers');
+  // (h) 3e post overlay: present on Low/High, gone on Ultra-low; this box runs ~1 fps, so the auto-off must have tripped (< 24 fps for 3 s)
+  res.post = await p.evaluate(async () => { await new Promise((r) => setTimeout(r, 4000)); const q = (SS.fx3 && SS.fx3.post) || {}; return { mode: q.mode, postOff: q.postOff, grain: q.grain }; });
+  if (tier === 'ultra-low') { if (res.post.mode !== 'none') fail.push('post overlay on Ultra-low (' + res.post.mode + ')'); }
+  else { if (res.post.mode !== 'overlay') fail.push('no post overlay (' + res.post.mode + ')'); else if (!res.post.postOff || res.post.grain) fail.push('post did not auto-off at low fps ' + JSON.stringify(res.post)); }
   res.errs = errs; if (errs.length) fail.push('page errors: ' + errs.join(' | '));
   console.log(JSON.stringify(res)); console.log(fail.length ? 'FX3 FAIL ' + fail.join(' ; ') : 'FX3 PASS'); await ctx.close(); await b.close(); srv.close(); process.exit(fail.length ? 1 : 0); })();

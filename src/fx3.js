@@ -238,29 +238,30 @@ export function createFx3({ camera, audio, scene }) {
   }
 
   // Distant skyline shots. Own 6-slot pools, not the puff cap. Ultra-low still flashes; tracers stay off.
-  const SKY_N = 6, TR_W = 0.08, TR_SPEED = 300;
+  const SKY_N = 6, TR_W = 0.22, TR_SPEED = 300; // shots: 0.08 m was sub-pixel at 50-120 m
   let skyInited = false, flashMesh = null, tracerMesh = null, flashParts = null, tracerParts = null;
   let flashLive = 0, tracerLive = 0;
   function ensureSky() {
     if (skyInited) return flashMesh;
     skyInited = true;
     const geo = new THREE.PlaneGeometry(1, 1);
+    // normal blending, not additive: additive on the bright desert sky washed the flash out to nothing (A5 shots)
     const flashMat = new THREE.MeshBasicMaterial({
       map: puffTex(),
-      color: 0xffd27a,
-      blending: THREE.AdditiveBlending,
+      color: 0xffc060,
+      toneMapped: false,
       transparent: true,
       depthWrite: false,
       fog: false,
       side: THREE.DoubleSide,
     });
     const tracerMat = new THREE.MeshBasicMaterial({
-      color: 0xffd27a,
-      blending: THREE.AdditiveBlending,
+      color: 0xffd890,
+      toneMapped: false,
       transparent: true,
       depthWrite: false,
       fog: false,
-      opacity: 0.8,
+      opacity: 0.95,
       side: THREE.DoubleSide,
     });
     flashMesh = new THREE.InstancedMesh(geo, flashMat, SKY_N);
@@ -329,7 +330,7 @@ export function createFx3({ camera, audio, scene }) {
     if (!slot.on) flashLive++;
     arm(slot);
     slot.life = 0.08;
-    slot.size = 1.2 + 1.5 * n;
+    slot.size = 2.4 + 2.6 * n; // 1.2 m was ~10 px at 100 m
     slot.pos.set(x, y, z);
     if (camera) qq.copy(camera.quaternion); else qq.identity();
     flashMesh.setMatrixAt(slot.i, m4.compose(slot.pos, qq, ss.set(slot.size, slot.size, slot.size)));

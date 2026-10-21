@@ -1,5 +1,7 @@
-STEP 3e (behind FX3): one cheap combined post pass. Read src/postfx.js (postprocessing composer, wantLow) and how main.js uses it.
-1) A single custom postprocessing Effect (fragment only, one texture read + a 4-tap blur only on High) doing vignette + desaturation + hurt/blast blur driven by uniforms hurt (from low HP: clamp((45-health)/35,0,1)) and blast (window.SS.fx3.muffle). In cover recovery fades it out over 1 s.
+STEP 3e (behind FX3 = /[?&]fx=3(?:&|$)/; without it nothing changes): one cheap combined post pass, vignette + colour grade + film grain. Read src/postfx.js (postprocessing composer, wantLow) and how main.js uses it.
+1) A single custom postprocessing Effect (fragment only, one texture read + a 4-tap blur only on High) doing vignette + warm desert grade (slight teal shadows / warm highlights, small contrast) + subtle animated grain + desaturation and hurt/blast blur driven by uniforms hurt (from low HP: clamp((45-health)/35,0,1)) and blast (window.SS.fx3.muffle). In cover recovery fades it out over 1 s.
 2) On wantLow devices (iPhone/software GL) no composer: a fixed DOM overlay div (radial-gradient vignette + backdrop-filter grayscale ONLY if supported, else a semi-transparent tint) with opacity from the same values.
 3) Auto-off: track a 2 s moving average fps; under 24 fps for 3 s disable the effect pass (or hide the overlay) and set window.SS.fx3.postOff = true; re-enable after 6 s above 30.
-node --check and node tools/build.js at the end.
+4) Off entirely on Ultra-low (window.SS.quality === 'ultra-low', also when it switches mid-run).
+5) window.SS.fx3.post = { mode: 'effect'|'overlay'|'none', postOff, hurt, blast } for tests.
+node --check on the changed files at the end. Do NOT run node tools/build.js (a test is using dist).

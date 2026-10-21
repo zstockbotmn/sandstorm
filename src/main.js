@@ -12,6 +12,7 @@ import { createEnemies } from './enemies.js';
 import { createScore } from './score.js';
 import { createAudio } from './audio.js';
 import { createFx3 } from './fx3.js';
+import { createPost3 } from './post3.js';
 import { createStakes } from './stakes.js';
 import { createCover } from './cover.js';
 import { createPostFx, wantLow } from './postfx.js';
@@ -92,7 +93,7 @@ window.SS = { fast: FAST,
 };
 // art.js may have started loading before this object existed. Keep the same reference.
 window.SS.art = art;
-let fx = null;
+let fx = null, post3 = null;
 let fxPx = 0, fxPy = 0;
 function clearFxPos() {
   if (!fxPx && !fxPy) return;
@@ -100,7 +101,7 @@ function clearFxPos() {
   camera.position.y -= fxPy;
   fxPx = 0; fxPy = 0;
 }
-if (FX3) { fx = createFx3({ camera, audio, scene }); window.SS.fx = fx; }
+if (FX3) { fx = createFx3({ camera, audio, scene }); window.SS.fx = fx; post3 = createPost3({ renderer }); }
 window.SS.renderer = renderer; // headless shots read info.render.triangles
 
 const priorHit = weapon.onHit;
@@ -172,6 +173,7 @@ function applyCamera(dt) {
 function simStep(dt) {
   if (fx && !window.__freezeCam) clearFxPos(); // walk and cover read the unshaken body position
   if (fx) fx.update(dt || 0);
+  if (post3 && !window.SS.subStep) post3.update(dt || 0);
   if (window.SS.running) window.SS.simTime = (window.SS.simTime || 0) + (dt || 0);
   const frozen = !player.alive; // death freezes the world: no walking, no enemy/world updates
   if (window.SS.walking && !frozen) {
