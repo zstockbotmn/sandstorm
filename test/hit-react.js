@@ -22,7 +22,7 @@ const QS = process.env.SS_QS || '';
   const BONE = { armL: ['LeftArm', 'LeftForeArm'], legR: ['RightUpLeg', 'RightLeg'], torso: null, head: null };
   const shoot = async (zone, kill) => p.evaluate(async ([zone, kill, BONE]) => { const THREE = SS.THREE, c = SS.camera.position.clone(); const e = window.__pool.shift() || window.__more(); if (!e) return { skipped: 'no fighter' };
     for (const q of window.__pool) SS.enemies.debugPose(q, c.x + 40, c.z - 5, 'idle'); SS.enemies.debugPose(e, c.x, c.z - 15, 'idle'); e.group.rotation.y = 0; e.pinned = false; e.staggerT = 0; e.debugHold = true; /* AI frozen but not test-pinned, so the root step runs */ e.health = kill ? 1 : 1e9;
-    await new Promise((ok) => setTimeout(ok, 1000)); e.group.updateMatrixWorld(true); const B = e.bones, W = (n) => B[n].getWorldPosition(new THREE.Vector3());
+    const preA = e.group.position.clone(), preT = performance.now(); await new Promise((ok) => setTimeout(ok, 1000)); const driftV = e.group.position.clone().sub(preA).multiplyScalar(1 / Math.max(1, performance.now() - preT)); /* High: fighters creep (separation) even AI-frozen; subtract it */ e.group.updateMatrixWorld(true); const B = e.bones, W = (n) => B[n].getWorldPosition(new THREE.Vector3());
     const pt = zone === 'head' ? W('Head') : zone === 'torso' ? W('Hips').lerp((e.spineTop || B.Spine).getWorldPosition(new THREE.Vector3()), 0.6) : zone === 'armL' ? W('LeftArm').lerp(W('LeftForeArm'), 0.5) : zone === 'legR' ? W('RightUpLeg').lerp(W('RightLeg'), 0.5) : W('Hips');
     const eye = SS.camera.getWorldPosition(new THREE.Vector3()); let dir = pt.clone().sub(eye).normalize(), h = SS.weapon.firstHit(eye, dir), ud = h && h.object.userData;
     if (zone === 'armL' || zone === 'legR') { const [a1, a2] = BONE[zone], tail = zone === 'armL' ? 'LeftHand' : 'RightFoot'; /* the rifle arm sits in front of the chest (body ranks first): walk the limb for a clean limb hit */
@@ -31,7 +31,7 @@ const QS = process.env.SS_QS || '';
     if (!ud || ud.enemy !== e) return { zone, skipped: 'shot missed (' + (h ? h.object.name || 'world' : 'none') + ')' };
     if ((zone === 'armL' || zone === 'legR') && ud.part !== 'limb') return { zone, skipped: 'no clean limb hit on that limb (got ' + ud.part + ')' };
     const z0 = { ...(SS.hitZones || {}) }, w0 = e.wounds ? { ...e.wounds } : null, pos0 = e.group.position.clone(); const hips = [];
-    if (e.reactSt) e.reactSt.wPeak = 0; e.takeHit(ud.part, h.point); const t0 = performance.now(); let peak = 0, peakT = null, downT = null, hv = 0, pop = 0, prev = null;
+    if (e.reactSt) e.reactSt.wPeak = 0; e.takeHit(ud.part, h.point); const stepCmd = e.reactSt ? { m: +(e.reactSt.stepLeft || 0).toFixed(2), away: e.reactSt.stepDir.dot(dir) > 0 } : null; const t0 = performance.now(); let peak = 0, peakT = null, downT = null, hv = 0, pop = 0, prev = null;
     const segDist = (q, a, b2) => { const ab = b2.clone().sub(a), t = Math.max(0, Math.min(1, q.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()))); return q.distanceTo(a.addScaledVector(ab, t)); };
     while (performance.now() - t0 < 1500) { await new Promise((r) => requestAnimationFrame(r)); const el = (performance.now() - t0) / 1000; const B2 = e.bones; if (!B2 || !B2.Hips) break;
       const hp = B2.Hips.getWorldPosition(new THREE.Vector3()); if (prev && SS.lastSimDt < 0.06) pop = Math.max(pop, hp.distanceTo(prev)); prev = hp; hips.push(hp.y);
@@ -40,7 +40,7 @@ const QS = process.env.SS_QS || '';
           hv = Math.max(hv, segDist(m.getWorldPosition(new THREE.Vector3()), B2[a].getWorldPosition(new THREE.Vector3()), B2[b2].getWorldPosition(new THREE.Vector3()))); } } } }
     const out = { zone, part: ud.part, kill, lastHitZone: e.lastHitZone, wound: w0 && e.wounds ? (e.wounds[zone] | 0) - (w0[zone] | 0) : null, ssZone: SS.hitZones ? (SS.hitZones[zone] | 0) - (z0[zone] | 0) : null,
       reactPeak: +peak.toFixed(2), peakS: peakT && +peakT.toFixed(2), downS: downT && +downT.toFixed(2), limbVolCm: Math.round(hv * 100), popCm: Math.round(pop * 100),
-      stepM: +Math.hypot(e.group.position.x - pos0.x, e.group.position.z - pos0.z).toFixed(2), stepAway: e.group.position.z < pos0.z, fall: kill ? (SS.lastFall || null) : undefined };
+      ...(() => { const dt = performance.now() - t0, q = e.group.position.clone().sub(pos0); const drift = driftV.length() * dt; /* High: AI-frozen fighters still creep ~0.5 m per 1.5 s, so there read the commanded step */ if (drift > 0.1 && stepCmd) return { stepM: stepCmd.m, stepAway: stepCmd.away, driftM: +drift.toFixed(2), stepFrom: 'react state' }; return { stepM: +Math.hypot(q.x, q.z).toFixed(2), stepAway: q.z < 0, driftM: +drift.toFixed(2) }; })(), fall: kill ? (SS.lastFall || null) : undefined };
     if (!kill) { e.pinned = false; e.debugHold = false; e.staggerT = 0; e.phase = 'hide'; let clutch = 0, limp = 0; const t1 = performance.now();
       while (performance.now() - t1 < 4000) { await new Promise((r) => requestAnimationFrame(r)); if (e.phase !== 'fire') clutch = Math.max(clutch, +e.clutchW || 0); limp = Math.max(limp, +e.limp || 0); }
       Object.assign(out, { clutchMax: +clutch.toFixed(2), spreadMul: e.spreadMul, limpMax: +limp.toFixed(2), speedMul: e.speedMul }); e.health = 1; try { e.takeHit('head', e.group.position.clone().setY(1.6)); } catch (_) {} }
