@@ -154,7 +154,10 @@ const QS = process.env.SS_QS || '', ONLY = process.env.SS_M1X ? process.env.SS_M
     // an early 200 px drag: the hint stays until its 4 s minimum, then fades with reason 'drag'
     await p.mouse.move(300, 200); await p.mouse.down(); for (let i = 1; i <= 8; i++) { await p.mouse.move(300 + i * 25, 200); await p.waitForTimeout(30); } await p.mouse.up();
     await p.waitForTimeout(500); res.I.afterDrag = await vis(); await p.waitForTimeout(5000); res.I.later = await vis(); res.I.fh = await p.evaluate(() => ({ ...SS.hud.firstHint, ms: Math.round(SS.hud.firstHint.goneAt - SS.hud.firstHint.shownAt), seen: localStorage.getItem('ss.firstHint') }));
-    if (!(res.I.afterDrag > 0.9)) fail.push('I: hint faded before its 4 s minimum ' + JSON.stringify(res.I));
+    // Judged in the game's own clock (hud.firstHint shownAt/goneAt, performance.now): on a slow box start() can return
+    // ~3.5 s after the hint appeared, so the 500 ms-after-drag opacity sample can land after a correct 4 s minimum.
+    const fhMs = res.I.fh && res.I.fh.ms; res.I.minOk = fhMs >= 4000 - 150;
+    if (!(res.I.afterDrag > 0.9) && !(res.I.minOk && res.I.fh.reason === 'drag')) fail.push('I: hint faded before its 4 s minimum ' + JSON.stringify(res.I));
     if (res.I.later > 0.1 || res.I.fh.reason !== 'drag') fail.push('I: hint did not fade after the drag ' + JSON.stringify(res.I));
     if (res.I.fh.seen !== '1') fail.push('I: hint not stored as seen');
     // second run in the same profile: not shown again (hint=keep keeps storage)
