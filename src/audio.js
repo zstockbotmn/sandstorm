@@ -9,6 +9,8 @@ export function createAudio() {
   let lp = null;
   let muff = null; // scheduled dip: { t0, wall, f0, f1, rec }
   let fx3Steps = 0, fx3Dist = 0, fx3Pan = 0.15, stepBuf = null;
+  let fx3Exert = 0, fx3CoverPrev = null, fx3Effort = 0, fx3Breaths = 0, fx3Heart = 0;
+  let nextBreathT = 0, nextBeatT = 0, breathBuf = null;
   function go() { live = true; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0.75, t + 0.25); } }
   function hush() { live = false; if (master && ctx) { const t = ctx.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + 0.05); } } // m1u: Restart is silent until its first frame
   let chatterT = 10;
@@ -432,7 +434,56 @@ export function createAudio() {
     fx3Steps++;
   }
 
-  function fx3State() { return { steps: fx3Steps }; }
+  function fx3Noise(when, stop, freq, q, env) {
+    const src = ctx.createBufferSource();
+    src.buffer = breathBuf || (breathBuf = noiseBuffer(2.5));
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = ctx.createGain();
+    env(g.gain);
+    src.connect(f);
+    f.connect(g);
+    g.connect(master);
+    src.start(when);
+    src.stop(stop);
+  }
+
+  function fx3BreathAt(t, E, rate) {
+    const scale = Math.min(1, (60 / rate) / 2.2);
+    const peak = 0.07 * E;
+    const rise = 0.9 * scale;
+    const fall = 1.1 * scale;
+    fx3Noise(t, t + rise + fall + 0.05, 700, 0.8, (gain) => {
+      gain.setValueAtTime(0, t);
+      gain.linearRampToValueAtTime(peak, t + rise); // 0 -> 0.07*E over 0.9*scale
+      gain.linearRampToValueAtTime(0, t + rise + fall); // then to 0
+    });
+    const tEx = t + rise;
+    fx3Noise(tEx, tEx + fall + 0.05, 500, 0.8, (gain) => {
+      gain.setValueAtTime(peak, tEx);
+      gain.linearRampToValueAtTime(0, tEx + fall); // exhale ramps over 1.1*scale
+    });
+  }
+
+  function fx3BeatAt(t) {
+    for (let i = 0; i < 2; i++) { // two thumps, 0.18 s apart
+      const when = t + i * 0.18;
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = 55;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.18, when);
+      g.gain.linearRampToValueAtTime(0, when + 0.06);
+      o.connect(g);
+      g.connect(master);
+      o.start(when);
+      o.stop(when + 0.065);
+    }
+  }
+
+  function fx3State() { return { steps: fx3Steps, effort: fx3Effort, breathsPerMin: fx3Breaths, heart: fx3Heart }; }
 
   function update(dt) {
     if (FX3 && window.SS) {
@@ -446,7 +497,43 @@ export function createAudio() {
         }
         if (n === 2) fx3Dist = 0;
       }
-      window.SS.fx3Audio = Object.assign(window.SS.fx3Audio || {}, { steps: fx3Steps });
+      if (ctx) {
+        const coverOn = !!(window.SS.input && window.SS.input.state && window.SS.input.state.cover);
+        if (fx3CoverPrev !== null && coverOn !== fx3CoverPrev) fx3Exert += 0.35;
+        fx3CoverPrev = coverOn;
+        fx3Exert = Math.max(0, Math.min(1, fx3Exert - 0.12 * (dt || 0)));
+        let lowHp = 0, hp = null;
+        const pl = window.SS.player;
+        if (pl && typeof pl.health === 'number' && pl.health === pl.health) {
+          hp = pl.health;
+          lowHp = Math.max(0, Math.min(1, (45 - hp) / 35));
+        }
+        const E = Math.max(lowHp, fx3Exert);
+        fx3Effort = E;
+        const now = ctx.currentTime, horizon = now + 0.1;
+        let voices = 0; // at most two new source nodes per update; a late clock snaps forward (no hitch backlog)
+        if (E >= 0.15) {
+          const rate = 14 + 20 * E;
+          fx3Breaths = rate;
+          if (nextBreathT < now) nextBreathT = now;
+          if (master && voices + 2 <= 2 && nextBreathT <= horizon) {
+            fx3BreathAt(nextBreathT, E, rate);
+            nextBreathT += 60 / rate;
+            voices += 2;
+          }
+        } else { fx3Breaths = 0; nextBreathT = 0; }
+        if (hp != null && hp < 25) {
+          const bpm = 70 + 50 * Math.max(0, Math.min(1, (25 - hp) / 20));
+          fx3Heart = bpm;
+          if (nextBeatT < now) nextBeatT = now;
+          if (master && voices + 2 <= 2 && nextBeatT <= horizon) {
+            fx3BeatAt(nextBeatT);
+            nextBeatT += 60 / bpm;
+            voices += 2;
+          }
+        } else { fx3Heart = 0; nextBeatT = 0; }
+      }
+      window.SS.fx3Audio = Object.assign(window.SS.fx3Audio || {}, fx3State());
     }
     if (!ctx || !unlocked) return;
     const running = !!(window.SS && window.SS.running);
