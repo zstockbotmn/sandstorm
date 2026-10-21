@@ -2116,7 +2116,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (tS - lastShotSim > 15) fightSim0 = tS; lastShotSim = tS;
     const dryS = tS - Math.max(fightSim0, lastPlayerHitSim != null ? lastPlayerHitSim : -99);
     const ducked = !!(window.SS && window.SS.input && window.SS.input.cover);
-    if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : 0.45, 0.08 + 0.045 * (dryS - 3))); // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
+    if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : 0.5, 0.1 + 0.05 * (dryS - 3))); // A8: ducking now blocks the front arc outright, so the exposed ramp is a bit steeper (0.10 + 0.05/s, cap 0.5) // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
     if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3), ducked, flankShot, flankReady };
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
