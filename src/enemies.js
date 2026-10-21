@@ -2073,6 +2073,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // player cannot see them (no visible pop; e.warps marks it so the motion test ignores the jump)
     if (((e.anchor && isElevated(e.anchor.type)) || e.group.position.y > 0.05) && !e.peekForced) { e.peekForced = true; e.engaged = true; e.hiddenT = 6; try { beginFire(e); } catch (_) {} return false; }
     if (playerSees(e)) { e.hiddenT = 0; return false; }
+    if (REPOS && e.phase === 'fire') { e.hiddenT = 5; return false; } // p1b: never rescue mid-fire
     e.peekForced = false; e.warps = (e.warps | 0) + 1;
     const pz = camera.position.z, a0 = e.anchor, h0 = e.home; let best = null, bd = 1e9;
     for (const seg of world.segments || []) for (const c of seg.coverPoints || []) {
@@ -2087,6 +2088,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       e.warps = Math.max(0, (e.warps | 0) - 1); e.seenForced = (e.seenForced | 0) + 1; if (window.SS) window.SS.seenForced = (window.SS.seenForced | 0) + 1;
       startReposition(e, best); return true;
     }
+    if (REPOS && inView(e)) { e.anchor = a0; e.home = h0; e.hiddenT = 0; try { beginFire(e); } catch (_) {} return false; } // on screen: step out, never pop
     e.teleports = (e.teleports | 0) + 1; if (window.SS) window.SS.lastTeleport = { why: 'toSeenSpot', best: !!best, t: window.SS.simTime };
     if (best) { e.anchor = best; e.home = standPos(best); e.group.position.copy(firePoint(e)); }
     else { let pt = null; for (const ah of [16, 13, 19, 10, 22]) { for (const x of [0, -1.5, 1.5, -3, 3]) { _losP.set(camera.position.x + x, 1.25, pz - ah); if (clearToEye(_losP)) { pt = new THREE.Vector3(_losP.x, 0, _losP.z); break; } } if (pt) break; }
@@ -2099,6 +2101,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const aheadE = camera.position.z - e.group.position.z, dE = e.group.position.distanceTo(camera.position);
     // (m1p stall) a roof/window shooter stays up only while it is ahead and close enough to see through the haze
     if ((e.anchor && isElevated(e.anchor.type)) || e.group.position.y > 0.05) { e.unseenT = 0; e.engaged = true; try { beginFire(e); } catch (_) {} return; } // m1t: never teleport anyone off a roof/window/climb (vertical pop); they peek (hits still need the player's sight) // never teleport a roof/window shooter to the street
+    // p1b (Zack: no popping): never rescue a fighter that is firing or that the player can see; it retries later.
+    if (REPOS && (e.phase === 'fire' || playerSees(e))) { e.unseenT = UNSEEN_LIMIT * 0.6; e.behindT = 0; return; }
     // Never teleport a fighter the player could be looking at (tester: a close fighter vanished mid-turn): within 25 m,
     // or on screen, it steps out and fights from where it is instead.
     { const d = e.group.position.distanceTo(camera.position); camera.updateMatrixWorld(); _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frF.setFromProjectionMatrix(_frM);
@@ -2115,10 +2119,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // p1b: a ground fighter hiding in cover RUNS there (the warp popped 9-10 m and reset the hold clock). An exposed one
     // that is still unseen runs too (a path leads it out of any collider); only no-cover / elevated cases still warp.
     if (best && REPOS && e.group.position.y < 0.05) { e.seenForced = (e.seenForced | 0) + 1; startReposition(e, best); return; }
-    e.teleports = (e.teleports | 0) + 1; if (window.SS) window.SS.lastTeleport = { why: 'toVisibleCover', exposed: !!e.exposed, t: window.SS.simTime };
+    const a0 = e.anchor, h0 = e.home;
     if (best) { e.anchor = best; e.home = standPos(best); }
     else { const side = Math.sign(e.group.position.x) || 1; e.anchor = { type: 'door', pos: new THREE.Vector3(side * 5.4, 1.2, pz - 18) }; e.home = standPos(e.anchor); }
-    e.group.position.copy(firePoint(e)); e.group.position.y = 0; e.path = null; e.pathI = 0;
+    // A warp is left only for the no-run cases, and only when BOTH ends are out of view; otherwise run (or step out here).
+    const dest = firePoint(e); dest.y = 0;
+    if (REPOS && (inView(e) || onScreen(_losS.set(dest.x, 1.2, dest.z), 1.05))) {
+      if (best && e.group.position.y < 0.05) { e.anchor = a0; e.home = h0; startReposition(e, best); return; }
+      e.anchor = a0; e.home = h0; e.unseenT = 0; e.vanishSaved = (e.vanishSaved | 0) + 1; try { beginFire(e); } catch (_) {} return;
+    }
+    e.teleports = (e.teleports | 0) + 1; if (window.SS) window.SS.lastTeleport = { why: 'toVisibleCover', exposed: !!e.exposed, offscreen: true, t: window.SS.simTime };
+    e.group.position.copy(dest); e.path = null; e.pathI = 0;
     beginFire(e); relocated(e);
   }
   function setupLoco(enemy) {
