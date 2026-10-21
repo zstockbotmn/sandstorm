@@ -32,7 +32,14 @@ export function createSetPieces({ scene, camera, player, hud }) {
   }
   const flashMat = puff(0xfff4cc, 1), flash = new THREE.Mesh(geo, flashMat);
   flash.visible = false; flash.frustumCulled = false; scene.add(flash);
-  let flashLife = 0, flashDur = 0.15;
+  let flashLife = 0, flashDur = 0.15, flashHoldR = 0, flashHoldF = 0;
+  // A10: the shooter - a cheap dark silhouette with the tube on its shoulder, shown from launch to ~1.2 s after impact
+  const shooterMat = new THREE.MeshBasicMaterial({ color: 0x1f1b18, fog: false });
+  const shooter = new THREE.Group(); { const b = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.95, 0.3), shooterMat); b.position.y = 0.95;
+    const h = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), shooterMat); h.position.y = 1.6;
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.15, 8), shooterMat); tube.rotation.x = Math.PI / 2; tube.position.set(0.18, 1.45, 0); tube.name = 'tube';
+    shooter.add(b, h, tube); shooter.traverse((o) => { o.frustumCulled = false; }); shooter.visible = false; scene.add(shooter); }
+  let shooterUntilR = 0;
   const dark = new THREE.MeshBasicMaterial({ color: 0x2a2622, fog: false });
   const rocket = new THREE.Group();
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.7, 8), dark);
@@ -50,7 +57,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   const up = new THREE.Vector3(0, 1, 0), yAxis = new THREE.Vector3(0, 1, 0);
   const state = { wave: 0, rpgs: 0, flying: false };
   const forced = /[?&]rpg=1\b/.test(location.search);
-  let wasBurst = false, waveT = 0, firedWave = false, lastAt = -1e9;
+  let wasBurst = false, waveT = 0, firedWave = false, lastAt = -1e9, fireAt = -1;
   let flying = false, launchSim = 0, launchR = 0, smokeAcc = 0, warned = false, rec = null;
   const clip = () => (window.SS && window.SS.audio) || null;
   const fx = () => (window.SS && window.SS.fx) || null;
@@ -81,6 +88,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   function showFlash(p, size, dur) {
     flash.position.copy(p); flash.scale.setScalar(size); flash.lookAt(camera.position);
     flashLife = flashDur = dur; flashMat.opacity = 1; flash.visible = true;
+    flashHoldR = performance.now() + 250; flashHoldF = ((window.SS && window.SS.frameN) | 0) + 2; // A10: full strength >= 250 ms AND >= 2 painted frames
   }
   function aimRocket(at) {
     dir.subVectors(target, launch);
@@ -98,8 +106,13 @@ export function createSetPieces({ scene, camera, player, hud }) {
   function cols() { const w = window.SS && window.SS.world; return (w && (w.shotList ? w.shotList() : w.colliders)) || []; }
   function firstHit(o, d, far, list) { ray.set(o, d); ray.near = 0; ray.far = far; const h = ray.intersectObjects(list, false); return h.length ? h[0] : null; }
   function insideAny(p) { const w = window.SS && window.SS.world, list = (w && w.colliders) || []; for (const m of list) { if (!m.geometry) continue; _bx.setFromObject(m); _bx.expandByScalar(0.15); if (_bx.containsPoint(p)) return true; } return false; } // box colliders only (cheap)
-  function pickTarget() { const dx = launch.x - camera.position.x, dz = launch.z - camera.position.z, h = Math.hypot(dx, dz) || 1, sway = (Math.random() - 0.5) * 2, ix = dx / h, iz = dz / h;
-    target.set(camera.position.x + ix * 2.8 - iz * sway, 0.3 + Math.random() * 0.6, camera.position.z + iz * 2.8 + ix * sway); }
+  // A10 variety: 40% of the time (ducked behind real cover) the rocket hits the cover top on the enemy side - debris shower,
+  // 25-30 dmg; otherwise the ground 1.2-4.2 m from the player toward the shooter (30 -> 10 dmg with distance).
+  let aimCover = false;
+  function pickTarget() { const cv = window.SS && window.SS.cover, sf = cv && cv.state === 'in' && cv.surface;
+    if (sf && aimCover) { target.set(Math.max(sf.min.x + 0.2, Math.min(sf.max.x - 0.2, camera.position.x + (Math.random() - 0.5) * 0.8)), sf.max.y - 0.05, sf.min.z + 0.15); return; }
+    const dx = launch.x - camera.position.x, dz = launch.z - camera.position.z, h = Math.hypot(dx, dz) || 1, sway = (Math.random() - 0.5) * 1.6, ix = dx / h, iz = dz / h, r = 1.2 + Math.random() * 3.0;
+    target.set(camera.position.x + ix * r - iz * sway, 0.3 + Math.random() * 0.5, camera.position.z + iz * r + ix * sway); }
   function pickLaunch() { const list = cols(); let kind = 'street';
     for (let t = 0; t < 8; t++) { const side = Math.random() < 0.5 ? -1 : 1, z = camera.position.z - (24 + Math.random() * 14);
       const wall = list.length ? firstHit(_o.set(0, 6, z), _d.set(side, 0, 0), 12, list) : null;
@@ -111,17 +124,20 @@ export function createSetPieces({ scene, camera, player, hud }) {
       const blk = list.length ? firstHit(_o.copy(launch).addScaledVector(_d, 0.3), _d, Math.max(0.1, L - 1.6), list) : null; if (blk) continue;
       return kind; }
     launch.set(0, 2.2, camera.position.z - 30); pickTarget(); return 'street'; } // last resort: down the middle of the street
+  let whooshed = false;
   function launchNow(sim) {
-    const lkind = pickLaunch();
+    { const cv = window.SS && window.SS.cover; aimCover = !!(cv && cv.state === 'in' && cv.surface && Math.random() < 0.4); }
+    const lkind = pickLaunch(); whooshed = false; if (window.SS) window.SS.setPieceAt = sim;
     flying = state.flying = true; launchSim = sim; launchR = performance.now();
     warned = false; smokeAcc = 0; prev.copy(launch); rocket.visible = true; aimRocket(launch);
-    showFlash(launch, 1.6, 0.15);
+    showFlash(launch, 2.4, 0.3);
     tmp.subVectors(launch, target).setY(0); if (tmp.lengthSq() < 1e-6) tmp.set(0, 0, 1); tmp.normalize();
-    spawnSmoke(pos.copy(launch).addScaledVector(tmp, 0.9));
-    spawnSmoke(pos.copy(launch).addScaledVector(tmp, 1.7));
+    // back-blast: a puff cloud behind the tube + dust at the shooter's feet (A10)
+    for (let i = 0; i < 5; i++) spawnSmoke(pos.copy(launch).addScaledVector(tmp, 0.6 + i * 0.45).add(_o.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.3) * 0.5, (Math.random() - 0.5) * 0.5)));
+    { const f = fx(); if (f && f.impact) for (let i = 0; i < 2; i++) f.impact(pos.copy(launch).addScaledVector(tmp, 0.5).setY(launch.y - 1.4 + Math.random() * 0.3), up, null); }
+    shooter.position.copy(launch).addScaledVector(tmp, 0.25); shooter.position.y = launch.y - 1.45; shooter.lookAt(_o.set(target.x, shooter.position.y, target.z)); shooter.visible = true; shooterUntilR = 0;
     const a = clip();
-    if (a && a.thump) a.thump(launch.clone()); else if (a && a.crack) a.crack(launch.clone());
-    if (a && a.whoosh) a.whoosh(launch.clone(), 1.1);
+    if (a && a.thump) a.thump(launch.clone()); else if (a && a.crack) a.crack(launch.clone()); // whoosh follows 0.3 s later (stepFlight)
     if (hud && hud.callout) hud.callout('RPG!', true);
     if (hud && hud.edgeWarn) hud.edgeWarn(angleTo(launch));
     state.rpgs += 1; firedWave = true; lastAt = sim;
@@ -144,8 +160,11 @@ export function createSetPieces({ scene, camera, player, hud }) {
     else if (a && a.enemyShot) a.enemyShot(target.clone());
     const hpBefore = player.health;
     const d = Math.hypot(camera.position.x - target.x, camera.position.z - target.z);
-    const raw = 34 * (1 - d / 6);
+    const raw = d > 4.4 ? 0 : 30 - 20 * Math.max(0, Math.min(1, (d - 1.0) / 3.4)); // A10: 30 at <= 1 m -> 10 at 4.4 m
     const dmg = Math.max(0, Math.min(raw, 30, hpBefore - 5));
+    if (rec) rec.aim = aimCover ? 'cover' : 'ground';
+    if (aimCover && f && f.impact) for (let i = 0; i < 5; i++) { tmp.copy(target); tmp.x += (Math.random() - 0.5) * 1.4; tmp.y += Math.random() * 0.2; f.impact(tmp.clone(), up, null); } // cover hit: debris shower
+    if (window.SS) window.SS.setPieceAt = sim; shooterUntilR = performance.now() + 1200;
     if (rec) { rec.impactSim = sim; rec.impactR = performance.now(); rec.dmg = dmg; rec.hpBefore = hpBefore; rec.dist = d; }
     publish();
     // Duck does not cancel a warned blast; the cap leaves at least 5 hp.
@@ -158,6 +177,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     if (k < 0) k = 0; else if (k > 1) k = 1;
     pos.lerpVectors(launch, target, k);
     if (!warned && simElapsed >= 0.5) { warned = true; if (hud && hud.edgeWarn) hud.edgeWarn(angleTo(launch)); }
+    if (!whooshed && realElapsedMs >= 300 && simElapsed >= 0.25) { whooshed = true; const a = clip(); if (a && a.whoosh) a.whoosh(pos.clone(), Math.max(0.4, FLIGHT_S - simElapsed)); } // A10: thump, then the whoosh as it approaches
     trail(prev, pos); prev.copy(pos); aimRocket(pos);
     if (k >= 1) impact(sim);
   }
@@ -166,9 +186,11 @@ export function createSetPieces({ scene, camera, player, hud }) {
     // A9: real-time floor - at 2-5 fps a sim step can be ~0.5 s, which killed the trail before it was ever painted
     const nowR = performance.now(), rdt = vfxR ? (nowR - vfxR) / 1000 : dt; vfxR = nowR; dt = Math.min(dt, Math.max(0, rdt));
     if (flashLife > 0) {
-      flashLife -= dt; flashMat.opacity = Math.max(0, flashLife / (flashDur || 1)); flash.lookAt(camera.position);
+      if (nowR < flashHoldR || ((window.SS && window.SS.frameN) | 0) < flashHoldF) { flashMat.opacity = 1; flash.lookAt(camera.position); } else {
+      flashLife -= dt; flashMat.opacity = Math.max(0, flashLife / (flashDur || 1)); flash.lookAt(camera.position); }
       if (flashLife <= 0) flash.visible = false;
     }
+    if (shooter.visible && shooterUntilR && nowR > shooterUntilR) shooter.visible = false;
     for (let i = 0; i < PUFF_N; i++) {
       const s = puffs[i];
       if (s.life <= 0) continue;
@@ -180,17 +202,18 @@ export function createSetPieces({ scene, camera, player, hud }) {
   }
   function update(dt) {
     const SS = window.SS || {}, sim = SS.simTime || 0, bursting = !!SS.bursting;
-    if (bursting && !wasBurst) { state.wave += 1; waveT = sim; firedWave = false; }
+    if (bursting && !wasBurst) { state.wave += 1; waveT = sim; firedWave = false; // A10: a random moment in the wave (4-18 s), ~65% of waves from wave 2; ?rpg=1 keeps 6 s every wave
+      fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 4 + Math.random() * 14 : -1; }
     wasBurst = bursting;
     if (flying) stepFlight(sim);
     stepVfx(dt || 0);
     truck.update(dt || 0, sim);
     ambient.update(dt || 0, sim);
     const waveOn = !!(SS.running && player.alive && bursting && ((SS.engaged | 0) > 0));
-    if (flying || !waveOn || firedWave || sim - waveT < 6) return;
+    if (flying || !waveOn || firedWave || fireAt < 0 || sim - waveT < fireAt) return;
     if (truck.state.phase === 'drive' || truck.state.phase === 'crash') return; // 5c: never an RPG on top of the truck tell
-    if (forced) { launchNow(sim); return; }
-    if (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < (dt || 0) * 0.12) launchNow(sim);
+    if (SS.setPieceAt != null && sim - SS.setPieceAt < 8) return; // A10: one shared set-piece gap (RPG / truck / grenade)
+    launchNow(sim);
   }
   function debugRpg() { return launchNow((window.SS && window.SS.simTime) || 0); }
   function debugTruck() { return truck.debugTruck(); }

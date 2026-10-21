@@ -70,13 +70,13 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     const T = Math.max((cz - sz) / 22, 1.6);
     const rig = build(); rig.g.position.set(sx, 0, sz); scene.add(rig.g);
     const rec = { startSim: sim, startR: performance.now(), crashSim: null, crashR: null, dmg: 0, hpBefore: player.health, dist: 0, fighters: 0, model: rig.model };
-    state.count += 1; state.phase = 'drive'; firedWave = true;
+    state.count += 1; state.phase = 'drive'; firedWave = true; if (window.SS) window.SS.setPieceAt = sim;
     run = { phase: 'drive', sx, sz, cx, cz, side, T, startSim: sim, startR: rec.startR, warned: false, rec, crashSim: 0, g: rig.g, lampMat: rig.lampMat, glows: rig.glows, spot: rig.spot };
     publish(); faceGlows(); tell(rig.g.position, T);
     return rec;
   }
   function crash(sim) {
-    run.phase = 'crash'; state.phase = 'crash'; run.crashSim = sim;
+    run.phase = 'crash'; state.phase = 'crash'; run.crashSim = sim; if (window.SS) window.SS.setPieceAt = sim;
     run.g.position.set(run.cx, 0, run.cz); run.g.rotation.set(0, 0.6, 0.25);
     run.lampMat.color.setHex(0x554430);
     for (let i = 0; i < run.glows.length; i++) run.glows[i].visible = false;
@@ -143,7 +143,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (run && run.phase === 'drive') stepDrive(sim);
     else if (run && run.phase === 'crash' && sim - run.crashSim >= 0.6) bail();
     else if (run && run.phase === 'wreck' && camera.position.z < run.cz - 25) { scene.remove(run.g); run = null; state.phase = 'idle'; }
-    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay) start(sim);
+    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt < 8)) start(sim); // A10: shared set-piece gap
   }
   function debugTruck() { return start((window.SS && window.SS.simTime) || 0); }
   return { update, debugTruck, state };
