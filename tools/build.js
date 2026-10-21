@@ -7,6 +7,8 @@ const walk = d => fs.existsSync(P(d)) ? fs.readdirSync(P(d), { withFileTypes: tr
 (async () => {
   const srcs = [...walk('src'), 'index.html', 'style.css', 'tools/build.js'].sort();
   const inHash = crypto.createHash('sha1'); srcs.forEach(f => inHash.update(f + fs.readFileSync(P(f))));
+  // assets are part of the key too (name + size + mtime; .json by content): a new assets/models/windows.json was never copied
+  walk('assets').sort().forEach(f => { const st = fs.statSync(P(f)); inHash.update(f.endsWith('.json') ? f + fs.readFileSync(P(f)) : f + st.size + ':' + st.mtimeMs); });
   const key = inHash.digest('hex'), cache = P('.buildcache');
   if (!process.argv.includes('--force') && fs.existsSync(cache) && fs.readFileSync(cache, 'utf8') === key && fs.existsSync(P('dist/index.html'))) { console.log('build: cached, inputs unchanged'); return; }
   fs.rmSync(P('dist'), { recursive: true, force: true }); fs.mkdirSync(P('dist'));
