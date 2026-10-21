@@ -113,3 +113,9 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - New tests (unrun): test/bld4-shots.js, test/perf-bld4.js.
 - 4e art rooms (4c2 cut exists, never seen): prompts tools/prompts/step4/4e0 plan + 4e1 windows over the opening, 4e2 atlas
   palette linings, 4e3 merge room meshes, 4e4 clip-loop cost + ?rooms=0. Run step4-runs.sh first (baseline), then 4e1-4e4, then again.
+
+## A12 (Oct 21, preview A12 = ss-ba04818a30 on 8850)
+- RPG starvation: launch needed SS.bursting (8-14 s spawn window) -> truck tell/crash + 8 s gap + starved grenade pushed it past the window every wave. Now gated on SS.waveActive; a starved grenade holds it <= 6 s. rpg-forced Low PASS 6/6 waves.
+- FORCED tag top-right; bldg4 end walls capped (the "black and white panel" = stretched Meshy soot end wall); camera personal space 2.4 m push / 1.0 m hide.
+- Flank rifle 19 = base rifle damage (18-22 by difficulty) without the 0.6 ducked softening (flank rule, A8): intended.
+- windows.json: tool fixed (units, +Z, recesses) but PROVISIONAL (4/6/4/2 windows) - 4b tuning pass needed before 4e.
