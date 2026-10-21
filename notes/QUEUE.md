@@ -55,3 +55,13 @@ Open: strafe coverage at 26 m (78% vs 90%), crouch-head hit-volume trim (10-14 c
 - 4c rooms exist only on procedural buildings (Low / Ultra-low off / ?bld=4p); art buildings on High need a cut or a separate room shell (follow-up).
 - Enemy use of rooms: a 'room' cover point is pushed inside each room but no AI type list uses it yet ('door' would trigger left/right peeks into the 0.3 m jambs). Follow-up: a 'room' behaviour (stand back in the shadow, fire through the doorway, no sidesteps).
 - Cost: ~22 meshes per room (addBox per piece), <= 1 room per segment at 35%; merge per material if the perf run shows it.
+
+## A8 (queued Oct 21 11:44 AM ET; blocked: account out of Grok Bot usage)
+App PM ruling (Oct 21, tuning call): ducked behind solid cover = NO direct hits from the front arc.
+Damage while ducked only from (a) a flanker with a clear line: FLANKED cue + hit arc, 1-2 s tell before its first hit;
+(b) set-piece blasts with ~1 s warning. Keep the exposed ramp high. Enemies flank now and then so hiding forever isn't safe.
+Pressure while ducked = suppression (cracks, cover-lip dust/chips, shake).
+Also from the A7 test: cover-lip/wall-behind impacts and shake not seen (hold >= 2 frames/250 ms); visible arc wedge + flinch;
+full-screen flash ~60%; Low wall dust still a pale 25 px puff (check the Low path, game-time lifetime; verify by screenshot at 15 m);
+a small ducked/exposed HUD indicator. Tester feel sessions: Ultra-low (~40 fps) + one short Low visual pass.
+Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, perf) and the art-building rooms follow-up.
