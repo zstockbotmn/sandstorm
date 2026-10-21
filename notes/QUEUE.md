@@ -80,3 +80,8 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - 3 RPG reads at range (1.6x, motor core+halo, raycast-checked roof/window/alley launch) - 94e28f2; smoke was invisible (light on beige) -> dark 0x4f4943, real-time puff life - 0fd0f45, 7670ed1
 - runs: threat Ultra-low (real) PASS x2; walldust15 Low PASS; rpg-wave Low (real wave sp=5&rpg=1, haze shot, escape + no-escape grenade) PASS
 - next: 5c truck moment, 5d quiet-stretch texture, 5e pressure curve, 5f tests
+
+## Step 5 status (2026-10-21 2:35 PM ET)
+- 5c truck moment: 2f432bd (code only, not yet run). Needs: a ?sp=5&truck=1 run (Low + Ultra-low): headlights face the camera (Kenney truck_mil front = +z?), tell >= 1.2 s, crash clear of colliders/props, 1-2 fighters re-path from the wreck, dmg <= 20 & >= 5 HP, no RPG overlap.
+- 5d quiet-stretch texture: prompt rewritten (fire, radio chatter, dog, door slam, far heli; ambient director only with no wave and no live enemy, >= 6 s after a wave); NOT run yet (did not fit the 30-min chunk).
+- 5e pressure curve: NEXT CHUNK (prompt tools/prompts/step5/5e-pressure-curve.txt; review it against the RPG/truck/ambient timings first).
