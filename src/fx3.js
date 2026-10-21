@@ -591,13 +591,23 @@ const SKY_N = 12, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.15
     publish();
   }
 
+  let nmLast = -1e9, nmGap = 1.5;
   function nearMiss(point, dir) {
     let dx = 0, dy = 0, dz = 0;
     if (dir) { dx = +dir.x || 0; dy = +dir.y || 0; dz = +dir.z || 0; }
     const inCover = typeof window !== 'undefined' && window.SS && window.SS.input && window.SS.input.cover;
-    kick('impact', inCover ? 1.6 : 1.1); // A6: 0.6 (~0.17 deg) was not felt; still well under the blast shake
+    // A11 (tester: x17-x22 near misses per wave in cover): at most one near miss (kick, crack, dust, log) per 1.5-2 game-s;
+    // a much closer one (< 0.6 m) may cut in after 0.9 s. Closer = louder crack and a bigger kick (0.55..1 by 1.5 m -> 0 m).
+    const S = typeof window !== 'undefined' ? window.SS : null, simNow = (S && S.simTime) || 0;
+    const dNear = point ? Math.hypot(point.x - camera.position.x, point.y - camera.position.y, point.z - camera.position.z) : 1.5;
+    if (simNow < nmLast) nmLast = -1e9; // new run: the sim clock restarted
+    const since = simNow - nmLast;
+    if (since < nmGap && !(dNear < 0.6 && since >= 0.9)) { if (S) S.nearMissSkipped = (S.nearMissSkipped | 0) + 1; return; }
+    nmLast = simNow; nmGap = 1.5 + Math.random() * 0.5;
+    const loud = 0.55 + 0.45 * Math.max(0, Math.min(1, 1 - dNear / 1.5));
+    kick('impact', (inCover ? 1.6 : 1.1) * (0.7 + 0.3 * loud)); // A6: 0.6 (~0.17 deg) was not felt; still well under the blast shake
     // A6: there never was an audio.whizz, so near misses were silent and unlogged; use the supersonic crack (+ whizz sweep)
-    if (audio && typeof audio.whizz === 'function') audio.whizz(point); else if (audio && typeof audio.crack === 'function' && point) audio.crack(point);
+    if (audio && typeof audio.whizz === 'function') audio.whizz(point); else if (audio && typeof audio.crack === 'function' && point) audio.crack(point, loud);
     if (audio && typeof audio.log === 'function') audio.log('near miss', (typeof window !== 'undefined' && window.SS && window.SS.input && window.SS.input.cover) ? 'in cover' : '');
     if (typeof window !== 'undefined' && window.SS) { window.SS.nearMisses = (window.SS.nearMisses | 0) + 1; if (window.SS.input && window.SS.input.cover) window.SS.coverNearMisses = (window.SS.coverNearMisses | 0) + 1; }
     if (!point || poolCap() <= 0 || qName() === 'ultra-low') return; // Ultra-low: chips on impacts only, no near-miss dust

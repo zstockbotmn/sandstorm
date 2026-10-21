@@ -203,10 +203,10 @@ export function createAudio() {
   }
 
   // m1v: supersonic crack for fire from outside the view (sharp high snap, panned to the shooter's side)
-  function crack(pos) {
+  function crack(pos, vol) {
     if (!ctx) return;
     // m1w: tester heard no crack (a 35 ms >4.2 kHz burst under the enemy report): longer, louder, lower snap + a whizz sweep
-    const p = panNode(bearing(pos) * 1.2); const g = ctx.createGain(); g.gain.value = 0.95; p.connect(g); g.connect(master);
+    const p = panNode(bearing(pos) * 1.2); const g = ctx.createGain(); g.gain.value = 0.95 * (vol == null ? 1 : vol); p.connect(g); g.connect(master);
     burst(0.06, 0.9, 3000, 1.0, 'highpass', p); burst(0.11, 0.45, 1700, 1.6, 'bandpass', p);
     try { const o = ctx.createOscillator(), og = envGain(0.12, 0.16, p); o.type = 'sawtooth'; o.frequency.setValueAtTime(2600, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(700, ctx.currentTime + 0.16); o.connect(og); o.start(); o.stop(ctx.currentTime + 0.2); } catch (_) {}
     if (window.SS) window.SS.cracks = (window.SS.cracks | 0) + 1;
