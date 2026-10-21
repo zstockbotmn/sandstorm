@@ -482,6 +482,28 @@ export function createWorld(scene, seed) {
   }
   let plankMat = null;
   const _ppO = new THREE.Vector3(), _ppD = new THREE.Vector3(0, 0, -1);
+  // A12 tester ("a large black and white square panel at the left edge"): bldg4 (the burnt ruin) has Meshy end walls
+  // (local +-X) that are one flat, stretched soot texel patch, read as a floating panel up close at a lot edge. Cap each
+  // end with a plain ruin-grey board shaped to the real mass (raycast in raw local space once per model, cached).
+  const _capCache = {}, _capMat = new THREE.MeshStandardMaterial({ color: 0xa9a297, roughness: 1, metalness: 0 });
+  const _capD = new THREE.Vector3(), _capO = new THREE.Vector3();
+  function endCaps(model, raw, name) {
+    let spec = _capCache[name];
+    if (!spec) { spec = _capCache[name] = [];
+      const d = raw.max.z - raw.min.z, h = raw.max.y - raw.min.y, w = raw.max.x - raw.min.x;
+      for (const e of [-1, 1]) { let top = 0, z0 = Infinity, z1 = -Infinity, n = 0; const ds = [];
+        for (let i = 0; i < 5; i++) for (let j = 0; j < 10; j++) {
+          const z = raw.min.z + d * (0.06 + 0.88 * i / 4), y = raw.min.y + h * (0.04 + 0.92 * j / 9);
+          _capO.set(e > 0 ? raw.max.x + 0.5 : raw.min.x - 0.5, y, z); _capD.set(-e, 0, 0); _rc.set(_capO, _capD); _rc.far = 0.5 + w * 0.12;
+          const hit = _rc.intersectObject(model, true)[0]; if (hit) { n++; ds.push(hit.distance); top = Math.max(top, y); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } }
+        ds.sort((a, b) => a - b); const xd = ds.length ? ds[Math.floor(ds.length * 0.3)] - 0.5 : 0; // the wall plane (30th pct), not the rubble-padded bbox
+        if (n >= 4) spec.push({ e, xd, top: Math.min(raw.max.y, top + h * 0.05), z0: Math.max(raw.min.z, z0 - d * 0.06), z1: Math.min(raw.max.z - d * 0.04, z1 + d * 0.06) }); } }
+    const out = [];
+    for (const c of spec) { const t = (raw.max.x - raw.min.x) * 0.006;
+      const m = new THREE.Mesh(boxGeo, _capMat); m.scale.set(t, c.top - raw.min.y, c.z1 - c.z0);
+      m.position.set(c.e > 0 ? raw.max.x - c.xd + t / 2 : raw.min.x + c.xd - t / 2, (raw.min.y + c.top) / 2, (c.z0 + c.z1) / 2); m.name = 'endCap'; m.receiveShadow = true; out.push(m); }
+    return out;
+  }
   function plankPatch(model, raw, s, yMul) {
     const P = (window.SS && window.SS.plankPatch) || [0.5, 0.97, 0.0, 0.31]; // x0, x1, y0, y1 as fractions of the raw bbox
     const w = raw.max.x - raw.min.x, h = raw.max.y - raw.min.y;
@@ -521,6 +543,7 @@ export function createWorld(scene, seed) {
     const patch = name === 'bldg2' ? plankPatch(model, raw, s, yMul) : null;
     model.scale.set(s, s * yMul, s);
     if (patch) model.add(patch);
+    if (name === 'bldg4') for (const c of endCaps(model, raw, name)) model.add(c);
     // bldg3's Meshy texture bakes AI-gibberish shop lettering ('NAIVATS'); the glyphs are not mirrored, so a UV flip
     // would make it worse. Cover the main sign board with a readable painted sign instead.
     if (name === 'bldg3') model.add(shopSign(raw));
@@ -535,6 +558,7 @@ export function createWorld(scene, seed) {
     model.position.z += cz - (box.min.z + box.max.z) * 0.5;
     model.updateMatrixWorld(true);
     box = new THREE.Box3().setFromObject(model);
+    model.name = 'art_' + name; model.userData.side = side; // A12 probes
     seg.group.add(model);
     if (BLD4) { model.traverse((o) => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(roomClipPatch); }); shellMats.forEach(roomClipPatch); roomClipPatch(roofMat); }
     // Collider = the real building mass, not the bbox: the bbox front includes awnings/balconies and its top is above
