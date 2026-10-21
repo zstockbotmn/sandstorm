@@ -62,7 +62,7 @@ function plasterish(surface) {
 export function createFx3({ camera, audio, scene }) {
   const kicks = [];
   let time = 0;
-  const dbg = { kicks: 0, last: null, muffle: 0, puffs: { live: 0, pool: 0, spawned: 0 }, skyline: { flashes: 0, tracers: 0, lastZ: null } };
+  const dbg = { kicks: 0, last: null, muffle: 0, puffs: { live: 0, pool: 0, spawned: 0 }, skyline: { flashes: 0, tracers: 0, lastZ: null, inView: 0, occluded: 0, lastFlash: null, lastTracer: null } };
   if (typeof window !== 'undefined') {
     const SS = window.SS || (window.SS = {});
     SS.fx3 = dbg;
@@ -238,8 +238,15 @@ export function createFx3({ camera, audio, scene }) {
   }
 
   // Distant skyline shots. Own 6-slot pools, not the puff cap. Ultra-low still flashes; tracers stay off.
-  const SKY_N = 6, TR_W = 0.22, TR_SPEED = 300; // shots: 0.08 m was sub-pixel at 50-120 m
-  let skyInited = false, flashMesh = null, tracerMesh = null, flashParts = null, tracerParts = null;
+  // A5 shots, on paper (camera y 1.7 looking down the street (-Z), vfov 70, phone ~2.16:1 so hfov ~113; facades at x +-6.2,
+// 11-16 m tall; the street end closes the view at ~7-8 deg above the horizon). A flash at 100 m, x +-10, y 10-22 sat only
+// 3-11 deg up, i.e. behind the street-end rooflines or, off-axis, behind the near facades (which cover any azimuth beyond
+// atan(6.2 / dz)); and 2.4-5 m at 100 m is 8-16 px tall on a 473 px phone view. So: aim by angle, not metres. Azimuth within
+// +-4.5 deg of the street axis (the corridor that stays open to 150 m), elevation 9-17 deg (clear of the street end and the
+// rooflines), 60-150 m out; size scaled with distance to ~30 px, plus a 2.6x soft glow. Spots that a world ray finds blocked
+// are re-rolled (3 tries). Tracers start at the same far distance on one side of the corridor and run across it.
+const SKY_N = 6, TR_W_K = 0.005, TR_SPEED = 170, SKY_AZ = 0.078, SKY_EL0 = 0.157, SKY_EL1 = 0.297, TR_MIN_D = 40;
+  let skyInited = false, glowMesh = null, hemi = null, hemiBase = 0, hemiT = 0, flashMesh = null, tracerMesh = null, flashParts = null, tracerParts = null;
   let flashLive = 0, tracerLive = 0;
   function ensureSky() {
     if (skyInited) return flashMesh;
@@ -264,15 +271,20 @@ export function createFx3({ camera, audio, scene }) {
       opacity: 0.95,
       side: THREE.DoubleSide,
     });
+    const glowMat = new THREE.MeshBasicMaterial({ map: puffTex(), color: 0xffb050, toneMapped: false, transparent: true, opacity: 0.35, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    glowMesh = new THREE.InstancedMesh(geo, glowMat, SKY_N);
+    glowMesh.frustumCulled = false; glowMesh.castShadow = glowMesh.receiveShadow = false; glowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    glowMesh.visible = false; glowMesh.renderOrder = 1;
     flashMesh = new THREE.InstancedMesh(geo, flashMat, SKY_N);
+    flashMesh.renderOrder = 2;
     tracerMesh = new THREE.InstancedMesh(geo, tracerMat, SKY_N);
     flashParts = new Array(SKY_N);
     tracerParts = new Array(SKY_N);
     ss.set(0, 0, 0); qq.identity();
     for (let i = 0; i < SKY_N; i++) {
       flashParts[i] = { i, on: false, pos: new THREE.Vector3(), life: 0, size: 1, seen: 0, mark: -1 };
-      tracerParts[i] = { i, on: false, pos: new THREE.Vector3(), dir: new THREE.Vector3(), life: 0, len: 6, seen: 0, mark: -1 };
-      flashMesh.setMatrixAt(i, m4.compose(vv.set(0, 0, 0), qq, ss));
+      tracerParts[i] = { i, on: false, pos: new THREE.Vector3(), dir: new THREE.Vector3(), life: 0, len: 6, w: 0.5, seen: 0, mark: -1 };
+      flashMesh.setMatrixAt(i, m4.compose(vv.set(0, 0, 0), qq, ss)); glowMesh.setMatrixAt(i, m4);
       tracerMesh.setMatrixAt(i, m4);
     }
     flashMesh.instanceMatrix.needsUpdate = tracerMesh.instanceMatrix.needsUpdate = true;
@@ -282,7 +294,8 @@ export function createFx3({ camera, audio, scene }) {
     flashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     tracerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     flashMesh.visible = tracerMesh.visible = false;
-    if (scn) { scn.add(flashMesh); scn.add(tracerMesh); }
+    if (scn) { scn.add(glowMesh); scn.add(flashMesh); scn.add(tracerMesh);
+      scn.traverse((o) => { if (!hemi && o.isHemisphereLight) hemi = o; }); }
     return flashMesh;
   }
   function grab(parts) {
@@ -314,49 +327,85 @@ export function createFx3({ camera, audio, scene }) {
     _sx.normalize();
     _sz.crossVectors(_sx, _sy).normalize();
     m4.makeBasis(_sx, _sy, _sz);
-    m4.scale(ss.set(TR_W, slot.len, 1));
+    m4.scale(ss.set(slot.w, slot.len, 1));
     m4.setPosition(slot.pos);
     tracerMesh.setMatrixAt(slot.i, m4);
   }
+  // Screen readout: NDC x/y, in view (in front, |ndc| <= 1), approx px height of the flash (debug + test).
+  const _sp = new THREE.Vector3();
+  function project(p, size) {
+    _sp.copy(p).project(camera);
+    const inView = _sp.z < 1 && Math.abs(_sp.x) <= 1 && Math.abs(_sp.y) <= 1;
+    const h = (typeof window !== 'undefined' && window.innerHeight) || 600;
+    const d = camera.position.distanceTo(p), fy = Math.tan((camera.fov || 70) * Math.PI / 360);
+    return { x: +_sp.x.toFixed(3), y: +_sp.y.toFixed(3), inView, px: size ? Math.round(size / (d * fy) * h * 0.5) : 0, d: Math.round(d) };
+  }
+  let skyRay = null; const _sd = new THREE.Vector3();
+  function blocked(p) {
+    const meshes = (typeof window !== 'undefined' && window.SS && window.SS.world && window.SS.world.colliders) || null;
+    if (!meshes || !meshes.length) return false;
+    if (!skyRay) skyRay = new THREE.Raycaster();
+    _sd.copy(p).sub(camera.position); const len = _sd.length(); if (len < 1e-3) return false;
+    skyRay.set(camera.position, _sd.multiplyScalar(1 / len)); skyRay.far = len - 1;
+    return skyRay.intersectObjects(meshes, false).length > 0;
+  }
+  const _fp = new THREE.Vector3();
   function skylineShot(near) {
     if (!camera) return;
     let n = +near;
     if (!(n >= 0)) n = 0; else if (n > 1) n = 1;
     ensureSky();
-    // over the street corridor and above the rooflines (~11 m): at x +-25 / y 3-18 most flashes were hidden behind facades (A5 shots)
-    const x = (Math.random() < 0.5 ? -1 : 1) * (1.5 + Math.random() * 9);
-    const y = 10 + Math.random() * 12;
-    const z = camera.position.z - (120 - 90 * n);
+    // street axis is -Z from the street centre (x 0); distance ahead of the camera 150 m far -> 60 m close
+    const c = camera.position, dz = 150 - 90 * n;
+    let occl = true;
+    for (let k = 0; k < 3 && occl; k++) {
+      const az = (Math.random() * 2 - 1) * SKY_AZ, el = SKY_EL0 + Math.random() * (SKY_EL1 - SKY_EL0);
+      _fp.set(Math.tan(az) * dz, c.y + Math.tan(el) * dz, c.z - dz);
+      occl = blocked(_fp);
+    }
+    const z = _fp.z;
     const slot = grab(flashParts);
     if (!slot.on) flashLive++;
     arm(slot);
-    slot.life = 0.08;
-    slot.size = 2.4 + 2.6 * n; // 1.2 m was ~10 px at 100 m
-    slot.pos.set(x, y, z);
+    slot.life = 0.12;
+    slot.size = dz * (0.07 + 0.03 * n); // ~25-35 px tall on a 473 px phone view at any distance
+    slot.pos.copy(_fp);
     if (camera) qq.copy(camera.quaternion); else qq.identity();
-    flashMesh.setMatrixAt(slot.i, m4.compose(slot.pos, qq, ss.set(slot.size, slot.size, slot.size)));
-    flashMesh.instanceMatrix.needsUpdate = true;
-    flashMesh.visible = true;
+    writeFlash(slot, 1);
+    flashMesh.visible = glowMesh.visible = true;
     dbg.skyline.flashes++;
     dbg.skyline.lastZ = z;
+    const fs = project(slot.pos, slot.size);
+    fs.occluded = occl; dbg.skyline.lastFlash = fs;
+    if (fs.inView && !occl) dbg.skyline.inView++;
+    if (occl) dbg.skyline.occluded++;
+    // light flicker: High only, near fire only, a brief hemisphere bump (no new light, so no shader recompile)
+    if (hemi && n > 0.5 && qName() === 'high') { if (hemiT <= 0) hemiBase = hemi.intensity; hemiT = 0.07; hemi.intensity = hemiBase * (1 + 0.1 * n); }
     if (qName() !== 'ultra-low' && Math.random() < 0.6) {
       const t = grab(tracerParts);
       if (!t.on) tracerLive++;
       arm(t);
-      t.life = 0.25;
-      t.len = 6 + Math.random() * 6;
-      const hy = (Math.random() * 2 - 1) * 0.2;
-      const heading = Math.random() * Math.PI * 2;
-      const horiz = Math.sqrt(Math.max(0, 1 - hy * hy));
-      t.dir.set(Math.cos(heading) * horiz, hy, Math.sin(heading) * horiz);
-      t.pos.set(x, y, z);
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const td = dz * (0.9 + Math.random() * 0.25);
+      // start just outside one edge of the corridor, run across it (mostly sideways, a little toward/away, slight drop)
+      t.pos.set(side * Math.tan(SKY_AZ * 1.2) * td, c.y + Math.tan(SKY_EL0 + Math.random() * 0.08) * td, c.z - td);
+      t.dir.set(-side, -0.04 - Math.random() * 0.05, (Math.random() * 2 - 1) * 0.3).normalize();
+      t.len = td * 0.08; t.w = Math.max(0.35, td * TR_W_K); // ~25 px long, >= 1.5 px wide
+      t.life = Math.min(0.35, (2 * Math.tan(SKY_AZ * 1.2) * td) / TR_SPEED);
       writeTracer(t);
       tracerMesh.instanceMatrix.needsUpdate = true;
       tracerMesh.visible = true;
       dbg.skyline.tracers++;
+      dbg.skyline.lastTracer = { start: project(t.pos, 0), end: project(_fp.copy(t.dir).multiplyScalar(TR_SPEED * t.life).add(t.pos), 0) };
     }
   }
+  function writeFlash(p, k) {
+    flashMesh.setMatrixAt(p.i, m4.compose(p.pos, qq, ss.set(p.size * k, p.size * k, p.size * k)));
+    glowMesh.setMatrixAt(p.i, m4.compose(p.pos, qq, ss.set(p.size * 2.6 * k, p.size * 2.6 * k, p.size * 2.6 * k)));
+    flashMesh.instanceMatrix.needsUpdate = glowMesh.instanceMatrix.needsUpdate = true;
+  }
   function updateSky(pd) {
+    if (hemiT > 0) { hemiT -= pd; if (hemiT <= 0 && hemi) hemi.intensity = hemiBase; }
     if (!skyInited || (flashLive === 0 && tracerLive === 0)) return;
     const fn = puffFrame();
     if (flashLive > 0) {
@@ -368,13 +417,12 @@ export function createFx3({ camera, audio, scene }) {
         p.life -= pd;
         if (p.life <= 0 && p.seen >= 2) {
           p.on = false; flashLive--;
-          flashMesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(0, 0, 0)));
+          writeFlash(p, 0);
           continue;
         }
-        flashMesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(p.size, p.size, p.size)));
+        writeFlash(p, 0.75 + 0.25 * Math.random()); // muzzle flicker
       }
-      flashMesh.instanceMatrix.needsUpdate = true;
-      if (flashLive === 0) flashMesh.visible = false;
+      if (flashLive === 0) flashMesh.visible = glowMesh.visible = false;
     }
     if (tracerLive > 0) {
       const step = TR_SPEED * pd;
@@ -384,7 +432,7 @@ export function createFx3({ camera, audio, scene }) {
         noteSeen(p, fn);
         p.pos.x += p.dir.x * step; p.pos.y += p.dir.y * step; p.pos.z += p.dir.z * step;
         p.life -= pd;
-        if (p.life <= 0 && p.seen >= 2) {
+        if ((p.life <= 0 && p.seen >= 2) || (camera && p.pos.distanceToSquared(camera.position) < TR_MIN_D * TR_MIN_D)) { // never near the camera
           p.on = false; tracerLive--;
           tracerMesh.setMatrixAt(i, m4.compose(p.pos, qq, ss.set(0, 0, 0)));
           continue;
