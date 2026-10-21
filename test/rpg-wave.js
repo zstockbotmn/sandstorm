@@ -20,7 +20,7 @@ const [tier = 'low', out = 'logs/a9/rpg'] = process.argv.slice(2); fs.mkdirSync(
     res.wait = await p.evaluate(async () => { const t0 = performance.now(); while (!(SS.setpiece && SS.setpiece.rpgs > 0) && performance.now() - t0 < 400000) { SS.input.scope = false; if (SS.player.health < 60) SS.player.health = 100; await new Promise((r) => setTimeout(r, 100)); }
       return { ok: !!(SS.setpiece && SS.setpiece.rpgs > 0), sim: +(SS.simTime || 0).toFixed(1), ducked: !!SS.input.cover, nearInCover: SS.coverNearMisses | 0, coverImpacts: SS.coverImpacts | 0 }; });
     if (!res.wait.ok) fail.push('no RPG within the wait');
-    else { res.flight = [await shot('1rpg_launch')]; for (let i = 0; i < 2; i++) { await p.waitForTimeout(250); res.flight.push(await shot('2rpg_flight' + i)); }
+    else { res.flight = [await shot('1rpg_launch')]; for (let i = 0; i < 2; i++) { await p.waitForTimeout(250); res.flight.push(await shot('2rpg_flight' + i)); (res.trail = res.trail || []).push(await p.evaluate(() => SS.setpieces.trailStats())); }
       await p.waitForFunction(() => SS.setpiece.lastRpg && SS.setpiece.lastRpg.impactR, null, { timeout: 30000 }); res.impactShot = await shot('3rpg_impact');
       res.rpg = await p.evaluate(() => ({ ...SS.setpiece.lastRpg, hp: SS.player.health, log: (SS.audioLog || []).slice(-8) }));
       const r = res.rpg; if (!(r.impactR - r.launchR >= 900)) fail.push('tell < 900 ms'); if (r.dmg > 30 || r.hp < 5) fail.push('rpg damage ' + r.dmg); if (r.kind === 'street') res.note = 'launch fell back to mid-street'; }

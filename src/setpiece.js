@@ -22,7 +22,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   });
   const puffs = [];
   for (let i = 0; i < PUFF_N; i++) {
-    const mat = puff(0xb8b0a4, 0), mesh = new THREE.Mesh(geo, mat);
+    const mat = puff(0x4f4943, 0), mesh = new THREE.Mesh(geo, mat);
     mesh.visible = false; mesh.frustumCulled = false; scene.add(mesh);
     puffs.push({ mesh, mat, life: 0 });
   }
@@ -60,7 +60,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     let s = puffs[0];
     for (let i = 0; i < PUFF_N; i++) if (puffs[i].life <= 0) { s = puffs[i]; break; }
     s.life = PUFF_LIFE; s.mesh.visible = true; s.mesh.position.copy(p);
-    s.mesh.scale.setScalar(1.0); s.mat.opacity = 0.85; s.mesh.lookAt(camera.position);
+    s.mesh.scale.setScalar(1.0); s.mat.opacity = 0.75; s.mesh.lookAt(camera.position);
   }
   function trail(a, b) {
     dir.subVectors(b, a);
@@ -170,7 +170,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
       if (s.life <= 0) continue;
       s.life -= dt;
       const u = Math.max(0, s.life / PUFF_LIFE);
-      s.mesh.scale.setScalar(1.0 + 1.6 * (1 - u)); s.mat.opacity = 0.85 * Math.min(1, u * 1.6); s.mesh.lookAt(camera.position);
+      s.mesh.scale.setScalar(1.0 + 1.6 * (1 - u)); s.mat.opacity = 0.75 * Math.min(1, u * 1.6); s.mesh.lookAt(camera.position);
       if (s.life <= 0) s.mesh.visible = false;
     }
   }
@@ -186,5 +186,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     if (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < (dt || 0) * 0.12) launchNow(sim);
   }
   function debugRpg() { return launchNow((window.SS && window.SS.simTime) || 0); }
-  return { update, debugRpg, state };
+  function trailStats() { let live = 0, vis = 0, op = 0, near = 1e9, far = 0; for (const q of puffs) { if (q.life > 0) live++; if (q.mesh.visible) { vis++; op = Math.max(op, q.mat.opacity); const d = q.mesh.position.distanceTo(camera.position); near = Math.min(near, d); far = Math.max(far, d); } } return { live, vis, op: +op.toFixed(2), near: +near.toFixed(1), far: +far.toFixed(1), inScene: !!puffs[0].mesh.parent }; }
+  function probe(dist) { const f = new THREE.Vector3(); camera.getWorldDirection(f); const q = puffs[0]; q.life = 99; q.mesh.visible = true; q.mesh.position.copy(camera.getWorldPosition(new THREE.Vector3())).addScaledVector(f, dist || 4); q.mesh.scale.setScalar(1.5); q.mat.opacity = 0.85; q.mesh.lookAt(camera.position); return { pos: q.mesh.position.toArray().map((v) => +v.toFixed(1)), depthTest: q.mat.depthTest, layers: q.mesh.layers.mask, camLayers: camera.layers.mask, ro: q.mesh.renderOrder, parent: q.mesh.parent && q.mesh.parent.type }; }
+  return { update, debugRpg, state, trailStats, probe };
 }
