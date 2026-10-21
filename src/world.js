@@ -21,6 +21,21 @@ function windowMaterial() {
 }
 let WIN_TABLE = null;
 if (BLD4 && typeof fetch !== 'undefined') fetch('assets/models/windows.json').then((r) => (r.ok ? r.json() : null)).then((j) => { WIN_TABLE = j || {}; }).catch(() => { WIN_TABLE = {}; });
+const ROOM_N = 8;
+const ROOM_UA = { value: Array.from({ length: ROOM_N }, () => new THREE.Vector3(1e9, 1e9, 1e9)) }, ROOM_UB = { value: Array.from({ length: ROOM_N }, () => new THREE.Vector3(-1e9, -1e9, -1e9)) };
+const ROOMS = new Map();
+function syncRoomClip() { let i = 0; for (const b of ROOMS.values()) { if (i >= ROOM_N) break; ROOM_UA.value[i].copy(b.min); ROOM_UB.value[i].copy(b.max); i++; } for (; i < ROOM_N; i++) { ROOM_UA.value[i].set(1e9, 1e9, 1e9); ROOM_UB.value[i].set(-1e9, -1e9, -1e9); } }
+function roomClipPatch(mat) {
+  if (!mat || mat.userData.roomClip) return;
+  mat.userData.roomClip = true; const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
+    sh.uniforms.uRA = ROOM_UA; sh.uniforms.uRB = ROOM_UB;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vClipW;').replace('#include <project_vertex>', '#include <project_vertex>\nvClipW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vClipW;\nuniform vec3 uRA[' + ROOM_N + '];\nuniform vec3 uRB[' + ROOM_N + '];').replace('void main() {', 'void main() {\n  for (int i = 0; i < ' + ROOM_N + '; i++) { if (all(greaterThan(vClipW, uRA[i])) && all(lessThan(vClipW, uRB[i]))) discard; }');
+  };
+  const pk = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => ''; mat.customProgramCacheKey = () => pk() + '|roomclip'; mat.needsUpdate = true;
+}
 
 const DRAW_AHEAD = Q.drawAhead;  // segments wholly beyond this (fogged out anyway) are not drawn
 const DRAW_BEHIND = 20;
@@ -521,9 +536,11 @@ export function createWorld(scene, seed) {
     model.updateMatrixWorld(true);
     box = new THREE.Box3().setFromObject(model);
     seg.group.add(model);
+    if (BLD4) { model.traverse((o) => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(roomClipPatch); }); shellMats.forEach(roomClipPatch); roomClipPatch(roofMat); }
     // Collider = the real building mass, not the bbox: the bbox front includes awnings/balconies and its top is above
     // the roof, so door-front and roof enemies stood INSIDE the invisible box and every shot hit the box (false misses).
     const roofEarly = ROOF_OK[name] ? findRoof(model, box, side, facadeX, cz) : null;
+    let pending = null;
     {
       const fx0 = side < 0 ? box.max.x : box.min.x, depthAll = box.max.x - box.min.x, d = [];
       const dir = new THREE.Vector3(side, 0, 0);
@@ -536,12 +553,14 @@ export function createWorld(scene, seed) {
       const wallIn = Math.min(depthAll * 0.6, Math.max(0, d[Math.floor(d.length * 0.5)] - 0.05));
       const front = fx0 + side * wallIn, back = side < 0 ? box.min.x : box.max.x;
       const top = roofEarly ? Math.min(box.max.y, roofEarly.y - 0.17) : box.max.y;
-      const col = addInvisibleBox(seg, (front + back) * 0.5, (box.min.y + top) * 0.5, (box.min.z + box.max.z) * 0.5, Math.abs(back - front), top - box.min.y, box.max.z - box.min.z); col.name = 'building';
-      col.userData.building = true;
+      const artRoom = BLD4 && !ULTRA && seg.originZ < -30 && !seg._roomDone && (box.max.z - box.min.z) >= 7 && seg._wrng() < 0.35;
+      if (artRoom) pending = { front, back, top, z0: box.min.z, z1: box.max.z };
+      else { const col = addInvisibleBox(seg, (front + back) * 0.5, (box.min.y + top) * 0.5, (box.min.z + box.max.z) * 0.5, Math.abs(back - front), top - box.min.y, box.max.z - box.min.z); col.name = 'building'; col.userData.building = true; }
     }
     const spanZ = Math.max(0.5, box.max.z - box.min.z);
     const doorZ = box.min.z + (0.12 + rng() * 0.76) * spanZ;
     doors.push(doorZ);
+    if (pending) { if (addRoom(seg, side, 0, 0, 0, 0, 0, pending.front, doorZ, pending)) seg._roomDone = true; else { const col = addInvisibleBox(seg, (pending.front + pending.back) * 0.5, (box.min.y + pending.top) * 0.5, (pending.z0 + pending.z1) * 0.5, Math.abs(pending.back - pending.front), pending.top - box.min.y, pending.z1 - pending.z0); col.name = 'building'; col.userData.building = true; } }
     if (seg._wins && WIN_TABLE && WIN_TABLE[name] && Array.isArray(WIN_TABLE[name].windows)) {
       const spec = WIN_TABLE[name];
       const f = spec.face;
@@ -641,7 +660,7 @@ export function createWorld(scene, seed) {
     while (seg.group.children.length) { const ch = seg.group.children[0]; if (ch.userData.ownGeo && ch.geometry) ch.geometry.dispose(); seg.group.remove(ch); }
 
     const rng = mulberry32((seed ^ Math.imul(seg.gen + 1, 0x9e3779b1) ^ Math.imul(seg.id + 1, 0x85ebca6b)) >>> 0);
-    if (BLD4) { seg._wins = []; seg._artWinN = 0; seg._roomDone = false; seg._wrng = mulberry32((seed ^ Math.imul(seg.gen + 11, 0x2c1b3c6d) ^ Math.imul(seg.id + 5, 0x297a2d39)) >>> 0); } else seg._wins = null;
+    if (BLD4) { seg._wins = []; seg._artWinN = 0; seg._roomDone = false; if (ROOMS.delete(seg.id)) syncRoomClip(); seg._wrng = mulberry32((seed ^ Math.imul(seg.gen + 11, 0x2c1b3c6d) ^ Math.imul(seg.id + 5, 0x297a2d39)) >>> 0); } else seg._wins = null;
     const oz = seg.originZ;
 
     addBox(seg, matRoad, 0, -0.05, oz - SEG_LEN / 2, 10, 0.1, SEG_LEN, { cast: false });
@@ -710,15 +729,24 @@ export function createWorld(scene, seed) {
     }
   }
 
-  function addRoom(seg, side, cx, cz, depth, h, lot, facadeX, doorZ) {
-    const W = Math.min(3.6, lot - 2.4), RH = 3, L = lot - 0.35, z0 = cz - L / 2, z1 = cz + L / 2;
+  function addRoom(seg, side, cx, cz, depth, h, lot, facadeX, doorZ, art) {
+    if (art && Math.abs(art.back - art.front) < 4.4) return false;
+    if (art) facadeX = art.front;
+    const W = Math.min(3.6, (art ? art.z1 - art.z0 : lot) - 2.4), RH = 3, L = art ? art.z1 - art.z0 : lot - 0.35, z0 = art ? art.z0 : cz - L / 2, z1 = art ? art.z1 : cz + L / 2;
     const zc = Math.max(z0 + W / 2 + 0.3, Math.min(z1 - W / 2 - 0.3, doorZ));
     const X = (a) => facadeX + side * a, nc = { collide: false, cast: false };
-    addBox(seg, matPlaster, cx, (RH + h) / 2, cz, depth, h - RH, L);
-    if (depth - 3.8 >= 0.2) addBox(seg, matPlaster, X((3.8 + depth) / 2), RH / 2, cz, depth - 3.8, RH, L);
+    const solid = (x, y, z, sx, sy, sz) => { if (!art) return addBox(seg, matPlaster, x, y, z, sx, sy, sz); const m = addInvisibleBox(seg, x, y, z, sx, sy, sz); m.name = 'building'; m.userData.building = true; };
+    if (art) {
+      const span = Math.abs(art.back - art.front), zm = (z0 + z1) / 2;
+      solid(X(span / 2), (RH + art.top) / 2, zm, span, art.top - RH, L);
+      solid(X((3.8 + span) / 2), RH / 2, zm, span - 3.8, RH, L);
+    } else {
+      solid(cx, (RH + h) / 2, cz, depth, h - RH, L);
+      if (depth - 3.8 >= 0.2) solid(X((3.8 + depth) / 2), RH / 2, cz, depth - 3.8, RH, L);
+    }
     for (let s = 0; s < 2; s++) {
       const za = s ? zc + W / 2 : z0, zb = s ? z1 : zc - W / 2;
-      if (zb - za >= 0.05) addBox(seg, matPlaster, X(1.9), RH / 2, (za + zb) / 2, 3.8, RH, zb - za);
+      if (zb - za >= 0.05) solid(X(1.9), RH / 2, (za + zb) / 2, 3.8, RH, zb - za);
     }
     const jw = W / 2 - 0.6;
     if (jw >= 0.05) {
@@ -747,6 +775,12 @@ export function createWorld(scene, seed) {
     }
     seg.coverPoints.push({ pos: new THREE.Vector3(X(1.0), 1.2, zc + 0.9), type: 'room' });
     if (typeof window !== 'undefined' && window.SS) window.SS.bld4rooms = (window.SS.bld4rooms | 0) + 1;
+    if (art) {
+      const x0 = facadeX - side * 0.08, x1 = facadeX + side * 3.85;
+      ROOMS.set(seg.id, { min: new THREE.Vector3(Math.min(x0, x1), -0.1, zc - W / 2 + 0.01), max: new THREE.Vector3(Math.max(x0, x1), RH - 0.01, zc + W / 2 - 0.01) });
+      syncRoomClip();
+    }
+    return true;
   }
 
   function buildSide(seg, rng, side, oz) {
