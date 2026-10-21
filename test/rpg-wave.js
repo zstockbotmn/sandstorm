@@ -29,6 +29,9 @@ const [tier = 'low', out = 'logs/a9/rpg'] = process.argv.slice(2); fs.mkdirSync(
     res.hazeShot = await shot('4ducked_haze'); res.haze = await p.evaluate(() => ({ ducked: !!SS.input.cover, live: SS.fx3 && SS.fx3.puffs.live, coverImpacts: SS.coverImpacts | 0, near: SS.coverNearMisses | 0 }));
     // grenade under set-piece rules at 40 HP
     res.nade = await p.evaluate(async () => { SS.player.health = 40; const ok = SS.enemies.debugGrenade(); const t0 = performance.now(); const n0 = SS.lastGrenade; while (SS.lastGrenade === n0 && performance.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100)); return { thrown: ok, ...(SS.lastGrenade || {}), hp: SS.player.health }; });
+    // no-escape grenade (debug: cover does not relocate) at 20 HP: must hit, capped, and leave >= 5 HP
+    res.nadeStay = await p.evaluate(async () => { SS.player.health = 20; const ok = SS.enemies.debugGrenade(true); const t0 = performance.now(); const n0 = SS.lastGrenade; while (SS.lastGrenade === n0 && performance.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100)); return { thrown: ok, ...(SS.lastGrenade || {}), hp: SS.player.health }; });
+    if (res.nadeStay.thrown && (res.nadeStay.dmg > 30 || res.nadeStay.hp < 5 || !(res.nadeStay.dmg > 0))) fail.push('grenade stay ' + JSON.stringify(res.nadeStay));
     if (res.nade.thrown) { if (res.nade.dmg > 30 || (res.nade.hpBefore >= 5 && res.nade.hp < 5)) fail.push('grenade ' + JSON.stringify(res.nade)); } else res.nadeNote = 'no live enemy to throw';
     res.errs = errs; if (errs.length) fail.push('errors');
   } finally { await b.close(); srv.close(); }

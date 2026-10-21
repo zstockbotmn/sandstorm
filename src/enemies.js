@@ -2857,11 +2857,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Visible grenade (tester: the camera turned with no visible grenade): red blinking warning ring where it lands.
   const nadeRingMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }); const nadeRingGeo = new THREE.RingGeometry(0.35, 0.55, 24);
   const nades = []; let nadeThisWave = false, campT = 0;
-  function throwGrenade(e) {
+  function throwGrenade(e, stay) {
     const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
     const from = e.group.position.clone().setY(e.group.position.y + 1.6);
     const to = camera.position.clone().setY(0.1); to.x += (Math.random() - 0.5) * 1.2; to.z -= 0.6 + Math.random() * 0.6;
-    nades.push({ m, from, to, t: 0, flight: 1.1, fuse: 2.4, landed: false });
+    nades.push({ m, from, to, t: 0, flight: 1.1, fuse: 2.4, landed: false, stay: !!(stay) }); // stay: debug only (test the cap with no escape)
     squadCall('Grenade!'); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('GRENADE! Moving cover');
     if (window.SS) window.SS.grenades = (window.SS.grenades | 0) + 1;
   }
@@ -2874,7 +2874,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     for (let i = nades.length - 1; i >= 0; i--) { const n = nades[i]; n.t += dt;
       if (!n.landed) { const k = Math.min(1, n.t / n.flight); n.m.position.lerpVectors(n.from, n.to, k); n.m.position.y += Math.sin(k * Math.PI) * 3.2;
-        if (k >= 1) { n.landed = true; n.t = 0; n.ring = new THREE.Mesh(nadeRingGeo, nadeRingMat); n.ring.rotation.x = -Math.PI / 2; n.ring.position.copy(n.to).setY(0.05); n.ring.renderOrder = 4; scene.add(n.ring); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('GRENADE! Moving cover'); if (cov && cov.relocate) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
+        if (k >= 1) { n.landed = true; n.t = 0; n.ring = new THREE.Mesh(nadeRingGeo, nadeRingMat); n.ring.rotation.x = -Math.PI / 2; n.ring.position.copy(n.to).setY(0.05); n.ring.renderOrder = 4; scene.add(n.ring); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('GRENADE! Moving cover'); if (cov && cov.relocate && !n.stay) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
       else if (n.ring && n.t < n.fuse) { n.ring.visible = Math.floor(n.t * 6) % 2 === 0; }
       if (n.landed && n.t >= n.fuse) { if (n.ring) { scene.remove(n.ring); n.ring = null; }
         for (let j = 0; j < 4; j++) muzzleFlash(n.m.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)));
@@ -3232,7 +3232,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       new THREE.Mesh(new THREE.CircleGeometry(0.1, 6), new THREE.MeshBasicMaterial({ color: 0x4a0808, transparent: true, opacity: 0.82, depthWrite: false })));
     return g; };
   api.debugTruck = () => startTruck();
-  api.debugGrenade = () => { const th = list.find((e) => e.alive); if (th) throwGrenade(th); return !!th; };
+  api.debugGrenade = (stay) => { const th = list.find((e) => e.alive); if (th) throwGrenade(th, stay); return !!th; };
   api.debugRoof = () => spawnOne('roof');
   api.tracerState = () => tracers.map((t) => ({ vis: !!t.line.visible, life: t.life, a: t.line.geometry.attributes.position.array.slice(0, 6) })); // tests (m1w)
   api.debugShoot = (e) => enemyShoot(e); // tests: one real enemy shot (all gates apply)

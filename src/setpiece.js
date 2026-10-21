@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const FLIGHT_S = 1.1, FLIGHT_MS = 900, PUFF_N = 72, PUFF_LIFE = 2.2, PUFF_STEP = 0.35; // A9: thicker, longer trail (reads at 24-38 m on Low)
+const FLIGHT_S = 1.1, FLIGHT_MS = 900, PUFF_N = 72, PUFF_LIFE = 2.6, PUFF_STEP = 0.35; // A9: thicker, longer trail (reads at 24-38 m on Low)
 
 function roundTex() {
   const c = document.createElement('canvas');
@@ -22,7 +22,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   });
   const puffs = [];
   for (let i = 0; i < PUFF_N; i++) {
-    const mat = puff(0x8a847a, 0), mesh = new THREE.Mesh(geo, mat);
+    const mat = puff(0xb8b0a4, 0), mesh = new THREE.Mesh(geo, mat);
     mesh.visible = false; mesh.frustumCulled = false; scene.add(mesh);
     puffs.push({ mesh, mat, life: 0 });
   }
@@ -60,7 +60,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     let s = puffs[0];
     for (let i = 0; i < PUFF_N; i++) if (puffs[i].life <= 0) { s = puffs[i]; break; }
     s.life = PUFF_LIFE; s.mesh.visible = true; s.mesh.position.copy(p);
-    s.mesh.scale.setScalar(0.5); s.mat.opacity = 0.75; s.mesh.lookAt(camera.position);
+    s.mesh.scale.setScalar(1.0); s.mat.opacity = 0.85; s.mesh.lookAt(camera.position);
   }
   function trail(a, b) {
     dir.subVectors(b, a);
@@ -157,7 +157,10 @@ export function createSetPieces({ scene, camera, player, hud }) {
     trail(prev, pos); prev.copy(pos); aimRocket(pos);
     if (k >= 1) impact(sim);
   }
+  let vfxR = 0;
   function stepVfx(dt) {
+    // A9: real-time floor - at 2-5 fps a sim step can be ~0.5 s, which killed the trail before it was ever painted
+    const nowR = performance.now(), rdt = vfxR ? (nowR - vfxR) / 1000 : dt; vfxR = nowR; dt = Math.min(dt, Math.max(0, rdt));
     if (flashLife > 0) {
       flashLife -= dt; flashMat.opacity = Math.max(0, flashLife / (flashDur || 1)); flash.lookAt(camera.position);
       if (flashLife <= 0) flash.visible = false;
@@ -167,7 +170,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
       if (s.life <= 0) continue;
       s.life -= dt;
       const u = Math.max(0, s.life / PUFF_LIFE);
-      s.mesh.scale.setScalar(0.5 + 1.1 * (1 - u)); s.mat.opacity = 0.75 * Math.min(1, u * 1.6); s.mesh.lookAt(camera.position);
+      s.mesh.scale.setScalar(1.0 + 1.6 * (1 - u)); s.mat.opacity = 0.85 * Math.min(1, u * 1.6); s.mesh.lookAt(camera.position);
       if (s.life <= 0) s.mesh.visible = false;
     }
   }

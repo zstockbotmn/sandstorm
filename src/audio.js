@@ -640,7 +640,7 @@ export function createAudio() {
     og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.3, t + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.605);
     o.connect(og); og.connect(p); o.start(t); o.stop(t + 0.62);
     burst(0.03, 0.18, 3000, 1.2, 'bandpass', p);
-    if (d <= 10) muffle(0.8 * (1 - d / 10));
+    // (no muffle here: fx.blast already calls muffle with its own strength; a second, weaker call overrode it)
   }
 
   function thump(pos) {
