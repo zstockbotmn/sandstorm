@@ -563,7 +563,7 @@ export function createAudio() {
       bark();
     }
     distantT -= dt;
-    const appr = window.SS.approach; // m1x: opening approach, gunfire up ahead getting closer (synth, short volleys)
+    const appr = window.SS.approachForce != null ? window.SS.approachForce : window.SS.approach; // approachForce: test hook (fx3 skyline) // m1x: opening approach, gunfire up ahead getting closer (synth, short volleys)
     if (appr != null && appr > 0) { approachT -= dt; if (approachT <= 0) { approachT = 2.6 - 1.6 * appr + Math.random() * 1.2;
       const nShots = 1 + Math.floor(Math.random() * (1 + 3 * appr)); for (let i = 0; i < nShots; i++) setTimeout(() => distantShot(appr), i * (90 + Math.random() * 70));
       window.SS.approachShots = (window.SS.approachShots | 0) + nShots; } distantT = Math.max(distantT, 3); }

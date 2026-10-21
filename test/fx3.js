@@ -14,7 +14,8 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(PORT);
 const QS = process.env.SS_QS || '';
 async function boot(b, qs) { const ctx = await b.newContext({ viewport: { width: 844, height: 390 } }); const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e).slice(0, 160)));
-  await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&loco=2&hits=2' + qs); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
+  const ultra = /[?&]q=ultra-low/.test(qs); qs = qs.replace('q=ultra-low', 'q=low'); /* quality.js only parses low|high: Ultra-low = Low + goUltra */
+  await p.goto('http://127.0.0.1:' + PORT + '/?seed=7&calm=1&loco=2&hits=2' + qs); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 }); if (ultra) await p.evaluate(() => SS.goUltra('test'));
   await p.click('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 }); return { p, ctx, errs }; }
 const frames = (p, n) => p.evaluate((n) => new Promise((ok) => { let k = 0; const f = () => (++k >= n ? ok() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }, { timeoutMs: 900000 });
@@ -39,15 +40,15 @@ const frames = (p, n) => p.evaluate((n) => new Promise((ok) => { let k = 0; cons
   if (tier === 'ultra-low') { if (res.near.pool) fail.push('ultra-low has a particle pool (' + res.near.pool + ')'); }
   else { if (!(res.near.spawned > 0)) fail.push('near miss spawned no dust'); if (res.near.live > res.near.pool) fail.push('live puffs over the pool cap'); }
   // (e) breathing + heartbeat
-  res.breath = await p.evaluate(async () => { SS.player.health = 15; await new Promise((r) => setTimeout(r, 2500)); const lo = { ...(SS.fx3Audio || {}) }; SS.player.health = 100; await new Promise((r) => setTimeout(r, 9000)); return { lo, hi: { ...(SS.fx3Audio || {}) } }; });
+  res.breath = await p.evaluate(async () => { const hold = setInterval(() => { SS.player.health = 15; }, 50); /* the player regenerates 22 hp/s */ SS.player.health = 15; await new Promise((r) => setTimeout(r, 2500)); clearInterval(hold); const lo = { ...(SS.fx3Audio || {}) }; SS.player.health = 100; await new Promise((r) => setTimeout(r, 9000)); return { lo, hi: { ...(SS.fx3Audio || {}) } }; });
   if (!(res.breath.lo.effort > 0.6 && res.breath.lo.breathsPerMin > 25)) fail.push('low-HP breathing ' + JSON.stringify(res.breath.lo)); if (!(res.breath.hi.effort < 0.15)) fail.push('breathing did not calm at full HP ' + JSON.stringify(res.breath.hi));
   // (f) footsteps
-  res.steps = await p.evaluate(async () => { SS.walking = true; const a = (SS.fx3Audio || {}).steps | 0, t0 = SS.simTime; await new Promise((r) => setTimeout(r, 4000)); const n = ((SS.fx3Audio || {}).steps | 0) - a, dt = SS.simTime - t0; SS.walking = false;
-    const b0 = (SS.fx3Audio || {}).steps | 0; await new Promise((r) => setTimeout(r, 2000)); return { perS: +(n / dt).toFixed(2), expect: +((SS.walkSpeed || 1.4) / 0.72).toFixed(2), stopped: ((SS.fx3Audio || {}).steps | 0) - b0 }; });
+  res.steps = await p.evaluate(async () => { SS.forceWalk = true; const a = (SS.fx3Audio || {}).steps | 0, t0 = SS.simTime; await new Promise((r) => setTimeout(r, 4000)); const n = ((SS.fx3Audio || {}).steps | 0) - a, dt = SS.simTime - t0; SS.forceWalk = false;
+    const b0 = (SS.fx3Audio || {}).steps | 0; await new Promise((r) => setTimeout(r, 2000)); return { perS: +(n / dt).toFixed(2), expect: +((SS.walkSpeed || 1.4) / 0.72).toFixed(2), stopped: ((SS.fx3Audio || {}).steps | 0) - b0, _: (SS.forceWalk = null) }; });
   if (!(Math.abs(res.steps.perS - res.steps.expect) <= res.steps.expect * 0.25)) fail.push('footsteps ' + res.steps.perS + '/s (expect ' + res.steps.expect + ')'); if (res.steps.stopped > 1) fail.push(res.steps.stopped + ' steps while stopped');
   // (g) skyline build-up
-  res.sky = await p.evaluate(async () => { const out = []; for (const a of [0.1, 0.9]) { SS.approach = a; const s0 = { ...((SS.fx3 && SS.fx3.skyline) || {}) }; await new Promise((r) => setTimeout(r, 9000)); const s = (SS.fx3 && SS.fx3.skyline) || {};
-    out.push({ a, flashes: (s.flashes | 0) - (s0.flashes | 0), tracers: (s.tracers | 0) - (s0.tracers | 0), dz: s.lastZ != null ? +(SS.camera.position.z - s.lastZ).toFixed(1) : null }); } SS.approach = 0; return out; });
+  res.sky = await p.evaluate(async () => { const out = []; for (const a of [0.1, 0.9]) { SS.approachForce = a; const s0 = { ...((SS.fx3 && SS.fx3.skyline) || {}) }; await new Promise((r) => setTimeout(r, 9000)); const s = (SS.fx3 && SS.fx3.skyline) || {};
+    out.push({ a, flashes: (s.flashes | 0) - (s0.flashes | 0), tracers: (s.tracers | 0) - (s0.tracers | 0), dz: s.lastZ != null ? +(SS.camera.position.z - s.lastZ).toFixed(1) : null }); } SS.approachForce = null; return out; });
   if (!(res.sky[0].flashes > 0 && res.sky[1].flashes > 0)) fail.push('no skyline flashes ' + JSON.stringify(res.sky)); else if (!(res.sky[1].dz < res.sky[0].dz)) fail.push('skyline fire did not move closer ' + JSON.stringify(res.sky));
   if (tier !== 'ultra-low' && !(res.sky[0].tracers + res.sky[1].tracers > 0)) fail.push('no skyline tracers');
   res.errs = errs; if (errs.length) fail.push('page errors: ' + errs.join(' | '));
