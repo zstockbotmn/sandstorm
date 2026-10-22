@@ -260,6 +260,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     // hit, forced mode too (replaces the A13 random-only 4.5 s rule). The launch waits; it is not cancelled.
     if (SS.lastFlankHitSim != null && sim - SS.lastFlankHitSim >= 0 && sim - SS.lastFlankHitSim < RPG_FLANK_LULL_S) { SS.rpgFlankWaits = (SS.rpgFlankWaits | 0) + 1; return; }
     if (SS.midBeatAt != null && sim - SS.midBeatAt >= 0 && sim - SS.midBeatAt < 8) return; // A19 (PM 8): 8 s after a mid-wave push beat
+    if (SS.lullUntil != null && sim < SS.lullUntil) return; // A22: no RPG / truck in the post-climax lull
     if (SS.climaxAt != null && sim - SS.climaxAt >= 0 && sim - SS.climaxAt < 8) return; // A21: 8 s after a climax tell/start/fallback
     if (SS.setPieceAt != null && sim - SS.setPieceAt >= 0 && sim - SS.setPieceAt < 15) return; // A15: >= 15 s between any two set pieces (RPG / truck / grenade; was 8)
     // A11: a starved camping grenade goes first (the forced RPG used to keep starving it). A12: but only for 6 s - with no
