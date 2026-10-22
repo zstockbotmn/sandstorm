@@ -2965,9 +2965,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!waveActive) { lsWave = -1; lsId = null; lsMode = null; lsDone = false; return; }
     const wv = Math.max(burstIndex, waveClears + 1); if (wv !== lsWave) { lsWave = wv; lsId = null; lsMode = null; lsDone = false; }
     const alive = list.filter((e) => e.alive && !e.dying);
-    if (alive.length !== 1 || waveSpawned < burstCap || truckPending > 0 || cxPhase === 'tell' || cxPhase === 'active') { if (!lsMode) lsId = null; return; }
+    if (alive.length !== 1 || waveSpawned < burstCap || truckPending > 0 || cxPhase === 'tell' || cxPhase === 'active') { if (!lsMode) { lsId = null; SSx.lastStandArmed = null; } return; }
     const e = alive[0];
-    if (lsId !== e.id) { lsId = e.id; lsSince = sim; lsDue = sim + 25 + Math.random() * 5; lsMode = null; }
+    if (lsId !== e.id) { lsId = e.id; lsSince = sim; lsDue = sim + 25 + Math.random() * 5; lsMode = null; SSx.lastStandArmed = { wave: wv, id: e.id, since: +sim.toFixed(1) }; }
     const cam = camera.position, dz = cam.z - e.group.position.z, d = Math.hypot(e.group.position.x - cam.x, dz);
     const rec = (mode, extra) => { const L = SSx.lastStandLog || (SSx.lastStandLog = []); const o = Object.assign({ wave: wv, id: e.id, mode, sim: +sim.toFixed(1), alone: +(sim - lsSince).toFixed(1), dist: +d.toFixed(1) }, extra || {}); L.push(o); if (L.length > 30) L.shift(); return o; };
     const flee = (why) => { lsMode = 'flee'; lsAt = sim; e.pinned = false; e._flankMove = false; e._flankArr = null; e._lastRush = false;
