@@ -63,6 +63,8 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     if (res.tells.length > res.recs.length + (res.aborts || []).length + 1) fail.push('tells ' + res.tells.length + ' > hits ' + res.recs.length + ' + aborts ' + (res.aborts || []).length);
     if (!res.push.length) fail.push('no stall push in ' + res.waves.length + ' waves (none-found ' + res.counters.stallPushNone + ')');
     // A16b: an 'advances' push must really bring the fighter >= 5 m nearer, measured on ARRIVAL (repositions / runs in are other kinds)
+    // A19: 'closes in (open)' = a short bound for a fighter already close: >= 2 m nearer on arrival
+    for (const q of res.push.filter((x) => /^closes in/.test(x.kind))) if (q.arrived != null && !q.died && q.from - q.arrived < 2) fail.push('close-in ' + q.sim + ' arrived ' + q.arrived + ' m (from ' + q.from + ', < 2 m nearer)');
     for (const q of res.push.filter((x) => /^advances/.test(x.kind))) { if (q.died) continue; if (q.arrived == null) { if (q.cancelled) warn.push('push ' + q.sim + ' cancelled: ' + q.cancelled); else if (q.sim < res.sim - 15) fail.push('stall push ' + q.sim + ' never arrived'); continue; }
       if (q.from - q.arrived < 4.5) fail.push('stall push ' + q.sim + ' arrived ' + q.arrived + ' m (from ' + q.from + ', < 5 m nearer)'); }
     // A17: exactly one outcome per FLANKED tell (a hit 1.5-5 s later OR 'flank aborted' by 5 s), and '[RADIO] Flanking!' only with a tell

@@ -2693,7 +2693,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const side = Math.abs(p.x) > 0.8 ? Math.sign(p.x) : (cam.x <= 0 ? 1 : -1);
     for (const sx of [side, -side]) for (const ax of [5.2, 3.6]) { const pos = new THREE.Vector3(sx * ax, 0, p.z + step);
       if (Math.hypot(pos.x - cam.x, pos.z - cam.z) < 2.4 || occupiedBy(pos, e)) continue; if (!clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue;
-      return { pos, type: 'wall', open: true }; }
+      return { pos, type: 'wall', open: true, near: true }; }
     return null; }
   function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0;
     if (!waveActive) { waveProgSim = sim; stallWasActive = false; return; }
@@ -2716,7 +2716,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (late) for (const e of free()) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = nearCover(e, a); if (c && send(e, c, 'advances', a)) return; }
     for (const e of free()) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = stallCoverFor(e, 6, a - 5.5, 2); if (c && send(e, c, 'advances', a)) return; } // A16b: >= 5 m nearer
     for (const e of free()) { const a = pz - e.group.position.z, spot = openBound(e, a); if (spot && send(e, spot, 'advances (open)', a)) return; }
-    for (const e of free()) { const a = pz - e.group.position.z, spot = openBoundNear(e, a); if (spot && send(e, spot, 'advances (open)', a)) return; }
+    for (const e of free()) { const a = pz - e.group.position.z, spot = openBoundNear(e, a); if (spot && send(e, spot, 'closes in (open)', a)) return; } // A19: a short (2.5-6 m) bound for a close fighter
     if (sent) return;
     for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) return stallSend(e, c, 'repositions', a); }
     const wv = Math.max(burstIndex, waveClears + 1);
@@ -2734,7 +2734,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (mwWave === -1) { mwWave = Math.max(burstIndex, waveClears + 1); mwContactSim = null; mwDone = false; mwShots0 = SSx.enemyShots|0; mwPush = []; }
     if (mwContactSim == null) { if ((SSx.enemyShots|0) > mwShots0) { mwContactSim = sim; mwAt = 20 + Math.random()*5; const L = SSx.waveContactLog || (SSx.waveContactLog = []); L.push({ wave: mwWave, sim: +sim.toFixed(1) }); if (L.length > 30) L.shift(); } else return; }
     for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue;
-      if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) { stallSend(rec.e, c, c.open ? 'advances (open)' : 'advances', a); rec.e._suppressOnArrive = 5; } }
+      if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) { stallSend(rec.e, c, c.near ? 'closes in (open)' : c.open ? 'advances (open)' : 'advances', a); rec.e._suppressOnArrive = 5; } }
       rec.sent = true; }
     const wv = mwWave; if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return;
     const sp = SSx.spPick, quiet = !!(sp && sp.wave === wv && sp.pick === 'quiet');
