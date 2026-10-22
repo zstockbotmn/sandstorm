@@ -2054,6 +2054,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (sb) { const qx = Math.max(sb.min.x, Math.min(sb.max.x, c.x)), qz = Math.max(sb.min.z, Math.min(sb.max.z, c.z)), l = Math.hypot(qx - c.x, qz - c.z); if (l > 0.05) { out.x = (qx - c.x) / l; out.z = (qz - c.z) / l; } }
     return out; }
   const _cf = { x: 0, z: -1 };
+  const FLANK_LULL_S = 5; // A14: game-s between two flank hits
+  const _flR = new THREE.Ray(), _flT = new THREE.Vector3(), _flD = new THREE.Vector3(), _flB = new THREE.Box3(), _flH = new THREE.Vector3(), _flRc = new THREE.Raycaster();
+  // A14: a flank round lands only if the muzzle sees the head OR the torso past the player's cover box and the buildings.
+  function flankLine(muzzle) { const c = camera.position, sb = window.SS && window.SS.cover && window.SS.cover.surface;
+    const list = world.shotList ? world.shotList() : world.colliders;
+    for (const dy of [0, -0.45]) { _flT.set(c.x, c.y + dy, c.z); _flD.subVectors(_flT, muzzle); const d = _flD.length(); if (d < 0.05) return true; _flD.divideScalar(d);
+      if (sb) { _flB.copy(sb).expandByScalar(0.02); _flR.set(muzzle, _flD); const hp = _flR.intersectBox(_flB, _flH); if (hp && hp.distanceTo(muzzle) < d - 0.3) continue; }
+      _flRc.set(muzzle, _flD); _flRc.near = 0.6; _flRc.far = d - 0.35; /* near: the flanker's own cover lip */ if (list && _flRc.intersectObjects(list, false).length) continue;
+      return true; }
+    return false; }
   function inFrontArc(pos) { coverFacing(_cf); const c = camera.position, tx = pos.x - c.x, tz = pos.z - c.z, tl = Math.hypot(tx, tz) || 1; return (tx * _cf.x + tz * _cf.z) / tl >= FRONT_ARC_COS; }
   api.inFrontArc = inFrontArc; api.FLANK_TELL_S = FLANK_TELL_S;
   function flankCue(enemy) { const SSx = window.SS; if (!SSx) return; const c = camera.position, p = enemy.group.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = p.x - c.x, dz = p.z - c.z;
@@ -2080,11 +2090,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const dist = _muzzle.distanceTo(camera.position);
     const duckedA8 = !!(window.SS && window.SS.input && window.SS.input.cover);
     let flankShot = false, flankReady = false;
-    if (duckedA8 && !inFrontArc(enemy.group.position)) { flankShot = true;
+    // A14 (tester: 'rifle, flank' every 4-12 s while IN cover): ANY fighter outside the 60 deg arc used to count as a
+    // flanker (incl. ones that had simply drifted wide or that the walk had passed), the line check ran camera -> body at
+    // 1.25 m (not muzzle -> head/torso, cover box not tested), and nothing spaced flank hits beyond the 0.9 s global gap.
+    // Now only the fighter that MADE the flank move (and still stands where it arrived) is a flanker; others outside the
+    // arc are treated as front (ducked = misses). Its hits need the tell, a muzzle -> head or torso line clear of the
+    // cover box and buildings, and FLANK_LULL_S since the last flank hit.
+    const outArc = duckedA8 && !inFrontArc(enemy.group.position);
+    const isFlanker = !!(enemy._flankArr && enemy.group.position.distanceTo(enemy._flankArr) < 1.5);
+    if (outArc && !isFlanker && window.SS) window.SS.flankNotMover = (window.SS.flankNotMover | 0) + 1;
+    if (outArc && isFlanker) { flankShot = true;
       const fS = window.SS.simTime || 0, fR = performance.now() / 1000;
       if (!(enemy._flankTellSim > -1e8) || fS - (enemy._flankLastSim == null ? -99 : enemy._flankLastSim) > FLANK_RESET_S) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); }
       enemy._flankLastSim = fS; flankReady = fS - enemy._flankTellSim >= FLANK_TELL_S && fR - enemy._flankTellR >= FLANK_TELL_S; }
-    if (flankShot) { enemy.group.getWorldPosition(_losP); _losP.y += 1.25; if (!clearToEye(_losP)) { flankReady = false; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; } }
+    if (flankShot && !flankLine(_muzzle)) { flankReady = false; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; }
+    if (flankShot && flankReady && window.SS && (window.SS.simTime || 0) - (window.SS.lastFlankHitSim != null ? window.SS.lastFlankHitSim : -99) < FLANK_LULL_S) { flankReady = false; window.SS.flankLullBlocked = (window.SS.flankLullBlocked | 0) + 1; }
     const flankHit = flankShot && flankReady;
     // Fix 7 (tester: slightly easier): ~20% lower base accuracy; each enemy's first 3 shots at first contact are mostly
     // misses (sighting-in), so the player gets a beat to react. Damage per hit is unchanged (~5 hits to kill).
@@ -2442,7 +2462,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function enterCover(enemy, hold) {
     enemy._repositioning = false;
-    if (enemy._flankMove) { enemy._flankMove = false; const SSx = window.SS; if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
+    if (enemy._flankMove) { enemy._flankMove = false; enemy._flankArr = enemy.group.position.clone(); /* A14: the only fighter whose rounds can be flank hits */ const SSx = window.SS; if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
     enemy.phase = 'takeCover';
     enemy.phaseT = hold != null ? hold : 0.22 + Math.random() * 0.2;
     enemy.posture = 'crouch';
@@ -2639,6 +2659,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Hand the run to the existing relocate path. Rise overlaps the first steps. No teleport.
   function startReposition(e, c) {
+    e._flankArr = null; // A14: a new move ends flanker status (a flank move re-earns it on arrival)
     e._prevAnchor = e.anchor;
     if (LOCO2) beginCoverExit(e);
     e.anchor = c;
