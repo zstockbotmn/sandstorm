@@ -73,7 +73,7 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
   function take(it) {
     if (it.kind === 'health') { it.gained = Math.min(100, player.health + 35) - player.health; player.health = Math.min(100, player.health + 35); if (window.SS) window.SS.health = player.health; healFx(player.health - it.gained, player.health, it.gained); }
     else { const before = weapon.reserve; weapon.reserve = Math.max(before | 0, Math.min(weapon.reserveMax || 210, (weapon.reserve | 0) + 60)); it.gained = weapon.reserve - before; }
-    if (it.kind === 'health') popup((it.gained | 0) > 0 ? '+HP  HEALED' : 'HEALTH FULL', '#4dff7a') /* no number on screen (PM: no numeric HP in the HUD) */; else popup((it.gained | 0) > 0 ? '+' + (it.gained | 0) + ' AMMO' : 'AMMO FULL', '#ffd23a'); // A17: no '+0 AMMO'
+    if (it.kind === 'health') popup((it.gained | 0) > 0 ? '+HP  HEALED' : 'HEALTH FULL', '#4dff7a', 1200) /* no number on screen (PM: no numeric HP in the HUD) */; else popup((it.gained | 0) > 0 ? '+' + (it.gained | 0) + ' AMMO' : 'AMMO FULL', '#ffd23a'); // A17: no '+0 AMMO'
     if (audio && audio.pickup) audio.pickup(it.kind); else if (audio && audio.reload) audio.reload('end');
     if (window.SS) { window.SS.lastPickup = { kind: it.kind, health: player.health, reserve: weapon.reserve }; }
     if (window.SS) window.SS.pickupsTaken = (window.SS.pickupsTaken | 0) + 1;
@@ -85,18 +85,19 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
     if (audio && audio.log) audio.log('pickup', 'medkit +' + (n | 0) + ' (hp ' + Math.round(from) + ' -> ' + Math.round(to) + ')');
     if (window.SS) window.SS.medkitLog = (window.SS.medkitLog || []).concat([{ sim: +(window.SS.simTime || 0).toFixed(1), from: Math.round(from), to: Math.round(to), gained: n | 0 }]);
     if (!healEl) { healEl = document.createElement('div'); healEl.id = 'heal-flash'; healEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;background:radial-gradient(ellipse at center,rgba(60,255,120,.06) 30%,rgba(40,230,100,.38) 100%)'; document.body.appendChild(healEl); }
-    healEl.style.transition = 'none'; healEl.style.opacity = '1'; void healEl.offsetWidth; healEl.style.transition = 'opacity 0.9s ease-in'; healEl.style.opacity = '0';
+    healEl.style.transition = 'none'; healEl.style.opacity = '1'; void healEl.offsetWidth; healEl.style.transition = 'opacity 0.7s ease-in 1.2s'; healEl.style.opacity = '0'; // A19: holds 1.2 s, then fades
     if (window.SS) window.SS.healFlashes = (window.SS.healFlashes | 0) + 1;
     if (!hud.setHealth) return; const t0 = performance.now();
     const step = () => { const k = Math.min(1, (performance.now() - t0) / 700); if (player.health < to) { hud.setHealth(player.health); return; } // took a hit mid-tween: show the real value
       hud.setHealth(from + (to - from) * k); if (k < 1) requestAnimationFrame(step); };
     step();
   }
-  function popup(text, color) {
-    const el = document.createElement('div'); el.textContent = text; el.className = 'ss-pickpop';
-    el.style.cssText = 'position:fixed;left:50%;top:58%;transform:translate(-50%,0);font:800 22px system-ui,sans-serif;color:' + color + ';text-shadow:0 2px 4px #000;pointer-events:none;z-index:40;transition:transform .9s ease-out,opacity .9s ease-in;opacity:1';
-    document.body.appendChild(el); requestAnimationFrame(() => { el.style.transform = 'translate(-50%,-60px)'; el.style.opacity = '0'; });
-    setTimeout(() => el.remove(), 1000);
+  // A19 (tester A18: the heal flash / '+HP HEALED' never showed in ~1 fps captures): hold = ms fully visible before a fade
+  function popup(text, color, hold) {
+    const el = document.createElement('div'); el.textContent = text; el.className = 'ss-pickpop'; const h = hold || 0;
+    el.style.cssText = 'position:fixed;left:50%;top:58%;transform:translate(-50%,0);font:800 22px system-ui,sans-serif;color:' + color + ';text-shadow:0 2px 4px #000;pointer-events:none;z-index:40;transition:transform ' + (h ? 1.4 : 0.9) + 's ease-out,opacity ' + (h ? 0.6 : 0.9) + 's ease-in ' + (h / 1000) + 's;opacity:1';
+    document.body.appendChild(el); requestAnimationFrame(() => { el.style.transform = 'translate(-50%,' + (h ? -30 : -60) + 'px)'; el.style.opacity = '0'; });
+    setTimeout(() => el.remove(), 1000 + h);
   }
   const _tgt = new THREE.Vector3();
   function update(dt) {
