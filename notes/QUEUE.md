@@ -119,3 +119,13 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - FORCED tag top-right; bldg4 end walls capped (the "black and white panel" = stretched Meshy soot end wall); camera personal space 2.4 m push / 1.0 m hide.
 - Flank rifle 19 = base rifle damage (18-22 by difficulty) without the 0.6 ducked softening (flank rule, A8): intended.
 - windows.json: tool fixed (units, +Z, recesses) but PROVISIONAL (4/6/4/2 windows) - 4b tuning pass needed before 4e.
+
+## A13 (Oct 21, 8:20 PM ET; code only, tester on A12 - NOT built / run yet)
+- 1 RPG vs cover: in cover with the box between blast and head (ray), or ducked with the blast on the enemy side, dmg x0.40-0.50, dust + debris off the cover top/front, log '(RPG, cover)'; full otherwise; cap 30 + 5 HP floor kept.
+- 2 truck waves: RPG held while the wave's truck is pending (< 20 s), then until bail-out + 12 s (SS.truckBailAt).
+- 3 random mode: fireAt 10-26 s; 4.5 s lull after a rifle flank hit (SS.lastFlankHitSim). Forced unchanged.
+- HUD untouched (no numeric HP).
+- Drafted checks: rpg-forced.js (bail +12 s, shielded <= 15 + '(RPG, cover)', 'random' config spread), a11.js (shielded vs full split).
+- Rerun when the tester is done: node tools/build.js; tools/run.sh 1500 node test/rpg-forced.js low logs/a13/rpg-forced;
+  tools/run.sh 1500 node test/a11.js low logs/a13/a11; tools/run.sh 900 node test/rpg-wave.js low logs/a13/rpg;
+  tools/run.sh 1200 node test/truck.js low logs/a13/truck; then preview A13.

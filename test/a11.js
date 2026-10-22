@@ -47,18 +47,24 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
       SS.enemies.killAll(); await sleep(500); out.rpg = [];
       for (let i = 0; i < 6; i++) { SS.player.health = 100; SS.setPieceAt = -1e9; SS.setpieces.debugRpg(); const t0 = performance.now(); let r = null;
         while (performance.now() - t0 < 40000) { r = SS.setpiece && SS.setpiece.lastRpg; if (r && r.impactR && (!out.rpg.length || r.impactR !== out.rpg[out.rpg.length - 1].impactR)) break; await sleep(100); }
-        await sleep(300); out.rpg.push({ impactR: r && r.impactR, dmg: r && r.dmg, d: r && r.dist, aim: r && r.aim, hp: SS.player.health }); }
+        await sleep(300); out.rpg.push({ impactR: r && r.impactR, dmg: r && r.dmg, d: r && r.dist, aim: r && r.aim, shielded: !!(r && r.shielded), inCover: !!(SS.cover && SS.cover.state === 'in'), ducked: !!SS.input.cover, hp: SS.player.health }); }
       out.hitLog = (SS.audioLog || []).filter((x) => x.kind === 'hit taken').slice(-10).map((x) => x.detail);
       return out; });
     const r = res.run; if (r.err) fail.push(r.err);
     for (const c of r.calms || []) { if (c.calm < 15) fail.push('calm ' + c.calm + ' s'); if (c.ambient < 1) fail.push('no ambient in calm after wave ' + c.after); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
     if (r.nade && !r.nade.thrown) fail.push('no wave-3 grenade ' + JSON.stringify(r.nade.gate)); else if (r.nade && (!r.nade.ring || !r.nade.hint)) fail.push('grenade ring/callout missing');
     if (r.nearMiss && r.nearMiss.shown > Math.ceil(r.nearMiss.gameS / 1.4) + 1) fail.push('near misses ' + JSON.stringify(r.nearMiss));
-    const hits = (r.rpg || []).filter((x) => x.dmg > 0).map((x) => x.dmg);
+    const hits = (r.rpg || []).filter((x) => x.dmg > 0 && !x.shielded).map((x) => x.dmg);
     if ((r.rpg || []).some((x) => x.dmg > 30 || x.hp < 5)) fail.push('rpg dmg out of range');
-    if (hits.some((d) => d < 10)) fail.push('rpg hit < 10');
+    // A13 (drafted, not run yet): shielded hits (in cover, blast on the enemy side) x0.40-0.50 -> <= 15, logged '(RPG, cover)';
+    // unshielded ones keep 10-30
+    const sh = (r.rpg || []).filter((x) => x.shielded && x.dmg > 0), un = (r.rpg || []).filter((x) => !x.shielded && x.dmg > 0);
+    res.rpgCover = { shielded: sh.map((x) => +x.dmg.toFixed(1)), full: un.map((x) => +x.dmg.toFixed(1)) };
+    if (sh.some((x) => x.dmg > 15)) fail.push('shielded RPG dmg > 15 ' + JSON.stringify(res.rpgCover));
+    if (sh.length && !(r.hitLog || []).some((x) => /\(RPG, cover\)/.test(x))) fail.push('hurt log lacks (RPG, cover)');
+    if (un.some((x) => x.dmg < 10)) fail.push('unshielded rpg hit < 10');
     if (hits.length >= 2 && Math.max(...hits) - Math.min(...hits) < 3) fail.push('rpg damage does not vary ' + hits);
-    if (hits.length && !(r.hitLog || []).some((x) => /\(RPG\)/.test(x))) fail.push('hurt log lacks (RPG)');
+    if (hits.length && !(r.hitLog || []).some((x) => /\(RPG(, cover)?\)/.test(x))) fail.push('hurt log lacks (RPG)');
     res.errs = errs; if (errs.length) fail.push('errors');
   } finally { await b.close(); srv.close(); }
   fs.writeFileSync(out + '_' + tier + '.json', JSON.stringify(res, null, 1));
