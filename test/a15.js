@@ -104,9 +104,10 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     // A22: rush banner held >= 2.5 s and >= 4 frames per climax; climax size by wave; last-survivor breaks
     for (const c of res.climax) { const b = (res.rushBanners || []).find((x) => x.sim >= c.tellSim - 0.1 && x.sim <= c.tellSim + 15);
       if (!b) fail.push('wave ' + c.wave + ': no rush banner for the climax at ' + c.tellSim); else if (!(b.heldMs >= 2500 && b.frames >= 4)) fail.push('wave ' + c.wave + ': rush banner held ' + b.heldMs + ' ms / ' + b.frames + ' frames (want >= 2500 ms and >= 4)');
-      if (c.wave >= 4 && !(c.bound >= 3 || c.n <= 3)) fail.push('wave ' + c.wave + ': climax only ' + c.bound + ' bounders with ' + c.n + ' alive (want 3-4 in W4+)');
+      if (c.wave >= 4 && !(c.bound >= Math.min(3, (c.ground ?? c.n) - (c.keep | 0)))) fail.push('wave ' + c.wave + ': climax only ' + c.bound + ' bounders with ' + c.ground + ' ground fighters / ' + c.n + ' alive (want 3-4 in W4+)');
+      if (c.wave >= 4 && !c.flank && c.nade == null) fail.push('wave ' + c.wave + ': W4+ climax with neither a flanking pair nor a grenade');
       if (c.wave === 2 && c.bound > 2) fail.push('wave 2: climax ' + c.bound + ' bounders (want 2)'); }
-    res.cxSize = res.climax.map((c) => ({ wave: c.wave, tier: c.tier, n: c.n, bound: c.bound, range: c.range, flank: c.flank, suppress: c.suppress }));
+    res.cxSize = res.climax.map((c) => ({ wave: c.wave, tier: c.tier, n: c.n, ground: c.ground, nade: c.nade, bound: c.bound, range: c.range, flank: c.flank, suppress: c.suppress }));
     for (const x of res.lastStand || []) { if ((x.mode === 'rush' || x.mode === 'flee') && !/after/.test(x.why || '') && x.alone != null && x.alone > 0 && !res.lastStand.some((y) => y !== x && y.wave === x.wave && y.id === x.id && y.sim < x.sim && (y.mode === 'rush' || y.mode === 'flee')) && (x.alone < 24.5 || x.alone > 31)) fail.push('wave ' + x.wave + ': last survivor broke (' + x.mode + ') after ' + x.alone + ' s alone (want 25-30)');
       if (x.mode === 'rush' && (x.to < 4.5 || x.to > 9.5)) fail.push('wave ' + x.wave + ': last rush to ' + x.to + ' m (want 5-9)'); }
     res.lastStandSum = (res.lastStand || []).map((x) => 'W' + x.wave + ' ' + x.mode + ' @' + x.alone + 's' + (x.to ? ' ->' + x.to + 'm' : ''));

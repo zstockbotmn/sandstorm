@@ -2762,7 +2762,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       return { pos, type: 'wall', open: true, near: true }; }
     return null; }
   let assaultAt = -1e9, lastBeatSendSim = -1e9, lastStallSendSim = -1e9, assaultIv = 0, assaultIvs = [];
-  let cxTier = 0, cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null; // A21
+  let cxNadeAt = 0, cxTier = 0, cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null; // A21
   function resetClimax() { cxWave = -1; cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxLullUntil = 0; cxTellSim = cxStartSim = cxEndSim = 0; cxRec = null; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; }
   function assaultSpot(e, range) { const cam = camera.position, tgt = range != null ? range : 10.5, lo = Math.max(6, tgt - 2), hi = Math.min(18, tgt + 2); let best = null, bd = 1e9; // A21: target range (was fixed 8-13)
     for (const c of coverPool(STALL_TYPES, [Math.max(5, lo - 1), hi + 1])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < lo || az > hi || Math.abs(c.pos.x) > 7) continue;
@@ -2928,9 +2928,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, sp); e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; e._cxFlankTo = sp.pos; e._climaxUntil = cxEndSim; flankers.push(e); }
     if (flankers.length) { lastFlankSim = sim; SSx.flankMoves = (SSx.flankMoves | 0) + flankers.length; slog('enemy', 'climax flank pair (' + flankers.length + ')'); }
     for (const o of alive) { if (sent.includes(o) || flankers.includes(o)) continue; o._suppressUntilSim = tier === 2 ? cxEndSim : sim + 8; o._climaxUntil = cxEndSim; } // A21: rest + rooftops suppress (A22: W4+ for the whole climax)
+    cxNadeAt = tier === 2 && !flankers.length ? sim + 2.5 + Math.random() * 1.5 : 0;
     lastStallSendSim = sim;
     slog('enemy', 'climax size: ' + sent.length + ' bound ~' + range + 'm, ' + flankers.length + ' flank, ' + (alive.length - sent.length - flankers.length) + ' suppress (tier ' + tier + ')');
-    cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, tier, bound: sent.length, range, flank: flankers.length, suppress: alive.length - sent.length - flankers.length, fallbackSim: null };
+    cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, ground: ground.length, keep, tier, bound: sent.length, range, flank: flankers.length, suppress: alive.length - sent.length - flankers.length, fallbackSim: null };
     SSx.climaxLog = (SSx.climaxLog || []).concat([cxRec]).slice(-20);
   }
   function climaxBoundSpot(e, range, sent) { const c0 = assaultSpot(e, range); if (c0) return c0; // A22 (a15: W5/W6 got 1-2 bounders of 3-4): a wider open-street grid
@@ -2999,7 +3000,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     SSx.climaxState = { wave: cxWave, phase: cxPhase, done: cxDone, due: cxDue ? +cxDue.toFixed(1) : null }; // A21: test hook
     if (cxDone || cxWave < 2) return;
     if (cxPhase === 'tell') { if (sim >= cxStartSim) startClimax(sim); return; }
-    if (cxPhase === 'active') { if (sim >= cxEndSim) endClimax(sim); return; }
+    if (cxPhase === 'active') { if (cxNadeAt && sim >= cxNadeAt) { cxNadeAt = 0; // A22: W4+ climax with no flanking pair -> a grenade (ring + 'Grenade!' tell) inside the climax
+        const th = list.filter((e) => e.alive && !e.dying && e.phase !== 'relocate').map((e) => [e, e.group.position.distanceTo(camera.position)]).filter((x) => x[1] >= 8 && x[1] <= 28).sort((a, b) => a[1] - b[1])[0];
+        if (th) { throwGrenade(th[0]); slog('enemy', 'climax grenade ' + Math.round(th[1]) + 'm'); if (cxRec) cxRec.nade = +sim.toFixed(1); } else slog('enemy', 'climax grenade: no thrower'); }
+      if (sim >= cxEndSim) endClimax(sim); return; }
     if (cxPhase !== 'idle' || !cxDue || sim < cxDue) return;
     if (spInFlight(SSx)) return; // wait out a live RPG / truck / grenade
     const block = spBeatBlock(SSx, sim, cxWave); if (block && sim < cxDue + 15) return; // give up waiting 15 s later if nothing is mid-flight
