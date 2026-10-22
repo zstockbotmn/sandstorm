@@ -256,6 +256,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let prevHold = false;       // edge-detect walk resume -> WAVE CLEARED
   let displayEngaged = 0;     // stable ENEMIES HUD: only rises on new engage, falls on death
   let contactHintShown = false;
+  let enemyIdSeq = 0;
   let burstIndex = 0;         // softens first waves
 
   function register(mesh, enemy, part) {
@@ -1416,6 +1417,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     group.position.copy(enemy.home);
     root.add(group);
     enemy.takeHit = (part, point) => hitEnemy(enemy, part, point);
+    enemy.id = ++enemyIdSeq; // A19: tell / hit / abort / push records carry the fighter id
     list.push(enemy);
     return enemy;
   }
@@ -2058,12 +2060,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   // A15: a flank hit consumes its tell; after FLANK_HITS_PER_FLANKER hits (or the wave cap) the flanker stops being one and
   // moves back to cover in the player's front arc (a new flank needs a new flank move + tell)
-  function flankAfterHit(e) { const sim = window.SS.simTime || 0; e._lastTellAge = +(sim - (e._flankTellSim || 0)).toFixed(2); e._flankTellSim = null;
+  function flankAfterHit(e) { const sim = window.SS.simTime || 0; e._lastTellAge = +(sim - (e._flankTellSim || 0)).toFixed(2); e._flankTellSim = null; if (e._flankRec && !e._flankRec.outcome) { e._flankRec.outcome = 'hit'; e._flankRec.outSim = +sim.toFixed(2); }
     flankHitsWave++; e._flankHitsN = (e._flankHitsN | 0) + 1;
     if (e._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(e, null);
     if (flankHitsWave >= FLANK_CAP_WAVE) for (const f of list) if (f !== e && f.alive && (f._flankArr || f._flankMove)) retireFlanker(f, 'cap'); }
   // A16: a flanker leaves its flank spot for front-arc cover (visible reposition); why != null logs 'flank aborted (why)'
-  function retireFlanker(e, why) { const hadTell = typeof e._flankTellSim === 'number' ? +e._flankTellSim.toFixed(2) : null; e._flankArr = null; e._flankMove = false; e._flankHitsN = 0; e._flankTellSim = null; e._flankBlock = null;
+  function retireFlanker(e, why) { const hadTell = typeof e._flankTellSim === 'number' ? +e._flankTellSim.toFixed(2) : null; if (hadTell != null && e._flankRec && !e._flankRec.outcome) { e._flankRec.outcome = why ? 'abort' : 'hit'; e._flankRec.outSim = +((window.SS && window.SS.simTime) || 0).toFixed(2); } e._flankArr = null; e._flankMove = false; e._flankHitsN = 0; e._flankTellSim = null; e._flankBlock = null;
     let best = null, bd = 1e9; for (const c of coverPool(['wall', 'barrel', 'car', 'door'], [8, 32])) { if (!c.pos || !inFrontArc(c.pos) || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
     if (best && !e.pinned && !e.dying && e.alive) { parkCoverStep(e); startReposition(e, best); e._reposWhy = why ? 'flank-abort' : 'flank-done'; e.moveKind = 'run'; }
     const SSx = window.SS; if (!SSx) return; SSx.flankRetired = (SSx.flankRetired | 0) + 1;
@@ -2204,7 +2206,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (dmgBudget(nowS, simS) < dmgCost - 1e-6 && hit) { hit = false; if (window.SS) window.SS.dmgCapBlocked = (window.SS.dmgCapBlocked | 0) + 1; } // m1w: incoming damage-per-second cap
     if (flankHit && !hit) enemy._flankBlock = 'blocked (spacing / damage cap)';
     // A17 (tester A16: FLANKED 150.3 -> a hit 0.8 s later): a fighter with a FLANKED tell younger than 1.5 s lands nothing at all
-    if (hit && !flankHit && typeof enemy._flankTellSim === 'number' && simS - enemy._flankTellSim < FLANK_TELL_S) { hit = false; if (window.SS) window.SS.flankEarlyBlocked = (window.SS.flankEarlyBlocked | 0) + 1; }
+    // A19 (tester A18: FLANKED 149.9 -> a '(rifle)' hit 1.3 s later -> 'flank aborted' 154.5): the grenade at 149.7 moved the
+    // player out of cover, so the shot was an ordinary exposed hit (flankShot is only set while ducked) - from the flanker or
+    // another fighter - which neither the flanker-only 1.5 s block nor the tell bookkeeping saw. Now, while ANY FLANKED tell
+    // is pending: no ordinary rifle hit lands inside its first 1.5 s; one that lands later IS that tell's outcome (consumed,
+    // logged as the flank hit if it is the flanker's, so no abort follows).
+    let pendTells = null;
+    if (hit && !flankHit) { pendTells = list.filter((f) => f.alive && typeof f._flankTellSim === 'number');
+      if (pendTells.some((f) => simS - f._flankTellSim < FLANK_TELL_S)) { hit = false; if (window.SS) window.SS.flankEarlyBlocked = (window.SS.flankEarlyBlocked | 0) + 1; } }
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
     if (!hit) {
@@ -2239,7 +2248,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (!flankHit && !playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       if (flankHit && enemy._flankRec && enemy._flankRec.firstHitSim == null) enemy._flankRec.firstHitSim = +(simS).toFixed(2);
       if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); const wasMover = !!enemy._flankArr; flankAfterHit(enemy); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: enemy._lastTellAge, wave: waveClears + 1, mover: wasMover, retired: !enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
-      dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, flankHit ? 'flank' : 'gun'); // cover also softens hits (x0.6, in dmgAmt)
+      const own = !flankHit && pendTells && pendTells.includes(enemy); // the flanker's own ordinary hit after 1.5 s = its flank outcome
+      dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, (flankHit || own) ? 'flank' : 'gun');
+      if (!flankHit && pendTells && pendTells.length && window.SS) { const SSx = window.SS;
+        for (const f of pendTells) { if (typeof f._flankTellSim !== 'number') continue; const age = +(simS - f._flankTellSim).toFixed(2);
+          if (f === enemy) { flankHitsWave++; f._flankHitsN = (f._flankHitsN | 0) + 1; f._lastTellAge = age; if (f._flankRec && !f._flankRec.outcome) { f._flankRec.outcome = 'hit'; f._flankRec.outSim = +simS.toFixed(2); }
+            f._flankTellSim = null; SSx.flankHits = (SSx.flankHits | 0) + 1; SSx.lastFlankHitSim = simS; const FR = SSx.flankHitRecs || (SSx.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: f.id, tellAge: age, wave: waveClears + 1, mover: !!f._flankArr, retired: false, inArc: inFrontArc(f.group.position), ordinary: true }); if (FR.length > 60) FR.shift();
+            if (f._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(f, null); }
+          else { if (f._flankRec && !f._flankRec.outcome) { f._flankRec.outcome = 'hit (other)'; f._flankRec.outSim = +simS.toFixed(2); } SSx.flankTellsByOther = (SSx.flankTellsByOther | 0) + 1; retireFlanker(f, null); } } } // cover also softens hits (x0.6, in dmgAmt)
     } else if (window.SS && window.SS.fx) {
       if (coverImpact && window.SS.fx.impact) { window.SS.fx.impact(coverImpact.point, coverImpact.normal, coverImpact.object); window.SS.coverImpacts = (window.SS.coverImpacts | 0) + 1; }
       // Miss: closest point of the tracer segment to the eye. Under 1.5 m is a near miss (no change to aim or damage).

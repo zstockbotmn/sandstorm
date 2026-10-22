@@ -38,7 +38,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
         for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /advances/.test(x.detail) && !R.advLines.includes(x.t)) R.advLines.push(x.t);
         R.noneLines = R.noneLines || []; for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /stall push none/.test(x.detail) && !R.noneLines.some((y) => y.t === x.t)) R.noneLines.push({ t: x.t, d: x.detail });
         if (!SS.player.alive) { R.died = +sim.toFixed(1); break; } await new Promise((r) => setTimeout(r, 250)); }
-      R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.aborts = SS.flankAbortLog || []; R.flankCalls = SS.flankCallLog || []; R.tells2 = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.mid = SS.midBeatLog || []; R.contacts = SS.waveContactLog || []; R.held = SS.stallPushHeld | 0; R.noneWhy = SS.stallNoneWhy || null; R.picks = (SS.spPick && SS.spPick.hist) || [];
+      R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim, outcome: t.outcome || null, outSim: t.outSim })); R.aborts = SS.flankAbortLog || []; R.flankCalls = SS.flankCallLog || []; R.tells2 = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.mid = SS.midBeatLog || []; R.contacts = SS.waveContactLog || []; R.held = SS.stallPushHeld | 0; R.noneWhy = SS.stallNoneWhy || null; R.picks = (SS.spPick && SS.spPick.hist) || [];
       R.counters = { flankTells: SS.flankTells | 0, flankCapBlocked: SS.flankCapBlocked | 0, flankRetired: SS.flankRetired | 0, stallPushes: SS.stallPushes | 0, stallPushNone: SS.stallPushNone | 0, frontArcDuckHits: SS.frontArcDuckHits | 0 };
       R.log = (SS.audioLog || []).filter((x) => /grenade|gren|enemy|wave|rpg|truck/.test(x.kind)).map((x) => ({ t: x.t, kind: x.kind, d: x.detail })); return R; }, mode === 'random' ? [6, 40] : [4, 45]));
     // 1 + 2
@@ -68,7 +68,8 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     for (const t of res.tells) {
       const hits = res.recs.filter((r) => r.id === t.id && Math.abs((r.sim - r.tellAge) - t.tellSim) < 0.15).length;
       const abs = (res.aborts || []).filter((a) => a.id === t.id && a.tell != null && Math.abs(a.tell - t.tellSim) < 0.06);
-      const n = hits + abs.length; if (n > 1) fail.push('tell ' + t.tellSim + ' (id ' + t.id + ') had ' + n + ' outcomes (' + hits + ' hits, ' + abs.length + ' aborts)');
+      if (t.id == null) fail.push('tell ' + t.tellSim + ' has no fighter id');
+      const n = hits + abs.length + (t.outcome === 'hit (other)' ? 1 : 0); if (n > 1) fail.push('tell ' + t.tellSim + ' (id ' + t.id + ') had ' + n + ' outcomes (' + hits + ' hits, ' + abs.length + ' aborts)');
       if (n === 0 && t.tellSim < res.sim - 5.5) fail.push('tell ' + t.tellSim + ' (id ' + t.id + ') had no outcome (no hit, no abort by 5 s)');
       for (const a of abs) if (a.sim - a.tell > 5.15) fail.push('tell ' + t.tellSim + ' aborted late at ' + a.sim + ' (+' + (a.sim - a.tell).toFixed(2) + ' s, want <= 5)'); }
     for (const c of res.flankCalls || []) if (!res.tells.some((t) => Math.abs(t.tellSim - c) < 0.25)) fail.push("'Flanking!' radio at " + c + ' with no FLANKED tell');
