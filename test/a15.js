@@ -86,7 +86,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       if (mb.length !== 1) fail.push('wave ' + c.wave + ': ' + mb.length + ' mid-wave beats (want 1; contact ' + c.sim + ', end ' + end + ')');
       for (const m of mb) if (!(m.afterContact >= 18 && m.afterContact <= 30.5)) fail.push('wave ' + c.wave + ': mid-wave ' + m.kind + ' at +' + m.afterContact + ' s after contact (want 18-30)');
       // A19 (PM 8): a push beat keeps >= 8 s from every set piece (RPG launch / truck start / grenade) before or after
-      for (const m of mb.filter((x) => x.kind === 'push')) for (const sp of res.spLog) if (Math.abs(sp.sim - m.sim) < 8) fail.push('wave ' + c.wave + ': mid-wave push ' + m.sim + ' only ' + Math.abs(sp.sim - m.sim).toFixed(1) + ' s from ' + sp.kind + ' ' + sp.sim);
+      for (const m of mb.filter((x) => x.kind === 'push')) for (const sp of res.spLog) if (Math.abs(sp.sim - m.sim) < 7.95) /* beat sim is logged to 0.1 s */ fail.push('wave ' + c.wave + ': mid-wave push ' + m.sim + ' only ' + Math.abs(sp.sim - m.sim).toFixed(1) + ' s from ' + sp.kind + ' ' + sp.sim);
       void w; }
     // A19 (PM 10): ?spquiet=1 - the grenade / RPG beat fires, warns ~1 s+ ahead (launch thump -> boom, throw -> blast), no death
     if (mode === 'quiet') { const sb = (res.mid || []).filter((m) => m.kind === 'rpg' || m.kind === 'grenade'); res.spBeats = sb; if (!sb.length) fail.push('quiet mode: no grenade / RPG mid-wave beat');
