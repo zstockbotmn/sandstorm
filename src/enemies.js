@@ -1652,6 +1652,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!enemy.alive) return;
     enemy.alive = false;
     slog('kill', '(' + (part === 'head' ? 'head' : part === 'limb' ? 'limb' : 'torso') + ')'); // A14: kills in the sound log
+    waveProgSim = window.SS ? (window.SS.simTime || 0) : 0; // A15: a kill is wave progress
     unregister(enemy);
     const origin = enemy.group.position;
     spray(point || origin.clone().setY(origin.y + 1.3));
@@ -2599,17 +2600,29 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Tester m1s: a lone last fighter far down the street (>35 m) dragged the fight out. It runs up to ground cover
   // 14-28 m from the player (in the open, so it can be shot on the way).
-  function advanceNearer(enemy) {
-    const pz = camera.position.z, here = enemy.group.position; const pool = coverPool(['wall', 'barrel', 'car', 'door']);
+  function advanceNearer(enemy, aMin = 12, aMax = 28) {
+    const pz = camera.position.z, here = enemy.group.position; const pool = coverPool(['wall', 'barrel', 'car', 'door'], [Math.min(aMin, 6), Math.max(aMax, 42)]);
     let best = null, bestD = 1e9;
-    for (let i = 0; i < pool.length; i++) { const c = pool[i]; const ahead = pz - c.pos.z; if (ahead < 12 || ahead > 28 || Math.abs(c.pos.x) > 9) continue;
+    for (let i = 0; i < pool.length; i++) { const c = pool[i]; const ahead = pz - c.pos.z; if (ahead < aMin || ahead > aMax || Math.abs(c.pos.x) > 9) continue;
       if (occupiedBy(c.pos, enemy)) continue; const d = c.pos.distanceToSquared(here); if (d < bestD) { bestD = d; best = c; } }
-    if (!best) return; // no cover in range: stay put (the unseen/behind rules still apply)
+    if (!best) return false; // no cover in range: stay put (the unseen/behind rules still apply)
     enemy.anchor = best; enemy.home = standPos(best); enemy.path = pathOnto(enemy, best); enemy.pathI = 0;
     enemy.phase = 'relocate'; enemy.posture = 'idle'; enemy.exposed = true; enemy.moveKind = 'run'; enemy.goal = enemy.path[0]; enemy.advanced = (enemy.advanced | 0) + 1;
     if (LOCO2) beginCoverExit(enemy);
     try { squadCall('He\'s moving up!'); } catch (_) {}
+    return true;
   }
+  // A15 (tester A14: 'enemies never advance, the wave stalls'): a wave with no progress (no kill, no advance) for 15-20
+  // game-s pushes ONE fighter - the farthest ground fighter that is not flanking or moving - to a cover 5+ m nearer (at
+  // least 8 m ahead of the player), via advanceNearer (the existing exposed run + cover entry, then its normal peek/fire).
+  let waveProgSim = 0, stallPushAt = 17;
+  function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0; if (!waveActive) { waveProgSim = sim; return; }
+    if (sim - waveProgSim < stallPushAt) return; waveProgSim = sim; stallPushAt = 15 + Math.random() * 5;
+    const pz = camera.position.z, cand = list.filter((e) => e.alive && !e.dying && !e.pinned && e.phase !== 'relocate' && e.group.position.y < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 13)
+      .sort((a, b) => a.group.position.z - b.group.position.z); // farthest first
+    for (const e of cand) { const ahead = pz - e.group.position.z; if (advanceNearer(e, 8, ahead - 5)) { e._reposWhy = 'stall-push'; SSx.stallPushes = (SSx.stallPushes | 0) + 1;
+        slog('enemy', 'advances ' + Math.round(ahead) + 'm'); return; } }
+    if (SSx) SSx.stallPushNone = (SSx.stallPushNone | 0) + 1; }
 
   // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.
   // Tier 0 is the 3c spec (6-20 m hop, 12-30 m ahead, clear shot). p1b: on the real street that often found nothing
@@ -3015,7 +3028,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function update(dt) {
     if (window.SS) window.SS.pressureP = +pressureP().toFixed(2);
     if (HITS2) { try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {} }
-    updateGrenades(dt); updateTruck(dt);
+    updateGrenades(dt); updateTruck(dt); if (REPOS) stallPush();
     const diff = difficulty();
     phaseT -= dt;
     const alive = aliveCount();
