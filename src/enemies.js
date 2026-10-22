@@ -3008,7 +3008,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // A15 run 2 (a15 random: a 30 s long-camp grenade in every wave 3-6 = 'grenade every wave' again): long camp is 25 s on a
     // quiet wave, 40 s once this wave already had its RPG / truck, +10 s when the previous wave had a grenade.
     const otherPiece = spL.some((x) => (x.kind === 'rpg' || x.kind === 'truck') && x.wave === waveNo);
-    const longCamp = nadeWave ? 0 : (otherPiece ? 40 : 25) + (prevNade ? 10 : 0), capN = nadeWave ? NADE_CAP : 1;
+    const longCamp = nadeWave ? 0 : Math.min(40, (otherPiece ? 40 : 25) + (prevNade ? 10 : 0)), capN // A16: capped at 40 s (tester A15: 50 s after an RPG) = nadeWave ? NADE_CAP : 1;
     const capped = nadesWave >= capN, certainAt = nadeWave ? (!nadesWave ? 7 : 12 - 3 * pN) : longCamp, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
     const gapOk = spGap >= SP_GAP_S; // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
