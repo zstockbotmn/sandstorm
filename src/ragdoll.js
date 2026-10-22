@@ -699,7 +699,7 @@ export function createRagdollSystem(scene) {
     // 0.2 s per frame, so a ~0.8 s fall spans 4 frames. While a young doll is still falling, its physics catches up to real
     // time (up to 3x the frame's game time), so the fall reads in 1-2 frames; settled / old dolls are unaffected.
     const SSr = (typeof window !== 'undefined' && window.SS) || {}; let k = 1;
-    if (SSr.lastRawDt > 0 && SSr.lastSimDt > 0 && dolls.some((d) => !d.settled && d.age < 2.5)) k = Math.min(3, Math.max(1, SSr.lastRawDt / SSr.lastSimDt));
+    if (SSr.lastRawDt > 0 && SSr.lastSimDt > 0 && dolls.some((d) => !d.settled && d.age < 2.5)) k = Math.min(6, Math.max(1, SSr.lastRawDt / SSr.lastSimDt)); // A20: 3 -> 6 (at 1 fps a fall still took 2-3 frames)
     const step = Math.min(0.1 * k, (dt || 0.016) * k);
     acc += step;
     phys.timestep = H;
@@ -769,5 +769,5 @@ export function createRagdollSystem(scene) {
     return n;
   }
 
-  return { spawn, update, addNearbyStatics, dolls, clear, bindSkin, activeCount };
+  return { spawn, update, addNearbyStatics, dolls, clear, bindSkin, activeCount, ready: () => !!phys };
 }

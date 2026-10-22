@@ -1803,7 +1803,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (HITS2) {
       // Ultra-low: no physics. Low quality or low art: at most 3 unsettled ragdolls, then the death clip.
       const over = ragdolls.activeCount && ragdolls.activeCount() >= 3;
-      canned = qName() === 'ultra-low' || ((art.tier !== 'high' || qName() !== 'high') && over);
+      // A20: physics not booted yet (Rapier loads after first paint; slow on weak CPUs) - a queued doll stood frozen in the
+      // hit pose until it booted (probe at 1-2 fps: 4+ s): use the death pose instead
+      canned = qName() === 'ultra-low' || ((art.tier !== 'high' || qName() !== 'high') && over) || (ragdolls.ready && !ragdolls.ready());
       enemy.fallMode = canned ? 'canned' : 'ragdoll';
       if (enemy._fallRec) enemy._fallRec.mode = enemy.fallMode;
       else try { if (window.SS && window.SS.lastFall) window.SS.lastFall.mode = enemy.fallMode; } catch (_) {}
