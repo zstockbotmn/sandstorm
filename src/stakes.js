@@ -64,12 +64,26 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
     if (window.SS) window.SS.pickupsDropped = (window.SS.pickupsDropped | 0) + 1;
   }
   function take(it) {
-    if (it.kind === 'health') { it.gained = Math.min(100, player.health + 35) - player.health; player.health = Math.min(100, player.health + 35); if (window.SS) window.SS.health = player.health; if (hud.setHealth) hud.setHealth(player.health); hud.hint && hud.hint('+35 HEALTH'); }
+    if (it.kind === 'health') { it.gained = Math.min(100, player.health + 35) - player.health; player.health = Math.min(100, player.health + 35); if (window.SS) window.SS.health = player.health; healFx(player.health - it.gained, player.health, it.gained); }
     else { const before = weapon.reserve; weapon.reserve = Math.max(before | 0, Math.min(weapon.reserveMax || 210, (weapon.reserve | 0) + 60)); it.gained = weapon.reserve - before; }
-    popup(it.kind === 'health' ? '+35 HP' : (it.gained | 0) > 0 ? '+' + (it.gained | 0) + ' AMMO' : 'AMMO FULL', it.kind === 'health' ? '#ff6a5a' : '#ffd23a'); // A17: no '+0 AMMO'
+    if (it.kind === 'health') popup((it.gained | 0) > 0 ? '+HP  HEALED' : 'HEALTH FULL', '#4dff7a') /* no number on screen (PM: no numeric HP in the HUD) */; else popup((it.gained | 0) > 0 ? '+' + (it.gained | 0) + ' AMMO' : 'AMMO FULL', '#ffd23a'); // A17: no '+0 AMMO'
     if (audio && audio.pickup) audio.pickup(it.kind); else if (audio && audio.reload) audio.reload('end');
     if (window.SS) { window.SS.lastPickup = { kind: it.kind, health: player.health, reserve: weapon.reserve }; }
     if (window.SS) window.SS.pickupsTaken = (window.SS.pickupsTaken | 0) + 1;
+  }
+  // A17 (tester A16: the medkit gave no clear heal): the health bar climbs from the old value over 0.7 s under a soft green
+  // full-screen flash, '+HP HEALED' pops in green (no number: PM ruling), and the sound log says 'medkit +N'. (The heal itself applies at once.)
+  let healEl = null;
+  function healFx(from, to, n) {
+    if (audio && audio.log) audio.log('pickup', 'medkit +' + (n | 0) + ' (hp ' + Math.round(from) + ' -> ' + Math.round(to) + ')');
+    if (window.SS) window.SS.medkitLog = (window.SS.medkitLog || []).concat([{ sim: +(window.SS.simTime || 0).toFixed(1), from: Math.round(from), to: Math.round(to), gained: n | 0 }]);
+    if (!healEl) { healEl = document.createElement('div'); healEl.id = 'heal-flash'; healEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;background:radial-gradient(ellipse at center,rgba(60,255,120,.06) 30%,rgba(40,230,100,.38) 100%)'; document.body.appendChild(healEl); }
+    healEl.style.transition = 'none'; healEl.style.opacity = '1'; void healEl.offsetWidth; healEl.style.transition = 'opacity 0.9s ease-in'; healEl.style.opacity = '0';
+    if (window.SS) window.SS.healFlashes = (window.SS.healFlashes | 0) + 1;
+    if (!hud.setHealth) return; const t0 = performance.now();
+    const step = () => { const k = Math.min(1, (performance.now() - t0) / 700); if (player.health < to) { hud.setHealth(player.health); return; } // took a hit mid-tween: show the real value
+      hud.setHealth(from + (to - from) * k); if (k < 1) requestAnimationFrame(step); };
+    step();
   }
   function popup(text, color) {
     const el = document.createElement('div'); el.textContent = text; el.className = 'ss-pickpop';
