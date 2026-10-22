@@ -146,7 +146,7 @@ export function createAmbient({ scene, camera, hud }) {
     if (!SS.running || SS.bursting || sim - lastLive < 0.5) return;
     if (!eligible) { eligible = true; firstPending = true; wait = rnd(1.5, 2.4); if (ev) endEv();
       const L = SS.calmLog || (SS.calmLog = []); L.push({ clearSim: lastLive > -1e8 ? +lastLive.toFixed(1) : null, firstSim: null, kind: null }); if (L.length > 20) L.shift(); }
-    // A17 (tester A16 #9): a second, smaller cue mid-walk, 4-5.5 s after the beat (so ~6.5-8.5 s into the 8-9.5 s calm):
+    // A17 (tester A16 #9): a second, smaller cue mid-walk, 3.5-4.5 s after the beat (so ~5.5-7.5 s into the 8-9.5 s calm, before the spawn):
     // squad footsteps, a gear rattle or a distant shout - tense, never combat, not a beat (counts / calmLog.beats untouched).
     if (cuePending) { cueWait -= dt; if (cueWait <= 0) { cuePending = false; walkCue(sim); } }
     if (ev) return;
@@ -156,7 +156,7 @@ export function createAmbient({ scene, camera, hud }) {
       // A17 (tester A16: beats only alternated radio / dog): a shuffled bag of all three, refilled without repeating the last
       if (!beatBag.length) { beatBag = BEAT_KINDS.slice().sort(() => Math.random() - 0.5); if (beatBag[0] === lastBeat) beatBag.push(beatBag.shift()); }
       const k = beatBag.shift(); lastBeat = k;
-      cuePending = true; cueWait = rnd(4, 5.5);
+      cuePending = true; cueWait = rnd(3.5, 4.5);
       const r = begin(k, sim), L = SS.calmLog; if (L && L.length) { const c = L[L.length - 1]; c.firstSim = +sim.toFixed(1); c.kind = k; c.beats = (c.beats | 0) + 1; }
       { const a = clip(); if (a && a.log) a.log('ambient', k + (lastLive > -1e8 ? ' (calm +' + (sim - lastLive).toFixed(1) + 's)' : ' (opening)')); } return r; }
   }

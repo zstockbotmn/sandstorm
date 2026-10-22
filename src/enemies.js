@@ -2063,11 +2063,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (e._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(e, null);
     if (flankHitsWave >= FLANK_CAP_WAVE) for (const f of list) if (f !== e && f.alive && (f._flankArr || f._flankMove)) retireFlanker(f, 'cap'); }
   // A16: a flanker leaves its flank spot for front-arc cover (visible reposition); why != null logs 'flank aborted (why)'
-  function retireFlanker(e, why) { e._flankArr = null; e._flankMove = false; e._flankHitsN = 0; e._flankTellSim = null; e._flankBlock = null;
+  function retireFlanker(e, why) { const hadTell = typeof e._flankTellSim === 'number' ? +e._flankTellSim.toFixed(2) : null; e._flankArr = null; e._flankMove = false; e._flankHitsN = 0; e._flankTellSim = null; e._flankBlock = null;
     let best = null, bd = 1e9; for (const c of coverPool(['wall', 'barrel', 'car', 'door'], [8, 32])) { if (!c.pos || !inFrontArc(c.pos) || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
     if (best && !e.pinned && !e.dying && e.alive) { parkCoverStep(e); startReposition(e, best); e._reposWhy = why ? 'flank-abort' : 'flank-done'; e.moveKind = 'run'; }
     const SSx = window.SS; if (!SSx) return; SSx.flankRetired = (SSx.flankRetired | 0) + 1;
-    if (why) { SSx.flankAborts = (SSx.flankAborts | 0) + 1; slog('enemy', 'flank aborted (' + why + ')'); const L = SSx.flankAbortLog || (SSx.flankAbortLog = []); L.push({ sim: +((SSx.simTime || 0)).toFixed(2), why }); if (L.length > 40) L.shift(); } }
+    if (why) { SSx.flankAborts = (SSx.flankAborts | 0) + 1; slog('enemy', 'flank aborted (' + why + ')'); const L = SSx.flankAbortLog || (SSx.flankAbortLog = []); L.push({ sim: +((SSx.simTime || 0)).toFixed(2), why, id: e.id, tell: hadTell }); if (L.length > 40) L.shift(); } }
   api.debugFlank = () => { lastFlankSim = -1e9; duckSinceSim = -1e9; flankTick(); return window.SS && window.SS.lastFlank; };
   function coverFacing(out) { const SSx = window.SS, c = camera.position, sb = SSx && SSx.cover && SSx.cover.surface; out.x = 0; out.z = -1;
     if (sb) { const qx = Math.max(sb.min.x, Math.min(sb.max.x, c.x)), qz = Math.max(sb.min.z, Math.min(sb.max.z, c.z)), l = Math.hypot(qx - c.x, qz - c.z); if (l > 0.05) { out.x = (qx - c.x) / l; out.z = (qz - c.z) / l; } }
@@ -2263,6 +2263,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function squadCall(text) {
     const hud = window.SS && window.SS.hud;
     if (hud && typeof hud.callout === 'function') hud.callout(text, /Moving|moving up|Flanking|Grenade/.test(text));
+    if (window.SS && /Flanking/.test(text)) { const L = window.SS.flankCallLog || (window.SS.flankCallLog = []); L.push(+(window.SS.simTime || 0).toFixed(2)); if (L.length > 80) L.shift(); } // A17: test hook
   }
 
   // Step B: most enemies 10-20 m away (closer, readable fights); ~20% further (22-40 m), e.g. rooftop shooters.
