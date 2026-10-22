@@ -545,12 +545,30 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     best.health = Math.max(best.health, 80); best.takeHit(spec[0], pt); window.SS.lastDebugHit = { zone, got: best.lastHitZone || null }; return best; };
   // A5 tester: H / HURT = -30 HP through the normal damage path (vignette, regen delay), never below 5 (no debug deaths)
   window.SS.debugHurt = () => { const pl = window.SS.player; if (!pl || !pl.alive) return null; const n = Math.max(0, Math.min(30, pl.health - 5)); if (n > 0) pl.damage(n, null, 'debug'); return pl.health; };
+  // A13 (tester could not reach a walk-in room): G / ?room=1 (needs bld=4) clears the fight, jumps the walk to the nearest
+  // 'room' cover point ahead (else the nearest one), stands on the rail 2.5 m short of the doorway facing it and holds the
+  // walk until G is pressed again (or 25 s pass). SS.lastRoomJump records it.
+  let roomHoldT = 0;
+  window.SS.debugToRoom = () => { if (window.SS.roomHold) { window.SS.roomHold = false; window.SS.walking = true; return 'resume'; }
+    let best = null, bd = 1e9; const cz = camera.position.z;
+    for (const s of (world.segments || [])) for (const c of s.coverPoints || []) if (c.type === 'room') { const ahead = c.pos.z < cz + 2; const d = Math.abs(c.pos.z - cz) + (ahead ? 0 : 1000); if (d < bd) { bd = d; best = c; } }
+    if (!best) { window.SS.lastRoomJump = { ok: false, why: 'no room (rooms need ?bld=4 and not Ultra-low)' }; if (hud.hint) hud.hint('No room nearby (needs bld=4, Low/High)'); return null; }
+    if (window.SS.enemies && window.SS.enemies.killAll) window.SS.enemies.killAll();
+    if (cover.reset) cover.reset();
+    const z = best.pos.z + 2.5, dz = cz - z; camera.position.set(0, camera.position.y, z); window.SS.distance += dz;
+    const side = best.pos.x > 0 ? 1 : -1; input.yaw = Math.atan2(best.pos.x - 0, -(best.pos.z - z)); input.pitch = -0.05;
+    window.SS.walking = false; window.SS.roomHold = true; roomHoldT = performance.now();
+    window.SS.lastRoomJump = { ok: true, room: [+best.pos.x.toFixed(1), +best.pos.z.toFixed(1)], side, jumped: +dz.toFixed(1), distance: +window.SS.distance.toFixed(1) };
+    if (hud.hint) hud.hint('Room doorway (' + (side > 0 ? 'right' : 'left') + ') - G to walk on'); return window.SS.lastRoomJump; };
+  setInterval(() => { if (window.SS.roomHold && performance.now() - roomHoldT > 25000) { window.SS.roomHold = false; window.SS.walking = true; } }, 1000);
+  if (/[?&]room=1\b/.test(location.search)) { const t = setInterval(() => { if (window.SS.running && !document.body.classList.contains('starting')) { clearInterval(t); setTimeout(() => window.SS.debugToRoom(), 500); } }, 300); }
   window.SS.debugMoveNearest = () => { const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9;
     for (const e of L) { if (!e.alive || e.dying) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }
     const r = best && window.SS.enemies.debugMove ? window.SS.enemies.debugMove(best) : null; window.SS.lastDebugMove = r; return r; };
   window.addEventListener('keydown', (e) => { if (!window.SS.running) return; if (e.key === 'k' || e.key === 'K') window.SS.debugKillNearest();
     else if (e.key === 'm' || e.key === 'M') window.SS.debugMoveNearest();
     else if (e.key === 'h' || e.key === 'H') window.SS.debugHurt();
+    else if (e.key === 'g' || e.key === 'G') window.SS.debugToRoom(); // R is reload
     else if (e.key === 'l' || e.key === 'L') window.SS.debugHitNearest('legL'); else if (e.key === 'a' || e.key === 'A') window.SS.debugHitNearest('armL'); else if (e.key === 't' || e.key === 'T') window.SS.debugHitNearest('torso'); });
   if (/[?&]debug\b/.test(location.search)) { const kb = document.createElement('button'); kb.id = 'dbg-kill'; kb.textContent = 'KILL';
     kb.style.cssText = 'position:fixed;right:8px;top:64px;z-index:30;font:600 11px monospace;color:#fff;background:rgba(160,30,30,.8);border:0;border-radius:4px;padding:4px 8px';

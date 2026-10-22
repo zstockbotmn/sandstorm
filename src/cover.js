@@ -101,5 +101,6 @@ export function createCover(scene, camera, world, input) {
     if (c.reaim <= 0) c.reaim = 0;
   }
   function reset() { c.reaim = 0; c.surface = null; c.state = 'none'; c.target = null; clearSpawned(); input.cover = false; }
+  c.reset = reset; // A13 debug: room teleport
   return c;
 }
