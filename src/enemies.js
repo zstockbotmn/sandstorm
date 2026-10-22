@@ -1651,6 +1651,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function kill(enemy, point, part) {
     if (!enemy.alive) return;
     enemy.alive = false;
+    slog('kill', '(' + (part === 'head' ? 'head' : part === 'limb' ? 'limb' : 'torso') + ')'); // A14: kills in the sound log
     unregister(enemy);
     const origin = enemy.group.position;
     spray(point || origin.clone().setY(origin.y + 1.3));
@@ -3209,7 +3210,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const waveDone = (waveOpen && waveSpawned >= burstCap && aliveCount() === 0 && truckPending === 0 && !hold) || (prevHold && !hold);
     if (waveDone) waveOpen = false;
     if (running && waveDone && window.SS.hud && window.SS.hud.banner) {
-      waveClears += 1; window.SS.waveClears = waveClears; window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing'); try { squadCall('Clear! Moving up.'); } catch (_) {} // tester m1q: clear cue when the walk resumes
+      waveClears += 1; window.SS.waveClears = waveClears; slog('wave', waveClears + ' clear'); /* A14 */ window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing'); try { squadCall('Clear! Moving up.'); } catch (_) {} // tester m1q: clear cue when the walk resumes
       breatherTo = window.SS.distance + (10 - 2 * pressureP()) + Math.random() * 5; phase = 'quiet'; phaseT = 0;
       // A11 (tester: gaps were ~5 s walks, no ambience): a real calm after every cleared wave - 15-25 game-s before the next
       // contact, NOT shortened by the 5e pressure curve (only the distance part is). The ambient director fills it.
