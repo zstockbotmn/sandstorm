@@ -2051,10 +2051,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (inFrontArc(spot.pos) || !clearToEye(_losP.set(spot.pos.x - side * 0.3, 1.25, spot.pos.z))) { lastFlankSim = t - FLANK_GAP_S() + 3; return; }
     }
     e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, spot);
-    e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; lastFlankSim = t; squadCall('Flanking!');
+    e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; lastFlankSim = t; squadCall('Moving!'); // A17: 'Flanking!' only with the FLANKED tell (flankCue)
     SSx.flankMoves = (SSx.flankMoves | 0) + 1;
     SSx.lastFlank = { id: e.id, to: [+spot.pos.x.toFixed(1), +spot.pos.z.toFixed(1)], t: +t.toFixed(1) };
-    if (SSx.hud && SSx.hud.callout) SSx.hud.callout('Flanking!', true);
   }
   // A15: a flank hit consumes its tell; after FLANK_HITS_PER_FLANKER hits (or the wave cap) the flanker stops being one and
   // moves back to cover in the player's front arc (a new flank needs a new flank move + tell)
@@ -2093,6 +2092,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const ang = Math.atan2(dx * Math.cos(yaw) + dz * Math.sin(yaw), dx * Math.sin(yaw) + dz * -Math.cos(yaw));
     if (SSx.hud && SSx.hud.flanked) SSx.hud.flanked(ang); else if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(ang);
     if (SSx.audio && SSx.audio.crack) SSx.audio.crack(p);
+    squadCall('Flanking!'); // A17 (tester A16: '[RADIO] Flanking!' x3 with no FLANKED): the radio line comes only from the tell
     const L = SSx.flankLog || (SSx.flankLog = []); L.push({ tellSim: +(SSx.simTime || 0).toFixed(2), firstHitSim: null, id: enemy.id }); if (L.length > 80) L.shift(); enemy._flankRec = L[L.length - 1]; }
   function enemyShoot(enemy) {
     { const nR = performance.now() / 1000, nS = window.SS ? (window.SS.simTime || 0) : 0; if (enemy.noFireUntilR > nR || enemy.noFireUntilSim > nS) { enemy.shootCd = Math.max(enemy.shootCd || 0, 0.1); return; } } // just relocated: let the player see them first
@@ -2349,7 +2349,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         // Visible flank: prefer cover across the street so the run crosses the player's view.
         const d = Math.abs(toward - 8) + (Math.sign(c.pos.x) === side ? 6 : 0); if (d < bd) { bd = d; dest = c; } }
       enemy.flankCover = dest;
-      squadCall('Flanking!');
+      squadCall('Moving!'); // A17: not a tell
       if (dest) enemy.flankTo.copy(tuckOf(standPos(dest), dest));
       else enemy.flankTo.set(side * 5.6, 0, enemy.home.z + 2 + Math.random() * 3); // hug the facade line at the alley mouth
     }
@@ -2873,7 +2873,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // Callout only once movement has begun (rule: callouts match real movement).
       if (!enemy.flankCalled) {
         enemy.flankCalled = true;
-        squadCall(dest.x >= 0 ? 'Flanking right!' : 'Flanking left!');
+        squadCall(dest.x >= 0 ? 'Moving right!' : 'Moving left!'); // A17: 'Flanking' is reserved for the FLANKED tell
       }
       enemy.phase = 'relocate';
       enemy.exposed = false;
