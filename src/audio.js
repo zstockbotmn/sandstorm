@@ -2,7 +2,7 @@
 // (last 6 lines). Repeats of the same kind fold into one line with a count (footsteps would flood it otherwise).
 const ALOG_ON = typeof location !== 'undefined' && /[?&]debug\b/.test(location.search);
 let alogEl = null;
-const SP_KIND = /^(launch thump|whoosh|boom|engine roar|door|bark|heli|crackle|grenade|wave)$/, SP_PIN = []; let spPinAt = -1e9;
+const SP_KIND = /^(launch thump|whoosh|boom|engine roar|door|bark|heli|crackle|grenade|wave|room)$/, SP_PIN = []; let spPinAt = -1e9;
 function alog(kind, detail) {
   if (typeof window === 'undefined' || !window.SS) return;
   const L = window.SS.audioLog || (window.SS.audioLog = []);

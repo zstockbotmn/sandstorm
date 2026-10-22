@@ -579,8 +579,12 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     const side = best.pos.x > 0 ? 1 : -1; input.yaw = Math.atan2(best.pos.x - 0, -(best.pos.z - z)); input.pitch = -0.05;
     window.SS.walking = false; window.SS.roomHold = true; roomHoldT = window.SS.simTime || 0; roomLast = best;
     window.SS.lastRoomJump = { ok: true, room: [+best.pos.x.toFixed(1), +best.pos.z.toFixed(1)], side, jumped: +dz.toFixed(1), distance: +window.SS.distance.toFixed(1) };
-    ralog('hold start (door ' + Math.hypot(best.pos.x, best.pos.z - z).toFixed(1) + 'm)'); roomChipShow(true);
+    window.SS.lastRoomJump.door = +Math.hypot(best.pos.x, best.pos.z - z).toFixed(1); ralog('hold start (door ' + window.SS.lastRoomJump.door + 'm)'); roomChipShow(true);
     if (hud.hint) hud.hint('Room doorway (' + (side > 0 ? 'right' : 'left') + ') - W walks on, G next room'); return window.SS.lastRoomJump; };
+  // A16 (tester A15 part 2: with room=1 the 'room hold start' line never showed at game start - the jump ran before the run
+  // clock / log were live): while held, if the log has no start line since this hold began, log it (again); 'room' lines are
+  // also pinned in the SET PIECE block now.
+  setInterval(() => { if (window.SS.roomHold && (window.SS.simTime || 0) < roomHoldT) roomHoldT = window.SS.simTime || 0; /* the run clock restarted after the jump */ if (window.SS.roomHold && window.SS.running) { const L = window.SS.audioLog || []; if (!L.some((x) => x.kind === 'room' && /^hold start/.test(x.detail) && x.t >= roomHoldT - 0.05)) { const j = window.SS.lastRoomJump; ralog('hold start (door ' + (j && j.door != null ? j.door : '?') + 'm)'); } } }, 400);
   setInterval(() => { if (window.SS.roomHold && (window.SS.simTime || 0) - roomHoldT > 40) roomHoldEnd('40 s'); else if (!window.SS.roomHold && roomChip && roomChip.style.display !== 'none') roomChipShow(false); }, 500);
   if (/[?&]room=1\b/.test(location.search)) { const t = setInterval(() => { if (window.SS.running && !document.body.classList.contains('starting')) { clearInterval(t); setTimeout(() => window.SS.debugToRoom(), 500); } }, 300); }
   window.SS.debugMoveNearest = () => { const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9;
