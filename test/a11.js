@@ -58,7 +58,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
       for (const c of cl) if (c.clearSim != null && c.kind && !c.walkCue) fail.push('calm at ' + c.clearSim + ' had no mid-walk cue');
       if (cl.length >= 3 && new Set(cl.slice(0, 3).map((c) => c.kind)).size < 3) fail.push('not all 3 beat kinds by the 3rd calm: ' + cl.slice(0, 3).map((c) => c.kind).join(','));
       for (let i = 1; i < cl.length; i++) if (cl[i].kind === cl[i - 1].kind) fail.push('calm beat repeated ' + cl[i].kind); }
-    for (const c of r.calms || []) { if (!(c.walk >= 9.5 && c.walk <= 12.5)) fail.push('walk clear -> contact ' + c.walk + ' s (want 10-12; spawn at ' + c.calm + ' s)'); if (c.ambient !== 1) fail.push(c.ambient + ' ambient beats in calm after wave ' + c.after + ' (want exactly 1)'); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
+    for (const c of r.calms || []) { if (!(c.walk >= 10 && c.walk <= 12.8)) fail.push('walk clear -> contact ' + c.walk + ' s (want 10-12; spawn at ' + c.calm + ' s)'); if (c.ambient !== 1) fail.push(c.ambient + ' ambient beats in calm after wave ' + c.after + ' (want exactly 1)'); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
     if (r.nade && !r.nade.thrown) fail.push('no wave-3 grenade ' + JSON.stringify(r.nade.gate)); else if (r.nade && (!r.nade.ring || !r.nade.hint)) fail.push('grenade ring/callout missing');
     if (r.nearMiss && r.nearMiss.shown > Math.ceil(r.nearMiss.gameS / 1.4) + 1) fail.push('near misses ' + JSON.stringify(r.nearMiss));
     const hits = (r.rpg || []).filter((x) => x.dmg > 0 && !x.shielded).map((x) => x.dmg);

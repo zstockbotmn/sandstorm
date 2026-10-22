@@ -3421,7 +3421,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       breatherTo = window.SS.distance + (10 - 2 * pressureP()) + Math.random() * 5; phase = 'quiet'; phaseT = 0;
       // A11 (tester: gaps were ~5 s walks, no ambience): a real calm after every cleared wave - 15-25 game-s before the next
       // contact, NOT shortened by the 5e pressure curve (only the distance part is). The ambient director fills it.
-      calmUntil = (window.SS.simTime || 0) + 8 + Math.random() * 1.5; /* A17 (tester A16: clear -> contact 12.4-15.1 s): the next wave spawns 8-9.5 s after the clear; its first shots come ~2 s later = a 10-12 s walk in total (A16c: 10-14 s, was 15-25) */ window.SS.calmUntil = calmUntil; // tester: short 10-15 m breather window.SS.bursting = false;
+      calmUntil = (window.SS.simTime || 0) + 9 + Math.random() * 1; /* A19 (tester A18 walks 9.5-10.2 s): 9-10 s to the spawn = ~10.5-11.5 s to first contact */ /* A17 (tester A16: clear -> contact 12.4-15.1 s): the next wave spawns 8-9.5 s after the clear; its first shots come ~2 s later = a 10-12 s walk in total (A16c: 10-14 s, was 15-25) */ window.SS.calmUntil = calmUntil; // tester: short 10-15 m breather window.SS.bursting = false;
     }
     prevHold = hold;
     if (window.SS && window.SS.hud && window.SS.hud.setNext) window.SS.hud.setNext(running && !hold && waveClears > 0 ? breatherTo - window.SS.distance : 0);
