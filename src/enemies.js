@@ -2892,6 +2892,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Visible grenade (tester: the camera turned with no visible grenade): red blinking warning ring where it lands.
   const nadeRingMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }); const nadeRingGeo = new THREE.RingGeometry(0.35, 0.55, 24), nadeZoneGeo = new THREE.RingGeometry(2.75, 3.0, 48); // A10: + the 3 m blast zone ring (tester: the small ring hid behind RELOAD/SCOPE)
   const nades = []; let nadeThisWave = false, campT = 0;
+  let nadeWhyT = 0; const slog = (k, d) => { try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log(k, d); } catch (_) {} };
   function throwGrenade(e, stay) {
     const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
     const from = e.group.position.clone().setY(e.group.position.y + 1.6);
@@ -2921,8 +2922,20 @@ export function createEnemies(scene, camera, world, weapon, player) {
       let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
         if (e.group.position.y < 0.5) { if (dd < bd) { bd = dd; th = e; } } else if (dd < rd) { rd = dd; roof = e; } }
       th = th || roof;
-      if (th) { nadeThisWave = true; campT = 0; if (window.SS) window.SS.nadeStarved = false; throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
+      if (th) { nadeThisWave = true; campT = 0; if (window.SS) window.SS.nadeStarved = false; slog('grenade', 'thrown ' + Math.round(th.group.position.distanceTo(camera.position)) + 'm' + (th.group.position.y >= 0.5 ? ' (roof)' : '')); throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
     }
+    // A14 (tester: no grenade in > 70 game-s camping wave 3 with 4 alive): while a wave is on and no grenade has come yet,
+    // say WHY every ~5 game-s ('gren: ...' in the sound log, SS.nadeWhy). First failing gate in trigger order.
+    if (waveActive && !nadeThisWave) { nadeWhyT += dt; if (nadeWhyT >= 5) { nadeWhyT = 0;
+      let why; const minCamp = 5 - 1.5 * pN;
+      if (!(cov && cov.state === 'in')) why = 'not in cover (' + (cov ? cov.state : 'none') + ')';
+      else if (burstIndex < 3) why = 'wave ' + burstIndex + ' < 3';
+      else if (campT <= minCamp) why = 'camp ' + campT.toFixed(1) + 's < ' + minCamp.toFixed(1);
+      else if (!gapOk) why = 'set-piece gap ' + Math.min(spGap, 999).toFixed(1) + 's';
+      else { let nd = 1e9, n = 0; for (const e of list) { if (!e.alive || e.dying) continue; n++; nd = Math.min(nd, e.group.position.distanceTo(camera.position)); }
+        why = nd >= 40 ? 'no thrower <40m (' + n + ' alive, nearest ' + (n ? Math.round(nd) + 'm' : '-') + ')' : 'roll: camp ' + campT.toFixed(1) + '/' + certainAt.toFixed(1) + 's'; }
+      if (window.SS) window.SS.nadeWhy = { sim: +((window.SS.simTime || 0)).toFixed(1), why };
+      slog('gren', why); } } else nadeWhyT = 0;
     for (let i = nades.length - 1; i >= 0; i--) { const n = nades[i]; n.t += dt;
       if (!n.landed) { const k = Math.min(1, n.t / n.flight); n.m.position.lerpVectors(n.from, n.to, k); n.m.position.y += Math.sin(k * Math.PI) * 3.2;
         if (k >= 1) { n.landed = true; n.t = 0; n.ring = new THREE.Mesh(nadeRingGeo, nadeRingMat); if (window.SS) window.SS.nadeRingAt = window.SS.simTime || 0; n.ring.rotation.x = -Math.PI / 2; n.ring.position.copy(n.to).setY(0.05); n.ring.renderOrder = 4; n.ring.add(new THREE.Mesh(nadeZoneGeo, nadeRingMat)); scene.add(n.ring); if (window.SS && window.SS.hud && window.SS.hud.callout) window.SS.hud.callout('GRENADE!', true); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('GRENADE! Moving cover'); if (cov && cov.relocate && !n.stay) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }

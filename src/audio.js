@@ -2,7 +2,7 @@
 // (last 6 lines). Repeats of the same kind fold into one line with a count (footsteps would flood it otherwise).
 const ALOG_ON = typeof location !== 'undefined' && /[?&]debug\b/.test(location.search);
 let alogEl = null;
-const SP_KIND = /^(launch thump|whoosh|boom|engine roar|door|bark|heli|crackle)$/, SP_PIN = []; let spPinAt = -1e9;
+const SP_KIND = /^(launch thump|whoosh|boom|engine roar|door|bark|heli|crackle|grenade|wave)$/, SP_PIN = []; let spPinAt = -1e9;
 function alog(kind, detail) {
   if (typeof window === 'undefined' || !window.SS) return;
   const L = window.SS.audioLog || (window.SS.audioLog = []);
@@ -749,5 +749,5 @@ export function createAudio() {
     }
   }
 
-  return { go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, engine, boom, thump, door, bark, heli, crackle, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
+  return { log: alog, go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, engine, boom, thump, door, bark, heli, crackle, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
 }
