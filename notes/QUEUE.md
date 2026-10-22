@@ -129,3 +129,14 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - Rerun when the tester is done: node tools/build.js; tools/run.sh 1500 node test/rpg-forced.js low logs/a13/rpg-forced;
   tools/run.sh 1500 node test/a11.js low logs/a13/a11; tools/run.sh 900 node test/rpg-wave.js low logs/a13/rpg;
   tools/run.sh 1200 node test/truck.js low logs/a13/truck; then preview A13.
+
+## A13 — room reachability (for PM, step 4 issue)
+- Tester A12 "rail stops ~17 m short of the souk": not a rail stop. The walk is endless past the 200 m goal; the tester's
+  budget ended at ~183 m (0.5x sim). Rooms (bld=4, Low/High only) appear on segments with originZ < -30 at 35% each,
+  so a room is usually passed within the first ~40-120 m.
+- But the rail is the street centre (x=0) and the doorways sit on the facades (x=±6.2): normal play walks PAST rooms and
+  never enters one; the 'room' cover point is used by no AI and never picked by player cover. => STEP 4 ISSUE: rooms must
+  sit on the walked rail (e.g. a rail detour/cover stop in the doorway) to be reachable in play.
+- Debug: ?debug&bld=4 then G (R is reload) jumps to 2.5 m short of the nearest room doorway ahead, facing it, holds the
+  walk (G again or 25 s resumes; enemies reset). &room=1 does it at start.
+- Notes: RPG hitting IN COVER -> A13 item 1 (shielded ~45%, '(RPG, cover)'). Natural wave-3 truck without truck=1 = intended.
