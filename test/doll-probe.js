@@ -25,11 +25,14 @@ const [tier = 'low', out = 'logs/a20/doll', thr = '1', mode = 'street'] = proces
         while (out.length < 2 && performance.now() - t00 < 330000) { await new Promise((r) => setTimeout(r, 400)); SS.input.scope = false; if (SS.player.health < 40) SS.player.health = 90;
           const L = (SS.enemies.list || []).filter((e) => e.alive && !e.dying); const roofE = L.find((e) => e.group.position.y > 2 && e.engaged !== false);
           if (!roofE) { if (L.length && performance.now() - lastK > 5000) { lastK = performance.now(); SS.debugKillNearest(); } continue; }
-          const e = SS.debugKillNearest((x) => x === roofE); if (!e) continue; const y0 = e.group.position.y, t0 = performance.now(), tr = [];
+          const e = SS.debugKillRoof ? SS.debugKillRoof() : SS.debugKillNearest((x) => x === roofE); if (!e) continue; // A22: the O / ?roofkill=1 path const y0 = e.group.position.y, t0 = performance.now(), tr = [];
           while (performance.now() - t0 < 26500) { await new Promise((r) => setTimeout(r, 500)); const h = hipsOf(e), m = e.art && e.art.root;
             tr.push([+((performance.now() - t0) / 1000).toFixed(1), h ? +(h.y - y0).toFixed(2) : null, m ? shown(m) : false, h ? +h.x.toFixed(1) : null]); }
           out.push({ y0: +y0.toFixed(2), mode: e.fallMode || null, x0: +e.group.position.x.toFixed(1), trace: tr }); }
-        return out; });
+        await new Promise((r) => setTimeout(r, 1000)); return { out, log: SS.roofCorpseLog || [] }; });
+      res.roofCorpseLog = res.roof.log; res.roof = res.roof.out; // A22: the game's own roof-corpse checks (1.5 s / 10 s)
+      for (const c of res.roofCorpseLog) if (!c.ok) fail.push('roofCorpseLog ' + c.id + ': ' + JSON.stringify(c.checks));
+      if (res.roof.length && !res.roofCorpseLog.length) fail.push('no roofCorpseLog entry for a roof kill');
       for (const [k, d] of res.roof.entries()) { const at1 = d.trace.find((x) => x[0] >= 1) || d.trace[0];
         if (!at1 || at1[1] == null || at1[1] > 0.3 || at1[1] < -0.3) fail.push('roof kill ' + k + ' (' + d.mode + ', roof ' + d.y0 + ' m): hips ' + (at1 && at1[1]) + ' m from the roof 1 s after the kill');
         const gone = d.trace.find((x) => x[0] >= 1 && x[0] <= 25 && /* A21: 0-1 s is the death drop itself (pre-fall + 300 ms settle) */ (!x[2] || x[1] == null || x[1] < -0.35 || x[1] > 0.6)); if (gone) fail.push('roof kill ' + k + ': at ' + gone[0] + ' s body ' + (!gone[2] ? 'not shown' : 'at ' + gone[1] + ' m (sank / off the roof)')); }

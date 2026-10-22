@@ -1747,6 +1747,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Now the posed body is measured (lowest bone) and dropped onto the floor it stood on in ~0.3 s of REAL time (so it lands
   // on the next frame at 1-2 fps); on a roof the body is turned to lie away from the street and pulled back from the edge.
   const cannedDrops = []; const _cA = new THREE.Vector3(), _cB = new THREE.Vector3();
+  // A22 (tester A21 pass B: a roof kill left no body on the roof): every rooftop death on the REAL path (shots, K, O/?roofkill)
+  // logs the body 1.5 s and 10 s later: in the scene, visible up the chain, hips on the roof (not under it), inside the view.
+  function roofCorpseCheck(e, model) { const SSx = window.SS; if (!SSx) return; const L = SSx.roofCorpseLog || (SSx.roofCorpseLog = []);
+    const rec = { id: e.id, sim: +((SSx.simTime || 0)).toFixed(1), roofY: +(e._standY || 0).toFixed(2), byShot: !e._dbgKill, checks: [] }; L.push(rec); if (L.length > 20) L.shift();
+    const look = (tag) => { try { let vis = true; for (let o = model; o; o = o.parent) if (!o.visible) vis = false; let top = model; while (top.parent) top = top.parent;
+      const hips = e.bones && e.bones.Hips; const hp = hips ? hips.getWorldPosition(new THREE.Vector3()) : model.getWorldPosition(new THREE.Vector3());
+      camera.updateMatrixWorld(); const ndc = hp.clone().project(camera); const inView = ndc.z < 1 && Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1;
+      const c = { tag, inScene: top === scene, visible: vis, hipsY: +hp.y.toFixed(2), onRoof: hp.y > rec.roofY - 0.1 && hp.y < rec.roofY + 0.7, inView, dist: +hp.distanceTo(camera.position).toFixed(1) };
+      rec.checks.push(c); rec.ok = c.inScene && c.visible && c.onRoof; slog('enemy', 'roof corpse ' + tag + ': ' + (rec.ok ? 'on roof' : 'MISSING') + ' y' + c.hipsY + (c.inView ? '' : ' (out of view)')); } catch (err) { reportErr('roofCorpseCheck', err); } };
+    setTimeout(() => look('1.5s'), 1500); setTimeout(() => look('10s'), 10000); }
   function settleCanned(e, model) {
     const bones = Object.values(e.bones || {}).filter((x) => x && x.isObject3D); if (!bones.length) return;
     const floor = e._standY != null ? e._standY : 0; model.updateMatrixWorld(true);
@@ -1850,7 +1860,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     else if (enemy.art) { enemy._standY = enemy.group.getWorldPosition(_cA).y; } if (!doll && enemy.art) { // no ragdoll (physics failed, or ?hits=2 tier cap): leave the body in its death pose for 25 s instead of vanishing
       try { const model = enemy.art.root; if (HITS2 && enemy.fallRootY != null) model.position.y = enemy.fallRootY; scene.attach(model); const death = enemy.actions && enemy.actions.death;
         if (death && enemy.mixer) { enemy.mixer.stopAllAction(); death.reset().setLoop(THREE.LoopOnce, 1); death.clampWhenFinished = true; death.play(); enemy.mixer.update((death.getClip().duration || 1) * 0.99); }
-        stopMixer(model, enemy.mixer); settleCanned(enemy, model); setTimeout(() => { if (model.parent) model.parent.remove(model); }, 25000); } catch (err) { reportErr('static corpse', err); } }
+        stopMixer(model, enemy.mixer); model.traverse((obj) => { if (obj.isMesh) obj.frustumCulled = false; }); // A22: the death pose leaves the bind-pose bounds (a lying roof body could be culled at the screen edge)
+        settleCanned(enemy, model); setTimeout(() => { if (model.parent) model.parent.remove(model); }, 25000);
+        if ((enemy._standY || 0) > 0.5) roofCorpseCheck(enemy, model); } catch (err) { reportErr('static corpse', err); } }
     enemy.group.visible = false;
     root.remove(enemy.group);
   }

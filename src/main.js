@@ -537,7 +537,12 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
   window.SS.debugKillNearest = (only) => { const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9; // A21: optional filter (tests: roof kills)
     for (const e of L) { if (!e.alive || e.dying || (typeof only === 'function' && !only(e))) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }
     if (!best) return null; const hp = best.bones && best.bones.Head ? best.bones.Head.getWorldPosition(new THREE.Vector3()) : best.group.position.clone().setY(1.6);
-    best.health = Math.min(best.health, 1); best.takeHit('head', hp); return best; };
+    best.health = Math.min(best.health, 1); best._dbgKill = true; best.takeHit('head', hp); return best; };
+  // A22 (tester A21 pass B: K at 54 s left no roof body, but K takes the NEAREST fighter, maybe not the roof one): O / ?roofkill=1
+  // kills the nearest ROOF fighter through the same takeHit -> fall path as a real shot; ?roofkill=1 repeats every ~20 s.
+  // R is reload, so the key is O. Result: SS.roofCorpseLog / log 'roof corpse 1.5s: on roof'.
+  window.SS.debugKillRoof = () => { const e = window.SS.debugKillNearest((x) => x.group.position.y > 2); try { audio.log('debug', e ? 'roofkill: ' + e.id + ' at y' + e.group.position.y.toFixed(1) : 'roofkill: no roof enemy'); } catch (_) {} window.SS.roofKills = (window.SS.roofKills | 0) + (e ? 1 : 0); return e; };
+  if (/[?&]roofkill=1\b/.test(location.search)) { let rkNext = 0; setInterval(() => { const SSm = window.SS; if (!SSm.running) return; if ((SSm.simTime || 0) >= rkNext && SSm.debugKillRoof()) rkNext = (SSm.simTime || 0) + 20; }, 500); }
   // A2 tester: legs hidden behind a cart could not be hit, so the limp/clutch couldn't be checked. Forced, non-lethal hits on the
   // nearest fighter's left leg / left arm / torso through the normal hit path (zone, wound, reaction, damage capped to stay alive).
   const DBG_HIT = { legL: ['limb', 'LeftUpLeg', 'LeftLeg'], armL: ['limb', 'LeftArm', 'LeftForeArm'], torso: ['body', 'Hips', 'Spine02'] };
@@ -596,7 +601,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
   window.SS.debugMoveNearest = () => { const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9;
     for (const e of L) { if (!e.alive || e.dying) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }
     const r = best && window.SS.enemies.debugMove ? window.SS.enemies.debugMove(best) : null; window.SS.lastDebugMove = r; return r; };
-  window.addEventListener('keydown', (e) => { if (!window.SS.running) return; if (e.key === 'k' || e.key === 'K') window.SS.debugKillNearest();
+  window.addEventListener('keydown', (e) => { if (!window.SS.running) return; if (e.key === 'k' || e.key === 'K') window.SS.debugKillNearest(); else if (e.key === 'o' || e.key === 'O') window.SS.debugKillRoof();
     else if (e.key === 'm' || e.key === 'M') window.SS.debugMoveNearest();
     else if (e.key === 'h' || e.key === 'H') window.SS.debugHurt();
     else if (e.key === 'j' || e.key === 'J') window.SS.debugMedTest();
