@@ -163,6 +163,9 @@ export function createWorld(scene, seed) {
   // A14 (tester: door / table / rug read as blocky flat-shaded boxes): Poly Haven CC0 planks (wood) and hessian (rug,
   // tinted red) with world-tiled UVs; the planks are dark (sRGB ~80) so the colour lifts them to a warm mid wood.
   function roomWood() { if (!_roomWood) { _roomWood = pbrMaterial('weathered_planks'); _roomWood.color.setRGB(1.35, 1.08, 0.82); /* A16: less lift so the board grain keeps its contrast */ _roomWood.roughness = 0.82; } return _roomWood; }
+  let _tableWood = null, _clothMat = null;
+  function tableWood() { if (!_tableWood) { _tableWood = pbrMaterial('wood_table_001'); _tableWood.roughness = 0.7; } return _tableWood; }
+  function clothMat() { if (!_clothMat) { _clothMat = pbrMaterial('fabric_pattern_07'); _clothMat.roughness = 0.95; } return _clothMat; }
   let _rugMat = null;
   // A16 (tester A15: rug solid red): a tinted hessian weave reads as flat red at 8 m. The rug map is now a woven-rug pattern
   // (border bands, field, medallion; canvas) multiplied by the CC0 hessian weave once that loads; one rug per UV square.
@@ -822,8 +825,12 @@ export function createWorld(scene, seed) {
     const A = (70 + seg._wrng() * 30) * Math.PI / 180;
     const leaf = addBox(seg, roomWood(), X(0.2) + side * 0.575 * Math.sin(A), 1.075, zc - 0.6 + 0.575 * Math.cos(A), 0.06, 2.15, 1.15, { collide: false, uvTile: 0.9 });
     leaf.rotation.y = side * A;
-    addBox(seg, roomWood(), X(2.2), 0.76, zc, 1.2, 0.06, 0.8, { uvTile: 0.6 });
-    addBox(seg, roomWood(), X(2.2), 0.38, zc, 0.9, 0.7, 0.5, { uvTile: 0.9 });
+    // A16d (tester A15: table a plain brown slab): CC0 wood_table_001 top + four legs (no block base), world-tiled UVs, and a
+    // CC0 fabric_pattern_07 runner across it; diffuse maps on every tier (pbrMaterial).
+    { const tw = tableWood(); addBox(seg, tw, X(2.2), 0.76, zc, 1.2, 0.05, 0.8, { uvTile: 0.7 });
+      for (const lx of [-0.52, 0.52]) for (const lz of [-0.33, 0.33]) addBox(seg, tw, X(2.2 + lx), 0.37, zc + lz, 0.06, 0.74, 0.06, { uvTile: 0.7, cast: false, collide: false });
+      addBox(seg, clothMat(), X(2.2), 0.79, zc, 0.36, 0.01, 0.86, { collide: false, cast: false, uvTile: 0.35 });
+      addInvisibleBox(seg, X(2.2), 0.38, zc, 1.1, 0.76, 0.7); }
     const nC = 2 + Math.floor(seg._wrng() * 2), cS = seg._wrng() < 0.5 ? -1 : 1;
     for (let i = 0; i < nC; i++) addBox(seg, roomWood(), X(3.4), 0.3 + i * 0.6, zc + cS * (W / 2 - 0.4), 0.6, 0.6, 0.6, { uvTile: 0.9 });
     addBox(seg, roomWood(), X(3.58), 0.9, zc, 0.35, 1.8, 1.6, { uvTile: 0.9 });
