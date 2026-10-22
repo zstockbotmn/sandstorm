@@ -2012,7 +2012,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A8 / App PM ruling: ducked behind solid cover = NO direct hits from the front arc (shooter within FRONT_ARC_DEG of the
   // cover's facing, seen from the player). Damage while ducked only from a flanker with a clear line, after a FLANKED tell
   // (cue + arc toward it) that has run FLANK_TELL_S in both real and game time. The tell re-arms after FLANK_RESET_S of quiet.
-  const FRONT_ARC_DEG = 60, FRONT_ARC_COS = Math.cos(FRONT_ARC_DEG * Math.PI / 180), FLANK_TELL_S = 1.5, FLANK_RESET_S = 5;
+  const FRONT_ARC_DEG = 60, FRONT_ARC_COS = Math.cos(FRONT_ARC_DEG * Math.PI / 180), FLANK_TELL_S = 1.5, FLANK_RESET_S = 5, FLANK_TELL_MAX_S = 5, FLANK_CAP_WAVE = 2, FLANK_HITS_PER_FLANKER = 2;
+  let flankHitsWave = 0; // A15: reset when the wave ends (updateGrenades)
   let duckSinceSim = null, lastFlankSim = -1e9;
   function FLANK_AFTER_S() { return 9 - 3 * pressureP(); }
   function FLANK_GAP_S() { return 18 - 6 * pressureP(); }
@@ -2022,6 +2023,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!ducked) { duckSinceSim = null; return; }
     if (duckSinceSim == null) duckSinceSim = t;
     if (t - duckSinceSim < FLANK_AFTER_S() || t - lastFlankSim < FLANK_GAP_S()) return;
+    if (flankHitsWave >= FLANK_CAP_WAVE) return; // A15: the wave's flank budget is spent
     if (list.some((f) => f.alive && f._flankMove && f.phase === 'relocate')) return;
     let e = null, bd = 1e9; const cam = camera.position;
     for (const f of list) {
@@ -2050,6 +2052,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     SSx.lastFlank = { id: e.id, to: [+spot.pos.x.toFixed(1), +spot.pos.z.toFixed(1)], t: +t.toFixed(1) };
     if (SSx.hud && SSx.hud.callout) SSx.hud.callout('Flanking!', true);
   }
+  // A15: a flank hit consumes its tell; after FLANK_HITS_PER_FLANKER hits (or the wave cap) the flanker stops being one and
+  // moves back to cover in the player's front arc (a new flank needs a new flank move + tell)
+  function flankAfterHit(e) { const sim = window.SS.simTime || 0; e._lastTellAge = +(sim - (e._flankTellSim || 0)).toFixed(2); e._flankTellSim = null;
+    flankHitsWave++; e._flankHitsN = (e._flankHitsN | 0) + 1;
+    if (e._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE) { e._flankArr = null; e._flankHitsN = 0;
+      let best = null, bd = 1e9; for (const c of coverPool(['wall', 'barrel', 'car', 'door'], [8, 32])) { if (!c.pos || !inFrontArc(c.pos) || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
+      if (best && !e.pinned && !e.dying) { parkCoverStep(e); startReposition(e, best); e._reposWhy = 'flank-done'; e.moveKind = 'run'; }
+      if (window.SS) window.SS.flankRetired = (window.SS.flankRetired | 0) + 1; } }
   api.debugFlank = () => { lastFlankSim = -1e9; duckSinceSim = -1e9; flankTick(); return window.SS && window.SS.lastFlank; };
   function coverFacing(out) { const SSx = window.SS, c = camera.position, sb = SSx && SSx.cover && SSx.cover.surface; out.x = 0; out.z = -1;
     if (sb) { const qx = Math.max(sb.min.x, Math.min(sb.max.x, c.x)), qz = Math.max(sb.min.z, Math.min(sb.max.z, c.z)), l = Math.hypot(qx - c.x, qz - c.z); if (l > 0.05) { out.x = (qx - c.x) / l; out.z = (qz - c.z) / l; } }
@@ -2106,8 +2116,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (outArc && !isFlanker && window.SS) window.SS.flankNotMover = (window.SS.flankNotMover | 0) + 1;
     if (outArc && isFlanker) { flankShot = true;
       const fS = window.SS.simTime || 0, fR = performance.now() / 1000;
-      if (!(enemy._flankTellSim > -1e8) || fS - (enemy._flankLastSim == null ? -99 : enemy._flankLastSim) > FLANK_RESET_S) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); }
-      enemy._flankLastSim = fS; flankReady = fS - enemy._flankTellSim >= FLANK_TELL_S && fR - enemy._flankTellR >= FLANK_TELL_S; }
+      // A15 (tester A14: flank hits 219.5 / 236.6 / 252.5 / 325.7 with NO FLANKED before them): the tell only re-armed after
+      // FLANK_RESET_S of no flank SHOTS from that fighter, and a flanker shooting every 2-3 s never went quiet, so one tell
+      // covered every later hit. Now a tell is good for ONE hit, 1.5-5 s after it shows (game and real time): a hit consumes
+      // it, and a tell older than FLANK_TELL_MAX_S is shown again (new attempt) before any hit.
+      const tAge = fS - (enemy._flankTellSim > -1e8 ? enemy._flankTellSim : -1e9);
+      if (!(enemy._flankTellSim > -1e8) || tAge > FLANK_TELL_MAX_S) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
+      enemy._flankLastSim = fS; const tS = fS - enemy._flankTellSim, tR = fR - enemy._flankTellR;
+      flankReady = tS >= FLANK_TELL_S && tR >= FLANK_TELL_S && tS <= FLANK_TELL_MAX_S;
+      // A15 cap: at most FLANK_CAP_WAVE flank hits per wave on a player who stays in cover
+      if (flankReady && flankHitsWave >= FLANK_CAP_WAVE) { flankReady = false; if (window.SS) window.SS.flankCapBlocked = (window.SS.flankCapBlocked | 0) + 1; } }
     if (flankShot && !flankLine(_muzzle)) { flankReady = false; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; }
     if (flankShot && flankReady && window.SS && flankLullLeft() > 0) { flankReady = false; window.SS.flankLullBlocked = (window.SS.flankLullBlocked | 0) + 1; }
     const flankHit = flankShot && flankReady;
@@ -2203,7 +2221,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!flankHit && !playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       if (flankHit && enemy._flankRec && enemy._flankRec.firstHitSim == null) enemy._flankRec.firstHitSim = +(simS).toFixed(2);
-      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: +(simS - (enemy._flankTellSim || 0)).toFixed(2), mover: !!enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
+      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); flankAfterHit(enemy); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: enemy._lastTellAge, mover: !!enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, flankHit ? 'flank' : 'gun'); // cover also softens hits (x0.6, in dmgAmt)
     } else if (window.SS && window.SS.fx) {
       if (coverImpact && window.SS.fx.impact) { window.SS.fx.impact(coverImpact.point, coverImpact.normal, coverImpact.object); window.SS.coverImpacts = (window.SS.coverImpacts | 0) + 1; }
@@ -2908,7 +2926,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function updateGrenades(dt) {
     const cov = window.SS && window.SS.cover;
-    if (waveActive && cov && cov.state === 'in') campT += dt; else if (!waveActive) { campT = 0; nadeThisWave = false; }
+    if (waveActive && cov && cov.state === 'in') campT += dt; else if (!waveActive) { campT = 0; nadeThisWave = false; flankHitsWave = 0; }
     // A10 (tester: no grenade in ~60 s ducked in wave 3): the thrower had to be engaged, on the ground AND < 26 m - wave-3
     // fighters usually hold 26-34 m or a roof, so nobody qualified. Now: the nearest live ground fighter within 36 m (engaged
     // or not); after 12 s camping it is certain. Shared set-piece spacing: none within 8 game-s of an RPG / truck (SS.setPieceAt).
@@ -3280,7 +3298,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function reset() {
     if (truck) { scene.remove(truck.g); truck = null; } truckPending = 0;
-    for (const n of nades) { scene.remove(n.m); if (n.ring) scene.remove(n.ring); } nades.length = 0; nadeThisWave = false; campT = 0;
+    for (const n of nades) { scene.remove(n.m); if (n.ring) scene.remove(n.ring); } nades.length = 0; nadeThisWave = false; campT = 0; flankHitsWave = 0;
     for (let i = list.length - 1; i >= 0; i--) despawn(list[i]);
     list.length = 0;
     while (fallers.length) { const f = fallers.pop(); if (f.group.parent) f.group.parent.remove(f.group); }
