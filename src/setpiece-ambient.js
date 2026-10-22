@@ -120,13 +120,13 @@ export function createAmbient({ scene, camera, hud }) {
     if ((ev.pos && dist(ev.pos) < 40) || ev.t >= ev.dur) endEv();
   }
   const liveEnemy = () => { const list = (window.SS && window.SS.enemies && window.SS.enemies.list) || []; return !list.every((e) => !e || !e.alive); };
-  let firstPending = false, lastBeat = '';
+  let firstPending = false, lastBeat = '', cuePending = false, cueWait = 0, cueBag = [], lastCue = '';
   const BEAT_KINDS = ['radio', 'dog', 'gunfire']; let beatBag = [];
   function resetRun() {
     const id = (window.SS && window.SS.runs) || 0;
     if (seenRun == null) { seenRun = id; return; }
     if (id === seenRun) return;
-    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; firstPending = false; if (window.SS) window.SS.calmLog = []; prev = ''; lastBeat = ''; beatBag = []; wait = rnd(7, 14);
+    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; firstPending = false; if (window.SS) window.SS.calmLog = []; prev = ''; lastBeat = ''; beatBag = []; cuePending = false; cueBag = []; lastCue = ''; wait = rnd(7, 14);
     counts.fire = counts.radio = counts.dog = counts.door = counts.heli = counts.gunfire = 0; pub.last = null;
     if (window.SS) window.SS.ambient = pub; endEv();
   }
@@ -142,10 +142,13 @@ export function createAmbient({ scene, camera, hud }) {
     // A14 (tester: the wave 1->2 gap had no ambience line): the calm's FIRST event is guaranteed within ~3 s of the clear:
     // 0.5 s debounce + 1.5-2.4 s, it ends any event still running from before, it is never the (visual-only) radio, and
     // it is logged ('ambient <kind>' + SS.calmLog { clearSim, firstSim, kind }).
-    if (liveEnemy() || SS.bursting) { lastLive = sim; eligible = false; }
+    if (liveEnemy() || SS.bursting) { lastLive = sim; eligible = false; cuePending = false; }
     if (!SS.running || SS.bursting || sim - lastLive < 0.5) return;
     if (!eligible) { eligible = true; firstPending = true; wait = rnd(1.5, 2.4); if (ev) endEv();
       const L = SS.calmLog || (SS.calmLog = []); L.push({ clearSim: lastLive > -1e8 ? +lastLive.toFixed(1) : null, firstSim: null, kind: null }); if (L.length > 20) L.shift(); }
+    // A17 (tester A16 #9): a second, smaller cue mid-walk, 4-5.5 s after the beat (so ~6.5-8.5 s into the 8-9.5 s calm):
+    // squad footsteps, a gear rattle or a distant shout - tense, never combat, not a beat (counts / calmLog.beats untouched).
+    if (cuePending) { cueWait -= dt; if (cueWait <= 0) { cuePending = false; walkCue(sim); } }
     if (ev) return;
     // A16 (PM): every calm gets EXACTLY ONE ambient beat - distant radio chatter, a barking dog or far-off gunfire, never the
     // same kind as the previous calm's beat - and nothing else (the old 5-8 s follow-ups are gone). SS.calmLog[i].beats counts it.
@@ -153,9 +156,19 @@ export function createAmbient({ scene, camera, hud }) {
       // A17 (tester A16: beats only alternated radio / dog): a shuffled bag of all three, refilled without repeating the last
       if (!beatBag.length) { beatBag = BEAT_KINDS.slice().sort(() => Math.random() - 0.5); if (beatBag[0] === lastBeat) beatBag.push(beatBag.shift()); }
       const k = beatBag.shift(); lastBeat = k;
+      cuePending = true; cueWait = rnd(4, 5.5);
       const r = begin(k, sim), L = SS.calmLog; if (L && L.length) { const c = L[L.length - 1]; c.firstSim = +sim.toFixed(1); c.kind = k; c.beats = (c.beats | 0) + 1; }
       { const a = clip(); if (a && a.log) a.log('ambient', k + (lastLive > -1e8 ? ' (calm +' + (sim - lastLive).toFixed(1) + 's)' : ' (opening)')); } return r; }
   }
+  const CUES = ['footsteps', 'gear', 'shout'], CUE_LINES = { footsteps: ['Squad: keep it tight, move up.', 'Squad: on me, quiet now.'], gear: ['Squad: check your mags.', 'Squad: top off while you can.'], shout: ['(a shout, somewhere ahead)', '(voices ahead - then nothing)'] };
+  function walkCue(sim) { const SS = window.SS || {};
+    if (!cueBag.length) { cueBag = CUES.slice().sort(() => Math.random() - 0.5); if (cueBag[0] === lastCue) cueBag.push(cueBag.shift()); }
+    const k = cueBag.shift(); lastCue = k; const a = clip(), lines = CUE_LINES[k];
+    if (hud && hud.radio) hud.radio(lines[(Math.random() * lines.length) | 0], 2600);
+    if (a) { if (k === 'shout') { if (a.radio) a.radio(); }
+      else if (a.reload) { const n = k === 'gear' ? 2 : 4; for (let i = 0; i < n; i++) setTimeout(() => { const b = clip(); if (b && b.reload && window.SS && window.SS.running && !window.SS.bursting) b.reload(i % 2 ? 'end' : 'mid'); }, i * (k === 'gear' ? 380 : 260)); } }
+    if (a && a.log) a.log('ambient', 'walk cue ' + k + (lastLive > -1e8 ? ' (calm +' + (sim - lastLive).toFixed(1) + 's)' : ''));
+    const L = SS.calmLog; if (L && L.length) L[L.length - 1].walkCue = k; }
   function debugAmbient(kind) { return KINDS.indexOf(kind) < 0 ? null : begin(kind, (window.SS && window.SS.simTime) || 0); }
   if (window.SS) window.SS.ambient = pub;
   return { update, debugAmbient, state };

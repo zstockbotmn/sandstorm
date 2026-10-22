@@ -1,5 +1,5 @@
 // A11 targeted checks on one tier (?sp=5&rpg=1&truck=1&debug&test=fast):
-//  calm  - every wave clear gives a 10-12 game-s walk to first contact (A17), exactly 1 ambient beat (radio / dog / fire, no back-to-back repeat; SS.calmLog) and no enemy shots in it
+//  calm  - every wave clear gives a 10-12 game-s walk to first contact (A17), exactly 1 ambient beat (radio / dog / gunfire, no back-to-back repeat, all 3 by the 3rd calm; SS.calmLog) plus a mid-walk cue and no enemy shots in it
 //  nade  - wave 3, ducked, waves 1-2 K-skipped, the two nearest fighters killed: a grenade by ~22 game-s, ring + GRENADE!
 //  rpg   - 6 debug RPGs at 100 HP: damage spread inside 10-30, HP >= 5, hurt log line names (RPG)
 //  nm    - near misses in cover at most ~1 per 1.5 s
@@ -55,6 +55,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
     // A16: calmLog - one beat per calm, kinds radio / dog / fire, no back-to-back repeat
     { const cl = (r.calmLog || []).filter((c) => c.kind); r.beats = cl.map((c) => c.kind + ':' + (c.beats | 0));
       for (const c of cl) { if ((c.beats | 0) !== 1) fail.push('calm at ' + c.clearSim + ': ' + c.beats + ' beats'); if (!/^(radio|dog|gunfire)$/.test(c.kind)) fail.push('calm beat kind ' + c.kind); }
+      for (const c of cl) if (c.clearSim != null && c.kind && !c.walkCue) fail.push('calm at ' + c.clearSim + ' had no mid-walk cue');
       if (cl.length >= 3 && new Set(cl.slice(0, 3).map((c) => c.kind)).size < 3) fail.push('not all 3 beat kinds by the 3rd calm: ' + cl.slice(0, 3).map((c) => c.kind).join(','));
       for (let i = 1; i < cl.length; i++) if (cl[i].kind === cl[i - 1].kind) fail.push('calm beat repeated ' + cl[i].kind); }
     for (const c of r.calms || []) { if (!(c.walk >= 9.5 && c.walk <= 12.5)) fail.push('walk clear -> contact ' + c.walk + ' s (want 10-12; spawn at ' + c.calm + ' s)'); if (c.ambient !== 1) fail.push(c.ambient + ' ambient beats in calm after wave ' + c.after + ' (want exactly 1)'); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
