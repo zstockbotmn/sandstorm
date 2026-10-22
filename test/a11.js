@@ -1,5 +1,5 @@
 // A11 targeted checks on one tier (?sp=5&rpg=1&truck=1&debug&test=fast):
-//  calm  - every wave clear gives >= 15 game-s before the next wave, >= 1 ambient event and no enemy shots in it
+//  calm  - every wave clear gives >= 10 game-s (A16c: 10-14 s) before the next wave, >= 1 ambient event and no enemy shots in it
 //  nade  - wave 3, ducked, waves 1-2 K-skipped, the two nearest fighters killed: a grenade by ~22 game-s, ring + GRENADE!
 //  rpg   - 6 debug RPGs at 100 HP: damage spread inside 10-30, HP >= 5, hurt log line names (RPG)
 //  nm    - near misses in cover at most ~1 per 1.5 s
@@ -51,7 +51,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
       out.hitLog = (SS.audioLog || []).filter((x) => x.kind === 'hit taken').slice(-10).map((x) => x.detail);
       return out; });
     const r = res.run; if (r.err) fail.push(r.err);
-    for (const c of r.calms || []) { if (c.calm < 15) fail.push('calm ' + c.calm + ' s'); if (c.ambient < 1) fail.push('no ambient in calm after wave ' + c.after); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
+    for (const c of r.calms || []) { if (c.calm < 9.8) fail.push('calm ' + c.calm + ' s (want >= 10)'); if (c.ambient < 1) fail.push('no ambient in calm after wave ' + c.after); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
     if (r.nade && !r.nade.thrown) fail.push('no wave-3 grenade ' + JSON.stringify(r.nade.gate)); else if (r.nade && (!r.nade.ring || !r.nade.hint)) fail.push('grenade ring/callout missing');
     if (r.nearMiss && r.nearMiss.shown > Math.ceil(r.nearMiss.gameS / 1.4) + 1) fail.push('near misses ' + JSON.stringify(r.nearMiss));
     const hits = (r.rpg || []).filter((x) => x.dmg > 0 && !x.shielded).map((x) => x.dmg);

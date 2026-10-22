@@ -1650,6 +1650,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function kill(enemy, point, part) {
     if (!enemy.alive) return;
+    if (enemy._stallRec) { enemy._stallRec.died = true; enemy._stallRec = null; }
     enemy.alive = false;
     slog('kill', '(' + (part === 'head' ? 'head' : part === 'limb' ? 'limb' : 'torso') + ')'); // A14: kills in the sound log
     waveProgSim = window.SS ? (window.SS.simTime || 0) : 0; // A15: a kill is wave progress
@@ -2021,7 +2022,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function flankTick() {
     const SSx = window.SS; if (!SSx || !SSx.running) return;
     const t = SSx.simTime || 0, ducked = !!(SSx.input && SSx.input.cover);
-    for (const f of list) if (f.alive && f._flankTellSim > -1e8 && t - f._flankTellSim > FLANK_TELL_MAX_S + 0.5) retireFlanker(f, f._flankBlock || (ducked ? 'no shot' : 'player left cover')); // A16: an unused tell ends the attempt
+    for (const f of list) if (f.alive && typeof f._flankTellSim === 'number' && t - f._flankTellSim > FLANK_TELL_MAX_S + 0.5) retireFlanker(f, f._flankBlock || (ducked ? 'no shot' : 'player left cover')); // A16: an unused tell ends the attempt
     if (!ducked) { duckSinceSim = null; return; }
     if (duckSinceSim == null) duckSinceSim = t;
     if (t - duckSinceSim < FLANK_AFTER_S() || t - lastFlankSim < FLANK_GAP_S()) return;
@@ -2128,11 +2129,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // FLANK_RESET_S of no flank SHOTS from that fighter, and a flanker shooting every 2-3 s never went quiet, so one tell
       // covered every later hit. Now a tell is good for ONE hit, 1.5-5 s after it shows (game and real time): a hit consumes
       // it, and a tell older than FLANK_TELL_MAX_S is shown again (new attempt) before any hit.
-      const tAge = fS - (enemy._flankTellSim > -1e8 ? enemy._flankTellSim : -1e9);
+      const tAge = fS - (typeof enemy._flankTellSim === 'number' ? enemy._flankTellSim : -1e9);
       // A16 (tester A15: 3-4 FLANKED per wave, 2 hits): a tell that ran out (> 5 s) with no hit no longer re-shows - the attempt
       // is aborted ('flank aborted (why)') and the flanker moves back to the front arc; a fresh tell only for a fresh attempt.
-      if (enemy._flankTellSim > -1e8 && tAge > FLANK_TELL_MAX_S) { retireFlanker(enemy, enemy._flankBlock || 'no shot'); flankShot = false; }
-      else if (!(enemy._flankTellSim > -1e8)) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
+      if (typeof enemy._flankTellSim === 'number' && tAge > FLANK_TELL_MAX_S) { retireFlanker(enemy, enemy._flankBlock || 'no shot'); flankShot = false; }
+      else if (!(typeof enemy._flankTellSim === 'number')) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
       enemy._flankLastSim = fS; const tS = fS - enemy._flankTellSim, tR = fR - enemy._flankTellR;
       flankReady = tS >= FLANK_TELL_S && tR >= FLANK_TELL_S && tS <= FLANK_TELL_MAX_S;
       // A15 cap: at most FLANK_CAP_WAVE flank hits per wave on a player who stays in cover
@@ -2498,6 +2499,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function enterCover(enemy, hold) {
+    if (enemy._stallRec) { const r = enemy._stallRec; enemy._stallRec = null; r.arrived = Math.round(camera.position.z - enemy.group.position.z); r.arriveSim = +((window.SS && window.SS.simTime) || 0).toFixed(1); r.atTarget = enemy.anchor && r.to != null ? Math.abs(Math.round(camera.position.z - enemy.anchor.pos.z) - r.to) <= 1 : null; }
     enemy._repositioning = false;
     if (enemy._flankMove) { enemy._flankMove = false; enemy._flankArr = enemy.group.position.clone(); /* A14: the only fighter whose rounds can be flank hits */ const SSx = window.SS; if (SSx && flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(enemy, 'cap'); /* A16: no tell once the wave's flank budget is spent */ else if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
     enemy.phase = 'takeCover';
@@ -2648,7 +2650,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     e.moveKind = 'run'; e._reposWhy = 'stall-' + kind; e.advanced = (e.advanced | 0) + 1;
     try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {}
     SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', kind + ' ' + Math.round(from) + 'm');
-    const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z), wave: Math.max(burstIndex, waveClears + 1) }); if (L.length > 40) L.shift(); }
+    const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 40) L.shift();
+    if (e._stallRec && e._stallRec.arrived == null) e._stallRec.cancelled = 'stall'; e._stallRec = rec; } // A16b: arrival (or why not) is filled in on the rec
   function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0;
     if (!waveActive) { waveProgSim = sim; stallWasActive = false; return; }
     if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3; } // re-arm at each wave start
@@ -2656,7 +2659,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const pz = camera.position.z, alive = list.filter((e) => e.alive && !e.dying);
     const cand = alive.filter((e) => !e.pinned && e.phase !== 'relocate' && e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 9)
       .sort((a, b) => a.group.position.z - b.group.position.z); // farthest first
-    for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a - 3, 2); if (c) return stallSend(e, c, 'advances', a); }
+    for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a - 5.5, 2); if (c) return stallSend(e, c, 'advances', a); } // A16b: >= 5 m nearer
     for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) return stallSend(e, c, 'repositions', a); }
     const wv = Math.max(burstIndex, waveClears + 1);
     if (stallFreshWave !== wv && alive.length < 6) { const keep = poolRange; forcePoolRange = [26, 40]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
@@ -2736,6 +2739,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Hand the run to the existing relocate path. Rise overlaps the first steps. No teleport.
   function startReposition(e, c) {
+    if (e._stallRec) { e._stallRec.cancelled = 'moved again (' + (e._reposWhy || '?') + ')'; e._stallRec = null; } // A16b
     e._flankArr = null; // A14: a new move ends flanker status (a flank move re-earns it on arrival)
     e._prevAnchor = e.anchor;
     if (LOCO2) beginCoverExit(e);
@@ -3313,7 +3317,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       breatherTo = window.SS.distance + (10 - 2 * pressureP()) + Math.random() * 5; phase = 'quiet'; phaseT = 0;
       // A11 (tester: gaps were ~5 s walks, no ambience): a real calm after every cleared wave - 15-25 game-s before the next
       // contact, NOT shortened by the 5e pressure curve (only the distance part is). The ambient director fills it.
-      calmUntil = (window.SS.simTime || 0) + 15 + Math.random() * 10; window.SS.calmUntil = calmUntil; // tester: short 10-15 m breather window.SS.bursting = false;
+      calmUntil = (window.SS.simTime || 0) + 10 + Math.random() * 4; /* A16c (PM): 10-14 s calm, was 15-25 (the first-calm ambient beat at +2-3 s stays) */ window.SS.calmUntil = calmUntil; // tester: short 10-15 m breather window.SS.bursting = false;
     }
     prevHold = hold;
     if (window.SS && window.SS.hud && window.SS.hud.setNext) window.SS.hud.setNext(running && !hold && waveClears > 0 ? breatherTo - window.SS.distance : 0);
