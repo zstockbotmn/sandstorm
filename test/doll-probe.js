@@ -25,7 +25,7 @@ const [tier = 'low', out = 'logs/a20/doll', thr = '1', mode = 'street'] = proces
         while (out.length < 2 && performance.now() - t00 < 330000) { await new Promise((r) => setTimeout(r, 400)); SS.input.scope = false; if (SS.player.health < 40) SS.player.health = 90;
           const L = (SS.enemies.list || []).filter((e) => e.alive && !e.dying); const roofE = L.find((e) => e.group.position.y > 2 && e.engaged !== false);
           if (!roofE) { if (L.length && performance.now() - lastK > 5000) { lastK = performance.now(); SS.debugKillNearest(); } continue; }
-          const e = SS.debugKillRoof ? SS.debugKillRoof() : SS.debugKillNearest((x) => x === roofE); if (!e) continue; // A22: the O / ?roofkill=1 path const y0 = e.group.position.y, t0 = performance.now(), tr = [];
+          const e = SS.debugKillRoof ? SS.debugKillRoof() : SS.debugKillNearest((x) => x === roofE); if (!e) continue; /* A22: the O / ?roofkill=1 path */ const y0 = e.group.position.y, t0 = performance.now(), tr = [];
           while (performance.now() - t0 < 26500) { await new Promise((r) => setTimeout(r, 500)); const h = hipsOf(e), m = e.art && e.art.root;
             tr.push([+((performance.now() - t0) / 1000).toFixed(1), h ? +(h.y - y0).toFixed(2) : null, m ? shown(m) : false, h ? +h.x.toFixed(1) : null]); }
           out.push({ y0: +y0.toFixed(2), mode: e.fallMode || null, x0: +e.group.position.x.toFixed(1), trace: tr }); }
