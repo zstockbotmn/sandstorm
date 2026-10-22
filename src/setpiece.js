@@ -130,7 +130,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   let whooshed = false;
   function launchNow(sim) {
     { const cv = window.SS && window.SS.cover; aimCover = !!(cv && cv.state === 'in' && cv.surface && Math.random() < 0.4); }
-    const lkind = pickLaunch(); whooshed = false; if (window.SS) window.SS.setPieceAt = sim;
+    const lkind = pickLaunch(); whooshed = false; if (window.SS) window.SS.setPieceAt = sim; try { window.SS.enemies.spLog('rpg'); } catch (_) {} // A15 spacing check
     flying = state.flying = true; launchSim = sim; launchR = performance.now();
     warned = false; smokeAcc = 0; prev.copy(launch); rocket.visible = true; aimRocket(launch);
     showFlash(launch, 2.4, 0.3);

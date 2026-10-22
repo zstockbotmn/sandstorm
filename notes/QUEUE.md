@@ -181,3 +181,13 @@ Then: window-table tuning, 4e1-4e4, 4e5.
   SS.winDbg counts. Verify by eye on Low/High before trusting the table.
 - Run order after the tester: build -> winDbg look (Low + High screenshots) -> tools/step4-runs.sh (shots/skyline/perf) ->
   4e1 -> 4e2 -> 4e3 -> 4e4 -> 4e5a -> 4e5b -> doorway-stop.js -> 4e5c.
+
+## A15 (tester A14 notes, pA14) - code done, NOT run (tester mid-session)
+- 1 flank tell: the bypass was the old re-arm (a new tell only after 5 s with no flank SHOTS) - a flanker shooting every
+  2-3 s reused one tell for hit after hit. Now a tell buys ONE hit 1.5-5 s later; the hit consumes it; older tell -> re-shown.
+- 2 flank cap: <= 2 flank hits/wave (flankCapBlocked); a flanker with 2 hits (or at the cap) runs back to front-arc cover (flankRetired).
+- 3 stall push: 15-20 game-s with no kill/advance -> farthest ground fighter runs to cover >= 5 m nearer (advanceNearer;
+  'enemy advances Nm'; SS.stallPushes / stallPushLog).
+- 4 grenade re-arm: <= 2/wave, camp timer restarts at a throw, 2nd needs the full 'certain' time; gren: lines continue ('cap 2/wave').
+- 5 set-piece spacing 15 s (RPG / truck / grenade; starved-grenade 3 s exception removed). SS.spLog for checks.
+- Check: test/a15.js (random + forced). Risk: a11's forced-flags grenade case may now wait longer (15 s gap).

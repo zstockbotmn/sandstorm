@@ -68,6 +68,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (hud && hud.edgeWarn) hud.edgeWarn(angleTo(pos));
   }
   function start(sim) {
+    try { window.SS.enemies.spLog('truck'); } catch (_) {} // A15 spacing check
     if (run && run.g) scene.remove(run.g);
     const cam = camera.position, side = cam.x > 0 ? -1 : 1;
     let cx = side * (4.6 + Math.random() * 0.8);

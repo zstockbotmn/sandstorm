@@ -2222,7 +2222,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!flankHit && !playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       if (flankHit && enemy._flankRec && enemy._flankRec.firstHitSim == null) enemy._flankRec.firstHitSim = +(simS).toFixed(2);
-      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); flankAfterHit(enemy); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: enemy._lastTellAge, mover: !!enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
+      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); flankAfterHit(enemy); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: enemy._lastTellAge, wave: waveClears + 1, mover: !!enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, flankHit ? 'flank' : 'gun'); // cover also softens hits (x0.6, in dmgAmt)
     } else if (window.SS && window.SS.fx) {
       if (coverImpact && window.SS.fx.impact) { window.SS.fx.impact(coverImpact.point, coverImpact.normal, coverImpact.object); window.SS.coverImpacts = (window.SS.coverImpacts | 0) + 1; }
@@ -2621,7 +2621,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const pz = camera.position.z, cand = list.filter((e) => e.alive && !e.dying && !e.pinned && e.phase !== 'relocate' && e.group.position.y < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 13)
       .sort((a, b) => a.group.position.z - b.group.position.z); // farthest first
     for (const e of cand) { const ahead = pz - e.group.position.z; if (advanceNearer(e, 8, ahead - 5)) { e._reposWhy = 'stall-push'; SSx.stallPushes = (SSx.stallPushes | 0) + 1;
-        slog('enemy', 'advances ' + Math.round(ahead) + 'm'); return; } }
+        slog('enemy', 'advances ' + Math.round(ahead) + 'm'); const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), id: e.id, from: Math.round(ahead), to: Math.round(pz - e.anchor.pos.z) }); if (L.length > 30) L.shift(); return; } }
     if (SSx) SSx.stallPushNone = (SSx.stallPushNone | 0) + 1; }
 
   // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.
@@ -2927,6 +2927,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const nadeMat = visMat(0x2f3324); const nadeGeo = new THREE.SphereGeometry(0.12, 10, 8);
   // Visible grenade (tester: the camera turned with no visible grenade): red blinking warning ring where it lands.
   const nadeRingMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }); const nadeRingGeo = new THREE.RingGeometry(0.35, 0.55, 24), nadeZoneGeo = new THREE.RingGeometry(2.75, 3.0, 48); // A10: + the 3 m blast zone ring (tester: the small ring hid behind RELOAD/SCOPE)
+  // A15: every set piece start (RPG launch, truck start, grenade throw) for the spacing check: SS.spLog [{ kind, sim, wave }]
+  function spLog(kind, wave) { const SSx = window.SS; if (!SSx) return; const L = SSx.spLog || (SSx.spLog = []); L.push({ kind, sim: +((SSx.simTime || 0)).toFixed(2), wave: wave != null ? wave : Math.max(burstIndex, waveClears + 1) }); if (L.length > 60) L.shift(); }
+  api.spLog = spLog;
   const nades = []; let nadeThisWave = false, campT = 0, nadesWave = 0; const NADE_CAP = 2, SP_GAP_S = 15;
   let nadeWhyT = 0; const slog = (k, d) => { try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log(k, d); } catch (_) {} };
   function throwGrenade(e, stay) {
@@ -2965,7 +2968,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
         if (e.group.position.y < 0.5) { if (dd < bd) { bd = dd; th = e; } } else if (dd < rd) { rd = dd; roof = e; } }
       th = th || roof;
-      if (th) { nadeThisWave = true; nadesWave++; campT = 0; if (window.SS) window.SS.nadeStarved = false; slog('grenade', 'thrown ' + Math.round(th.group.position.distanceTo(camera.position)) + 'm' + (th.group.position.y >= 0.5 ? ' (roof)' : '')); throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
+      if (th) { nadeThisWave = true; nadesWave++; campT = 0; spLog('grenade', waveNo); if (window.SS) window.SS.nadeStarved = false; slog('grenade', 'thrown ' + Math.round(th.group.position.distanceTo(camera.position)) + 'm' + (th.group.position.y >= 0.5 ? ' (roof)' : '')); throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
     }
     // A14 (tester: no grenade in > 70 game-s camping wave 3 with 4 alive): while a wave is on and no grenade has come yet,
     // say WHY every ~5 game-s ('gren: ...' in the sound log, SS.nadeWhy). First failing gate in trigger order.
