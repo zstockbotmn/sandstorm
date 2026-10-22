@@ -1805,7 +1805,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const over = ragdolls.activeCount && ragdolls.activeCount() >= 3;
       // A20: physics not booted yet (Rapier loads after first paint; slow on weak CPUs) - a queued doll stood frozen in the
       // hit pose until it booted (probe at 1-2 fps: 4+ s): use the death pose instead
-      canned = qName() === 'ultra-low' || ((art.tier !== 'high' || qName() !== 'high') && over) || (ragdolls.ready && !ragdolls.ready());
+      canned = qName() === 'ultra-low' || ((art.tier !== 'high' || qName() !== 'high') && over) || (ragdolls.ready && !ragdolls.ready())
+        || enemy.group.position.y > 0.5; // A21 (tester A20 + doll-probe roof: a rooftop ragdoll fell through the roof - the physics world has no roof slabs): death pose, settled on the roof
       enemy.fallMode = canned ? 'canned' : 'ragdoll';
       if (enemy._fallRec) enemy._fallRec.mode = enemy.fallMode;
       else try { if (window.SS && window.SS.lastFall) window.SS.lastFall.mode = enemy.fallMode; } catch (_) {}

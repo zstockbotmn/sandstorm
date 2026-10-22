@@ -32,7 +32,7 @@ const [tier = 'low', out = 'logs/a20/doll', thr = '1', mode = 'street'] = proces
         return out; });
       for (const [k, d] of res.roof.entries()) { const at1 = d.trace.find((x) => x[0] >= 1) || d.trace[0];
         if (!at1 || at1[1] == null || at1[1] > 0.3 || at1[1] < -0.3) fail.push('roof kill ' + k + ' (' + d.mode + ', roof ' + d.y0 + ' m): hips ' + (at1 && at1[1]) + ' m from the roof 1 s after the kill');
-        const gone = d.trace.find((x) => x[0] <= 25 && (!x[2] || x[1] == null || x[1] < -0.35 || x[1] > 0.6)); if (gone) fail.push('roof kill ' + k + ': at ' + gone[0] + ' s body ' + (!gone[2] ? 'not shown' : 'at ' + gone[1] + ' m (sank / off the roof)')); }
+        const gone = d.trace.find((x) => x[0] >= 1 && x[0] <= 25 && /* A21: 0-1 s is the death drop itself (pre-fall + 300 ms settle) */ (!x[2] || x[1] == null || x[1] < -0.35 || x[1] > 0.6)); if (gone) fail.push('roof kill ' + k + ': at ' + gone[0] + ' s body ' + (!gone[2] ? 'not shown' : 'at ' + gone[1] + ' m (sank / off the roof)')); }
       if (!res.roof.length) fail.push('no rooftop fighter killed');
     } else {
     res.dolls = await p.evaluate(async () => { const out = [], V = new THREE_V();
