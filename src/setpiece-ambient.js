@@ -114,12 +114,13 @@ export function createAmbient({ scene, camera, hud }) {
     if ((ev.pos && dist(ev.pos) < 40) || ev.t >= ev.dur) endEv();
   }
   const liveEnemy = () => { const list = (window.SS && window.SS.enemies && window.SS.enemies.list) || []; return !list.every((e) => !e || !e.alive); };
-  let firstPending = false;
+  let firstPending = false, lastBeat = '';
+  const BEAT_KINDS = ['radio', 'dog', 'fire'];
   function resetRun() {
     const id = (window.SS && window.SS.runs) || 0;
     if (seenRun == null) { seenRun = id; return; }
     if (id === seenRun) return;
-    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; firstPending = false; if (window.SS) window.SS.calmLog = []; prev = ''; wait = rnd(7, 14);
+    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; firstPending = false; if (window.SS) window.SS.calmLog = []; prev = ''; lastBeat = ''; wait = rnd(7, 14);
     counts.fire = counts.radio = counts.dog = counts.door = counts.heli = 0; pub.last = null;
     if (window.SS) window.SS.ambient = pub; endEv();
   }
@@ -140,11 +141,12 @@ export function createAmbient({ scene, camera, hud }) {
     if (!eligible) { eligible = true; firstPending = true; wait = rnd(1.5, 2.4); if (ev) endEv();
       const L = SS.calmLog || (SS.calmLog = []); L.push({ clearSim: lastLive > -1e8 ? +lastLive.toFixed(1) : null, firstSim: null, kind: null }); if (L.length > 20) L.shift(); }
     if (ev) return;
-    if (firstPending) { wait -= dt; if (wait > 0) return; firstPending = false; let k = pick(); if (k === 'radio') k = 'door';
-      const r = begin(k, sim), L = SS.calmLog; if (L && L.length) { L[L.length - 1].firstSim = +sim.toFixed(1); L[L.length - 1].kind = k; }
+    // A16 (PM): every calm gets EXACTLY ONE ambient beat - distant radio chatter, a barking dog or far-off gunfire, never the
+    // same kind as the previous calm's beat - and nothing else (the old 5-8 s follow-ups are gone). SS.calmLog[i].beats counts it.
+    if (firstPending) { wait -= dt; if (wait > 0) return; firstPending = false;
+      const opts = BEAT_KINDS.filter((x) => x !== lastBeat), k = opts[(Math.random() * opts.length) | 0]; lastBeat = k;
+      const r = begin(k, sim), L = SS.calmLog; if (L && L.length) { const c = L[L.length - 1]; c.firstSim = +sim.toFixed(1); c.kind = k; c.beats = (c.beats | 0) + 1; }
       { const a = clip(); if (a && a.log) a.log('ambient', k + (lastLive > -1e8 ? ' (calm +' + (sim - lastLive).toFixed(1) + 's)' : ' (opening)')); } return r; }
-    if (SS.calmUntil != null && sim < SS.calmUntil && SS.calmUntil - sim < 2.5) return;
-    wait -= dt; if (wait > 0) return; begin(pick(), sim);
   }
   function debugAmbient(kind) { return KINDS.indexOf(kind) < 0 ? null : begin(kind, (window.SS && window.SS.simTime) || 0); }
   if (window.SS) window.SS.ambient = pub;
