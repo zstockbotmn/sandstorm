@@ -231,7 +231,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
         if (state.wave >= 2) { const W = { rpg: 0.3, grenade: 0.3, truck: 0.25, quiet: 0.15 }; if (last) delete W[last];
           let tot = 0; for (const k in W) tot += W[k]; let r = Math.random() * tot; for (const k in W) { r -= W[k]; if (r <= 0) { pick = k; break; } } }
         hist.push(pick); if (hist.length > 12) hist.shift(); SS.spPick = { wave: state.wave, pick, hist, sim };
-        fireAt = pick === 'rpg' ? 10 + Math.random() * 16 : -1; // A13 window 10-26 s kept }
+        fireAt = pick === 'rpg' ? 10 + Math.random() * 16 : -1; } // A13 window 10-26 s kept
       else fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 10 + Math.random() * 16 : -1; } // A13: random mode 10-26 s (middle / late wave; it may fire after the spawn window now)
     wasBurst = bursting;
     if (flying) stepFlight(sim);
