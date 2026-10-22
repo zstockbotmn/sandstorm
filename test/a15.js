@@ -30,9 +30,11 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug' + (mode === 'forced' ? '&rpg=1&truck=1' : '') + '&q=' + tier);
     await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.tap('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
-    Object.assign(res, await p.evaluate(async ([NW, KILL_AFTER]) => { SS.testAccuracy = 3; const R = { waves: [], advLines: [] }; let waveAt = null, lastKill = 0; const t0 = performance.now();
+    Object.assign(res, await p.evaluate(async ([NW, KILL_AFTER]) => { SS.testAccuracy = 3; const R = { waves: [], advLines: [], grenT: [], waveEnds: [] }; let waveAt = null, lastKill = 0; const t0 = performance.now();
       while (performance.now() - t0 < 2400000 && (SS.waveClears | 0) < NW) { const sim = SS.simTime || 0; SS.input.scope = false; if (SS.player.health < 40) SS.player.health = 90;
         if (SS.waveActive) { if (waveAt == null) { waveAt = sim; R.waves.push({ start: +sim.toFixed(1), n: (SS.waveClears | 0) + 1 }); } if (sim - waveAt > KILL_AFTER && sim - lastKill > 2) { SS.debugKillNearest(); lastKill = sim; } } else waveAt = null;
+        for (const x of (SS.audioLog || [])) if (x.kind === 'gren' && !R.grenT.includes(x.t)) R.grenT.push(x.t);
+        if (R._wa && !SS.waveActive) R.waveEnds.push(+sim.toFixed(1)); R._wa = !!SS.waveActive;
         for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /advances/.test(x.detail) && !R.advLines.includes(x.t)) R.advLines.push(x.t);
         if (!SS.player.alive) { R.died = +sim.toFixed(1); break; } await new Promise((r) => setTimeout(r, 250)); }
       R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.picks = (SS.spPick && SS.spPick.hist) || [];
@@ -70,7 +72,9 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       res.kinds = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, [...v]]));
       // A15b: wave 1 quiet - no flank hits, no set pieces
       if (res.recs.some((r) => r.wave === 1)) fail.push('flank hit in wave 1'); if (res.spLog.some((x) => x.wave === 1)) fail.push('set piece in wave 1 ' + JSON.stringify(res.spLog.filter((x) => x.wave === 1))); }
-    const firstThrow = res.log.find((x) => x.kind === 'grenade'); if (firstThrow && res.waves.length && !res.log.some((x) => x.kind === 'gren' && x.t > firstThrow.t + 4)) fail.push('no gren: lines after the first throw');
+    // gren: lines must keep coming after a throw while the wave goes on (checked where the wave lasted >= 7 s after the throw)
+    for (const g of res.spLog.filter((x) => x.kind === 'grenade')) { const end = res.waveEnds.find((t) => t > g.sim) ?? res.sim; if (end - g.sim < 7) continue;
+      if (!res.grenT.some((t) => t > g.sim + 0.5 && t <= end + 0.5)) fail.push('no gren: line after the throw at ' + g.sim + ' (wave went on to ' + end + ')'); }
     // 5
     const byW = {}; for (const s of res.spLog) (byW[s.wave] = byW[s.wave] || []).push(s);
     for (const w in byW) { const a = byW[w].sort((x, y) => x.sim - y.sim); for (let i = 1; i < a.length; i++) if (a[i].sim - a[i - 1].sim < 14.9) fail.push('wave ' + w + ': ' + a[i - 1].kind + ' ' + a[i - 1].sim + ' -> ' + a[i].kind + ' ' + a[i].sim + ' (< 15 s)'); }
