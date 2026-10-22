@@ -2644,6 +2644,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // 'enemy runs in Nm' or 'stall push none (reason)'. SS.stallPushLog [{ sim, kind, from, to, wave }].
   let waveProgSim = 0, stallPushAt = 14, stallWasActive = false, stallFreshWave = -1;
   const STALL_TYPES = ['wall', 'barrel', 'car', 'door', 'alley'];
+  let mwWave = -1, mwContactSim = null, mwShots0 = 0, mwAt = 0, mwDone = false, mwPush = []; // A18: mid-wave second beat
   function stallCoverFor(e, aMin, aMax, minMove) { const pz = camera.position.z, here = e.group.position; let best = null, bd = 1e9;
     for (const c of coverPool(STALL_TYPES, [Math.max(0, aMin - 1), aMax + 1])) { const a = pz - c.pos.z; if (a < aMin || a > aMax || Math.abs(c.pos.x) > 11) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(here); if (d < minMove * minMove) continue; if (d < bd) { bd = d; best = c; } }
@@ -2657,6 +2658,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 40) L.shift();
     if (e._stallRec && e._stallRec.arrived == null) e._stallRec.cancelled = 'stall'; e._stallRec = rec; } // A16b: arrival (or why not) is filled in on the rec
   function openBound(e, a) { const cam = camera.position, p = e.group.position; const step = Math.min(7, a - 3); if (step < 5) return null;
+    const side = Math.abs(p.x) > 0.8 ? Math.sign(p.x) : (cam.x <= 0 ? 1 : -1);
+    for (const sx of [side, -side]) for (const ax of [5.2, 3.6]) { const pos = new THREE.Vector3(sx * ax, 0, p.z + step);
+      if (Math.hypot(pos.x - cam.x, pos.z - cam.z) < 2.4 || occupiedBy(pos, e)) continue; if (!clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue;
+      return { pos, type: 'wall', open: true }; }
+    return null; }
+  function nearCover(e, a) { const cam = camera.position, aMax = Math.min(13, a - 3); let best = null, bd = 1e9;
+    for (const c of coverPool(STALL_TYPES, [5, 14])) { const az = cam.z - c.pos.z; if (az < 6 || az > aMax || Math.abs(c.pos.x) > 11) continue;
+      if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(cam); if (d < bd) { bd = d; best = c; } }
+    return best; }
+  function openBoundNear(e, a) { const cam = camera.position, p = e.group.position; const step = Math.min(6, a - 3.4); if (step < 2.5) return null;
     const side = Math.abs(p.x) > 0.8 ? Math.sign(p.x) : (cam.x <= 0 ? 1 : -1);
     for (const sx of [side, -side]) for (const ax of [5.2, 3.6]) { const pos = new THREE.Vector3(sx * ax, 0, p.z + step);
       if (Math.hypot(pos.x - cam.x, pos.z - cam.z) < 2.4 || occupiedBy(pos, e)) continue; if (!clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue;
@@ -2676,13 +2687,51 @@ export function createEnemies(scene, camera, world, weapon, player) {
       .sort((a, b) => a.group.position.z - b.group.position.z); // farthest first
     for (const e of cand) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = stallCoverFor(e, 6, a - 5.5, 2); if (c) return stallSend(e, c, 'advances', a); } // A16b: >= 5 m nearer
     for (const e of cand) { const a = pz - e.group.position.z, spot = openBound(e, a); if (spot) return stallSend(e, spot, 'advances (open)', a); }
+    for (const e of cand) { const a = pz - e.group.position.z, spot = openBoundNear(e, a); if (spot) return stallSend(e, spot, 'advances (open)', a); }
     for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) return stallSend(e, c, 'repositions', a); }
     const wv = Math.max(burstIndex, waveClears + 1);
     if (stallFreshWave !== wv && alive.length < 6) { const keep = poolRange; forcePoolRange = [26, 40]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
       if (ne) { stallFreshWave = wv; ne.engaged = true; const a = pz - ne.group.position.z; // spawns at far cover with its normal entry; the next push moves it up (farthest first)
         SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', 'runs in ' + Math.round(a) + 'm'); const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), kind: 'runs in', from: Math.round(a), to: Math.round(a), wave: wv }); return; } }
     const why = !alive.length ? 'none alive' : !cand.length ? 'no free ground fighter (' + alive.length + ' alive: ' + alive.filter((e) => e.phase === 'relocate').length + ' moving, ' + alive.filter((e) => e._flankArr || e._flankMove).length + ' flanking, ' + alive.filter((e) => e.anchor && isElevated(e.anchor.type)).length + ' elevated, ' + alive.filter((e) => pz - e.group.position.z <= 9).length + ' within 9 m)' : 'no free cover for ' + cand.length + ' fighter(s)';
-    slog('enemy', 'stall push none (' + why + ')'); if (SSx) { SSx.stallPushNone = (SSx.stallPushNone | 0) + 1; SSx.stallNoneWhy = why; } }
+    if (!cand.length) { slog('enemy', 'stall push held (' + why + ')'); if (SSx) { SSx.stallPushHeld = (SSx.stallPushHeld | 0) + 1; SSx.stallNoneWhy = why; } }
+    else { slog('enemy', 'stall push none (' + why + ')'); if (SSx) { SSx.stallPushNone = (SSx.stallPushNone | 0) + 1; SSx.stallNoneWhy = why; } } }
+
+  function midWaveBeat() {
+    const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
+    if (!waveActive) { mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; return; }
+    // review: latch the wave number at the wave start (it can step mid-wave, which would re-arm a 2nd beat)
+    if (mwWave === -1) { mwWave = Math.max(burstIndex, waveClears + 1); mwContactSim = null; mwDone = false; mwShots0 = SSx.enemyShots|0; mwPush = []; }
+    if (mwContactSim == null) { if ((SSx.enemyShots|0) > mwShots0) { mwContactSim = sim; mwAt = 20 + Math.random()*5; const L = SSx.waveContactLog || (SSx.waveContactLog = []); L.push({ wave: mwWave, sim: +sim.toFixed(1) }); if (L.length > 30) L.shift(); } else return; }
+    for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue;
+      if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) stallSend(rec.e, c, c.open ? 'advances (open)' : 'advances', a); }
+      rec.sent = true; }
+    const wv = mwWave; if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return; mwDone = true;
+    const sp = SSx.spPick, quiet = !!(sp && sp.wave === wv && sp.pick === 'quiet');
+    const room = (SSx.setPieceAt == null || sim - SSx.setPieceAt >= 15) && (SSx.lastFlankHitSim == null || sim - SSx.lastFlankHitSim >= 6) && !SSx.truckPendingWave && !(SSx.truckState && /drive|crash/.test(SSx.truckState));
+    const prevNade = (SSx.spLog||[]).some((x) => x.kind === 'grenade' && x.wave === wv - 1), thisWave = (SSx.spLog||[]).filter((x) => x.wave === wv).map((x) => x.kind);
+    let kind;
+    if (quiet && room && Math.random() < 0.5) {
+      let nadeE = null, nadeD = 1e9;
+      for (const e of list) { if (!e.alive || e.dying || e.group.position.y >= 0.5) continue; const d = Math.hypot(e.group.position.x - camera.position.x, e.group.position.z - camera.position.z); if (d <= 36 && d < nadeD) { nadeD = d; nadeE = e; } }
+      if (!prevNade && !thisWave.includes('grenade') && Math.random() < 0.5 && nadeE) { throwGrenade(nadeE); spLog('grenade', wv, { pick: 'mid-wave' }); kind = 'grenade'; }
+      else if (SSx.setpieces && SSx.setpieces.debugRpg && !thisWave.includes('rpg')) { SSx.setpieces.debugRpg(); kind = 'rpg'; }
+    }
+    if (!kind) {
+      kind = 'push';
+      for (let i = 0; i < 2; i++) { const keep = poolRange; forcePoolRange = [16, 26]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
+        if (ne) { ne.engaged = true; ne._midPush = sim; mwPush.push({ e: ne, at: sim + 1.6 + i * 1.2, sent: false }); } }
+      squadCall('Cover me - moving up!');
+      if (!mwPush.length) {
+        const pz = camera.position.z;
+        const exist = list.filter((e) => e.alive && !e.dying && !e.pinned && !e._flankArr && !e._flankMove && e.group.position.y < 0.5 && pz - e.group.position.z > 7.6)
+          .sort((a, b) => a.group.position.z - b.group.position.z);
+        for (let i = 0; i < exist.length && i < 2; i++) mwPush.push({ e: exist[i], at: sim + 1.6 + i * 1.2, sent: false });
+      }
+    }
+    slog('enemy', 'mid-wave beat: ' + kind + ' at ' + (sim - mwContactSim).toFixed(1) + 's');
+    const L = SSx.midBeatLog || (SSx.midBeatLog = []); L.push({ wave: wv, kind, sim: +sim.toFixed(1), afterContact: +(sim - mwContactSim).toFixed(1) }); if (L.length > 30) L.shift();
+  }
 
   // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.
   // Tier 0 is the 3c spec (6-20 m hop, 12-30 m ahead, clear shot). p1b: on the real street that often found nothing
@@ -3114,7 +3163,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function update(dt) {
     if (window.SS) window.SS.pressureP = +pressureP().toFixed(2);
     if (HITS2) { try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {} }
-    updateGrenades(dt); updateTruck(dt); if (REPOS) stallPush();
+    updateGrenades(dt); updateTruck(dt); if (REPOS) stallPush(); midWaveBeat();
     const diff = difficulty();
     phaseT -= dt;
     const alive = aliveCount();
@@ -3415,6 +3464,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; }
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
