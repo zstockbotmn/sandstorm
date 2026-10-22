@@ -2717,7 +2717,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     e.moveKind = 'run'; e._reposWhy = 'stall-' + kind; e.advanced = (e.advanced | 0) + 1;
     if (!/^fallback/.test(kind) && !(kind === 'assault' && cxPhase === 'active')) try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {} // A21: the climax / fallback have their own radio line
     SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', /retreat/.test(kind) ? 'fallback (retreat)' : kind + ' ' + Math.round(from) + 'm');
-    const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0))), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 40) L.shift();
+    const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0))), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 120) L.shift(); // A21: was 40 - fallback sends filled it and dropped wave 2
     if (e._stallRec && e._stallRec.arrived == null) e._stallRec.cancelled = 'stall'; e._stallRec = rec; } // A16b: arrival (or why not) is filled in on the rec
   function openBound(e, a) { const cam = camera.position, p = e.group.position; const step = Math.min(7, a - 3); if (step < 5) return null;
     const side = Math.abs(p.x) > 0.8 ? Math.sign(p.x) : (cam.x <= 0 ? 1 : -1);
