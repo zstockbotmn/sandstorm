@@ -38,10 +38,20 @@ const [tier = 'low', out = 'logs/a15/a15', mode = 'random'] = process.argv.slice
     for (const q of res.push) if (!(q.to < q.from)) fail.push('stall push ' + q.sim + ' not nearer (' + q.from + ' -> ' + q.to + ')');
     if (res.push.length && !res.log.some((x) => x.kind === 'enemy' && /advances/.test(x.d))) fail.push('no "advances" line in the sound log');
     // 4
-    const nadesBy = {}; for (const s of res.spLog) if (s.kind === 'grenade') (nadesBy[s.wave] = nadesBy[s.wave] || []).push(s.sim);
-    res.nadesBy = nadesBy; if (!Object.keys(nadesBy).some((w) => w >= 3 && nadesBy[w].length >= 2)) fail.push('no wave >= 3 with a 2nd grenade ' + JSON.stringify(nadesBy));
-    if (Object.values(nadesBy).some((a) => a.length > 2)) fail.push('more than 2 grenades in a wave');
-    const firstThrow = res.log.find((x) => x.kind === 'grenade'); if (firstThrow && !res.log.some((x) => x.kind === 'gren' && x.t > firstThrow.t + 4)) fail.push('no gren: lines after the first throw');
+    // A15a: a quick camp grenade (and a 2nd) only on a director 'grenade' wave; elsewhere <= 1 after a 22 s camp (30 s after a grenade wave)
+    const nadesBy = {}; for (const s of res.spLog) if (s.kind === 'grenade') (nadesBy[s.wave] = nadesBy[s.wave] || []).push(s);
+    res.nadesBy = nadesBy; const pickWaves = Object.keys(nadesBy).filter((w) => nadesBy[w].some((x) => x.pick === 'grenade'));
+    if (mode === 'random') { if (!pickWaves.length) warn.push('no director grenade wave this run (2nd-grenade re-arm unchecked)');
+      else if (!pickWaves.some((w) => nadesBy[w].length >= 2)) fail.push('no 2nd grenade in a grenade wave ' + JSON.stringify(nadesBy)); }
+    for (const w in nadesBy) { const a = nadesBy[w], quick = a.some((x) => x.pick === 'grenade'); if (a.length > (quick ? 2 : 1)) fail.push('wave ' + w + ': ' + a.length + ' grenades');
+      for (const x of a) if (x.pick !== 'grenade') { const need = nadesBy[w - 1] ? 30 : 22; if (!(x.camp >= need - 0.5)) fail.push('wave ' + w + ' long-camp grenade after ' + x.camp + ' s (want >= ' + need + ')'); } }
+    // A15a variety (random): the same set-piece kind never opens two waves in a row unless it is a long-camp grenade
+    if (mode === 'random') { const kinds = {}; for (const s of res.spLog) (kinds[s.wave] = kinds[s.wave] || new Set()).add(s.kind + (s.kind === 'grenade' && s.pick !== 'grenade' ? '-long' : ''));
+      for (const w in kinds) { const prev = kinds[w - 1]; if (!prev) continue; for (const k of kinds[w]) if (!/-long$/.test(k) && (prev.has(k) || (k === 'grenade' && prev.has('grenade-long')))) fail.push('wave ' + w + ' repeats ' + k + ' from wave ' + (w - 1)); }
+      res.kinds = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, [...v]]));
+      // A15b: wave 1 quiet - no flank hits, no set pieces
+      if (res.recs.some((r) => r.wave === 1)) fail.push('flank hit in wave 1'); if (res.spLog.some((x) => x.wave === 1)) fail.push('set piece in wave 1 ' + JSON.stringify(res.spLog.filter((x) => x.wave === 1))); }
+    const firstThrow = res.log.find((x) => x.kind === 'grenade'); if (firstThrow && res.waves.length && !res.log.some((x) => x.kind === 'gren' && x.t > firstThrow.t + 4)) fail.push('no gren: lines after the first throw');
     // 5
     const byW = {}; for (const s of res.spLog) (byW[s.wave] = byW[s.wave] || []).push(s);
     for (const w in byW) { const a = byW[w].sort((x, y) => x.sim - y.sim); for (let i = 1; i < a.length; i++) if (a[i].sim - a[i - 1].sim < 14.9) fail.push('wave ' + w + ': ' + a[i - 1].kind + ' ' + a[i - 1].sim + ' -> ' + a[i].kind + ' ' + a[i].sim + ' (< 15 s)'); }

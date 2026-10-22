@@ -556,19 +556,32 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
   // hold was 25 s REAL time (~9 game-s at the tester's 0.35x clock). Now G always jumps (to the next room when already
   // at one), W walks on, and the hold lasts 40 GAME-s.
   let roomLast = null;
-  window.SS.debugRoomWalk = () => { if (!window.SS.roomHold) return null; window.SS.roomHold = false; window.SS.walking = true; return 'resume'; };
+  // A15c (tester A14: no hold seen, W did nothing, G looked like cover-to-cover advances): new waves spawned during the hold
+  // (so the fight held the walk after W), and nothing showed the hold. Now: no wave spawns while held; the sound log gets
+  // 'room hold start (door Nm)' / 'room hold end (W | G next | 40 s)'; a tappable 'DOORWAY · W to move on' chip shows while held.
+  const ralog = (d) => { try { window.SS.audio.log('room', d); } catch (_) {} };
+  let roomChip = null;
+  const roomChipShow = (on) => { if (on && !roomChip) { roomChip = document.createElement('button'); roomChip.id = 'room-hint'; roomChip.textContent = 'DOORWAY \u00b7 W to move on';
+      roomChip.style.cssText = 'position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:32;font:600 12px monospace;letter-spacing:.06em;color:#fff;background:rgba(20,20,20,.72);border:1px solid rgba(255,255,255,.35);border-radius:14px;padding:6px 12px';
+      roomChip.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); window.SS.debugRoomWalk(); }); document.body.appendChild(roomChip); }
+    if (roomChip) roomChip.style.display = on ? 'block' : 'none'; };
+  const roomHoldEnd = (why) => { if (!window.SS.roomHold) return false; window.SS.roomHold = false; window.SS.walking = true; roomChipShow(false);
+    window.SS.roomHoldEnds = (window.SS.roomHoldEnds || []).concat([{ why, sim: +((window.SS.simTime || 0)).toFixed(1) }]); ralog('hold end (' + why + ')'); return true; };
+  window.SS.debugRoomWalk = () => roomHoldEnd('W') ? 'resume' : null;
   window.SS.debugToRoom = () => {
     let best = null, bd = 1e9; const cz = camera.position.z;
     for (const s of (world.segments || [])) for (const c of s.coverPoints || []) if (c.type === 'room' && c !== roomLast) { const ahead = c.pos.z < cz + 2; const d = Math.abs(c.pos.z - cz) + (ahead ? 0 : 1000); if (d < bd) { bd = d; best = c; } }
     if (!best) { window.SS.lastRoomJump = { ok: false, why: 'no room (rooms need ?bld=4 and not Ultra-low)' }; if (hud.hint) hud.hint('No room nearby (needs bld=4, Low/High)'); return null; }
+    roomHoldEnd('G next');
     enemies.reset(); // debug only: clears enemies, nades, truck and the wave count (a clean street at the room)
     cover.reset();
     const z = best.pos.z + 2.5, dz = cz - z; camera.position.set(0, camera.position.y, z); window.SS.distance += dz;
     const side = best.pos.x > 0 ? 1 : -1; input.yaw = Math.atan2(best.pos.x - 0, -(best.pos.z - z)); input.pitch = -0.05;
     window.SS.walking = false; window.SS.roomHold = true; roomHoldT = window.SS.simTime || 0; roomLast = best;
     window.SS.lastRoomJump = { ok: true, room: [+best.pos.x.toFixed(1), +best.pos.z.toFixed(1)], side, jumped: +dz.toFixed(1), distance: +window.SS.distance.toFixed(1) };
+    ralog('hold start (door ' + Math.hypot(best.pos.x, best.pos.z - z).toFixed(1) + 'm)'); roomChipShow(true);
     if (hud.hint) hud.hint('Room doorway (' + (side > 0 ? 'right' : 'left') + ') - W walks on, G next room'); return window.SS.lastRoomJump; };
-  setInterval(() => { if (window.SS.roomHold && (window.SS.simTime || 0) - roomHoldT > 40) { window.SS.roomHold = false; window.SS.walking = true; } }, 500);
+  setInterval(() => { if (window.SS.roomHold && (window.SS.simTime || 0) - roomHoldT > 40) roomHoldEnd('40 s'); else if (!window.SS.roomHold && roomChip && roomChip.style.display !== 'none') roomChipShow(false); }, 500);
   if (/[?&]room=1\b/.test(location.search)) { const t = setInterval(() => { if (window.SS.running && !document.body.classList.contains('starting')) { clearInterval(t); setTimeout(() => window.SS.debugToRoom(), 500); } }, 300); }
   window.SS.debugMoveNearest = () => { const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9;
     for (const e of L) { if (!e.alive || e.dying) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }

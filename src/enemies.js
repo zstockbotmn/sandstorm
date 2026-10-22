@@ -3058,7 +3058,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // m1u: the next wave waits (up to 8 s past its distance) for out-of-combat regen to bring the player to >= 90 hp
       if (dNow >= breatherTo && waveClears > 0 && !waveActive && alive === 0) { regenWaitT += dt; } else regenWaitT = 0;
       const healthy = !window.SS || waveClears === 0 || (window.SS.health == null ? 100 : window.SS.health) >= 90 || regenWaitT > 8;
-      if (phaseT <= 0 && dNow >= breatherTo && (window.SS ? (window.SS.simTime || 0) : 0) >= calmUntil && (burstIndex > 0 || quietRunT >= FIRST_CONTACT_S) && !waveActive && alive === 0 && truckPending === 0 && healthy) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
+      if (phaseT <= 0 && !(window.SS && window.SS.roomHold) /* A15c: no new wave while held at a room doorway */ && dNow >= breatherTo && (window.SS ? (window.SS.simTime || 0) : 0) >= calmUntil && (burstIndex > 0 || quietRunT >= FIRST_CONTACT_S) && !waveActive && alive === 0 && truckPending === 0 && healthy) { // never start a wave on top of a live one (m1r: ENEMIES kept refilling) // a real 25-40 m walk after each cleared wave
         phase = 'burst';
         burstIndex += 1;
         if (window.SS) window.SS.bursting = true;
