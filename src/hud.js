@@ -220,6 +220,16 @@ export function createHud() {
   // was dropped as 'same line twice'. Now each line is held by JS for >= 2.5 s real AND >= 3 rendered frames, then fades;
   // movement calls (important) skip the 4 s throttle, and a line may repeat once 8 s have passed.
   const CALL_MIN_MS = 2500, CALL_MIN_FRAMES = 3, callSeen = {};
+  // A22 (tester A21: the 'They're rushing us!' radio line was missed every time): a big centre-screen banner, separate
+  // from the radio log, held >= 2.5 s AND >= 4 rendered frames (low fps), then faded
+  const rushEl = document.createElement('div'); rushEl.id = 'rush-banner'; root.appendChild(rushEl); let rushTok = 0;
+  function rushBanner(text, holdMs) { const hold = holdMs || 2500, now = performance.now(), f0 = (window.SS && window.SS.frameN) | 0, tok = ++rushTok;
+    rushEl.textContent = text; rushEl.classList.remove('fade'); rushEl.classList.add('on'); hud.lastRush = { text, t: now, frame: f0, heldMs: null, frames: null };
+    const check = () => { if (tok !== rushTok) return; const fN = ((window.SS && window.SS.frameN) | 0) - f0, ms = performance.now() - now;
+      if (ms >= hold && fN >= 4) { hud.lastRush.heldMs = Math.round(ms); hud.lastRush.frames = fN; const L = window.SS && (window.SS.rushBannerLog || (window.SS.rushBannerLog = [])); if (L) { L.push({ text, sim: +((window.SS.simTime) || 0).toFixed(1), heldMs: Math.round(ms), frames: fN }); if (L.length > 20) L.shift(); }
+        rushEl.classList.add('fade'); setTimeout(() => { if (tok === rushTok) rushEl.classList.remove('on', 'fade'); }, 500); }
+      else setTimeout(check, 100); };
+    setTimeout(check, 100); }
   function callout(text, important) {
     const now = performance.now();
     if (!important && now < radioNext) return; // max one line per 4 s
@@ -298,7 +308,7 @@ export function createHud() {
     headshotFlash,
     callout,
     radio,
-    banner,
+    banner, rushBanner,
     hint,
     setRemaining,
     onTarget,

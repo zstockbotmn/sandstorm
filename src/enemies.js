@@ -2931,7 +2931,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const block = spBeatBlock(SSx, sim, cxWave); if (block && sim < cxDue + 15) return; // give up waiting 15 s later if nothing is mid-flight
     const n = list.filter((e) => e.alive && !e.dying).length;
     if (n < 2) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
-    squadCall("They're rushing us!"); slog('enemy', 'climax tell'); cxPhase = 'tell'; cxTellSim = sim; cxStartSim = sim + 1.5; cxStamp(sim);
+    squadCall("They're rushing us!"); try { const hb = SSx.hud; if (hb && hb.rushBanner) hb.rushBanner("They're rushing us!", 2500); } catch (_) {} slog('enemy', 'climax tell'); cxPhase = 'tell'; cxTellSim = sim; cxStartSim = sim + 1.5; cxStamp(sim);
   }
 
   // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.
