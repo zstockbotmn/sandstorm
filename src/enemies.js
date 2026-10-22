@@ -1656,7 +1656,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.alive = false;
     if (typeof enemy._flankTellSim === 'number') retireFlanker(enemy, 'flanker down'); // A17: one outcome per tell, also when the flanker dies
     slog('kill', '(' + (part === 'head' ? 'head' : part === 'limb' ? 'limb' : 'torso') + ')'); // A14: kills in the sound log
-    waveProgSim = window.SS ? (window.SS.simTime || 0) : 0; // A15: a kill is wave progress
+    // A19 (late-wave stall): a kill no longer re-arms the stall-push timer - steady kills (a15 W5: one every few s) held off
+    // every push for 44 s; pushes now keep their 12-15 s cadence for the whole wave
     unregister(enemy);
     const origin = enemy.group.position;
     spray(point || origin.clone().setY(origin.y + 1.3));
