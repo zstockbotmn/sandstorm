@@ -2260,6 +2260,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     let pendTells = null;
     if (hit && !flankHit) { pendTells = list.filter((f) => f.alive && typeof f._flankTellSim === 'number');
       if (pendTells.some((f) => simS - f._flankTellSim < FLANK_TELL_S)) { hit = false; if (window.SS) window.SS.flankEarlyBlocked = (window.SS.flankEarlyBlocked | 0) + 1; } }
+    // A22 (PM ruling; tester A21 W3 '197.0s -19 (rifle) -> 81' / '238.7s -19 -> 63' while the HUD read IN COVER): a full
+    // -19 means input.cover was false when the round was rolled (a ducked hit is x0.6 = -11): the player was exposed at that
+    // moment (cover run after contact, a cover switch, walking, or scoped) though the lagged view read IN COVER. Every
+    // rifle hit now logs why it landed ('hit why'). Hard guard on the LIVE cover state as well as input.cover: in cover (cover state 'in', not scoped) an unflanked front round is a near miss;
+    // only a told flank shot (flankHit, or the flanker's own hit >= 1.5 s after its tell) lands.
+    const ownTold = !!(pendTells && pendTells.includes(enemy) && typeof enemy._flankTellSim === 'number' && simS - enemy._flankTellSim >= FLANK_TELL_S);
+    { const SSg = window.SS, cv = SSg && SSg.cover, liveIn = !!(cv && cv.state === 'in' && !(SSg.input && SSg.input.scope));
+      if (hit && !flankHit && !ownTold && (liveIn || duckedA8)) { hit = false; SSg.coverGuardBlocked = (SSg.coverGuardBlocked | 0) + 1; const GL = SSg.coverGuardLog || (SSg.coverGuardLog = []); GL.push({ sim: +simS.toFixed(2), id: enemy.id, stale: liveIn !== duckedA8, elev: !!(enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.5 }); if (GL.length > 40) GL.shift(); } }
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
     if (!hit) {
@@ -2296,6 +2304,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); const wasMover = !!enemy._flankArr; flankAfterHit(enemy); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: enemy._lastTellAge, wave: waveClears + 1, mover: wasMover, retired: !enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
       const own = !flankHit && pendTells && pendTells.includes(enemy); // the flanker's own ordinary hit after 1.5 s = its flank outcome
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, (flankHit || own) ? 'flank' : 'gun');
+      { const SSg = window.SS, cv = SSg && SSg.cover, st = cv ? cv.state : '?', sc = !!(SSg.input && SSg.input.scope), walking = !!SSg.walking; // A22: why a rifle hit landed (tester + a15)
+        const why = (flankHit || own) ? 'flank tell' : walking ? 'exposed: walking' : st === 'moving' ? 'exposed: moving to cover' : sc ? 'exposed: scoped' : st === 'in' ? 'IN COVER (leak)' : 'exposed: ' + st;
+        const HL = SSg.rifleHitLog || (SSg.rifleHitLog = []); HL.push({ sim: +simS.toFixed(2), id: enemy.id, why, flank: !!(flankHit || own), ducked: duckedA8, coverState: st, scope: sc, elev: !!(enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.5 }); if (HL.length > 80) HL.shift();
+        if (SSg.audio && SSg.audio.log) SSg.audio.log('hit why', why); }
       if (!flankHit && pendTells && pendTells.length && window.SS) { const SSx = window.SS;
         for (const f of pendTells) { if (typeof f._flankTellSim !== 'number') continue; const age = +(simS - f._flankTellSim).toFixed(2);
           if (f === enemy) { flankHitsWave++; f._flankHitsN = (f._flankHitsN | 0) + 1; f._lastTellAge = age; if (f._flankRec && !f._flankRec.outcome) { f._flankRec.outcome = 'hit'; f._flankRec.outSim = +simS.toFixed(2); }
