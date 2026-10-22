@@ -9,7 +9,12 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
     g.fillStyle = '#f2efe8'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#d81e14'; g.fillRect(24, 10, 16, 44); g.fillRect(10, 24, 44, 16);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const mats = { health: new THREE.MeshStandardMaterial({ map: kitTex, emissive: 0x551010, emissiveIntensity: 0.35, roughness: 0.7 }),
-    ammo: new THREE.MeshStandardMaterial({ color: 0x4f5a2c, emissive: 0x3a3000, emissiveIntensity: 0.6, roughness: 0.7 }) };
+    // A16 (tester A15: 'a flat green box floats over the burnt car during kills'): the ammo drop was a plain olive box, and
+    // the auto-collect flight carried it through the air at the player (at 1-2 fps it hung mid-air over the cover). Now it
+    // is a stencilled ammo can on the ground, and only its small icon flies in (the box hides when the flight starts).
+    ammo: new THREE.MeshStandardMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+      g.fillStyle = '#4f5a2c'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#2e3418'; g.fillRect(0, 0, 64, 6); g.fillRect(0, 58, 64, 6); g.fillStyle = '#e2c13a'; g.fillRect(0, 40, 64, 5);
+      g.font = 'bold 15px monospace'; g.textAlign = 'center'; g.fillText('AMMO', 32, 30); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })(), emissive: 0x1a1600, emissiveIntensity: 0.4, roughness: 0.75 }) };
   const cross = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
     g.fillStyle = '#e3261b'; g.fillRect(24, 8, 16, 48); g.fillRect(8, 24, 48, 16); const t = new THREE.CanvasTexture(c);
     return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, sizeAttenuation: false }); })();
@@ -80,6 +85,7 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
       // auto-collect (Zack): after ~0.6 s on the ground the drop flies to the player and applies on arrival
       // Every drop is collected wherever it fell (a drop > 40 m away used to sit there forever, looking like a prop).
       if (it.t > 0.6 && AUTO_PICK) {
+        if (!it.fly) it.g.children[0].visible = false; // A16: the box stays out of the flight (no floating crate over the cover)
         it.fly = (it.fly || 0) + dt;
         _tgt.set(camera.position.x, camera.position.y - 0.5, camera.position.z);
         const k = Math.min(1, dt * (3 + it.fly * 10)); it.g.position.lerp(_tgt, k); it.g.scale.setScalar(Math.max(0.4, 1 - it.fly));
