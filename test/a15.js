@@ -73,6 +73,9 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       if (n === 0 && t.tellSim < res.sim - 5.5) fail.push('tell ' + t.tellSim + ' (id ' + t.id + ') had no outcome (no hit, no abort by 5 s)');
       for (const a of abs) if (a.sim - a.tell > 5.15) fail.push('tell ' + t.tellSim + ' aborted late at ' + a.sim + ' (+' + (a.sim - a.tell).toFixed(2) + ' s, want <= 5)'); }
     for (const c of res.flankCalls || []) if (!res.tells.some((t) => Math.abs(t.tellSim - c) < 0.25)) fail.push("'Flanking!' radio at " + c + ' with no FLANKED tell');
+    // A19: stall pushes keep coming all wave (warn on a > 22 s gap; a kill also re-arms the 12-15 s timer)
+    for (const w of res.waves) { const nx = res.waves.find((x) => x.n === w.n + 1), end = (res.waveEnds || []).find((t) => t > w.start) || (nx && nx.start) || res.sim;
+      const ts = [w.start].concat((res.push || []).filter((q) => q.wave === w.n).map((q) => q.sim)).concat([end]); for (let i = 1; i < ts.length; i++) if (ts[i] - ts[i - 1] > 22) warn.push('wave ' + w.n + ': no stall push ' + ts[i - 1] + ' -> ' + ts[i]); }
     // A18: from wave 2 on, one mid-wave beat 18-28 s after contact (waves that last that long); no 'stall push none'
     for (const c of res.contacts || []) { if (c.wave < 2) continue; const w = res.waves.find((x) => x.n === c.wave), nx = res.waves.find((x) => x.n === c.wave + 1);
       const end = (res.waveEnds || []).find((t) => t > c.sim) || (nx && nx.start) || res.sim; const mb = (res.mid || []).filter((m) => m.wave === c.wave);
