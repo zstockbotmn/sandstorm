@@ -18,8 +18,13 @@ const [tier = 'low', out = 'logs/a13/room'] = process.argv.slice(2); fs.mkdirSyn
     else { await p.waitForTimeout(1500); res.held = await p.evaluate(() => ({ walking: SS.walking, hold: SS.roomHold, z: +SS.camera?.position?.z?.toFixed?.(1) || null }));
       if (res.held.walking || !res.held.hold) fail.push('walk not held ' + JSON.stringify(res.held));
       await p.screenshot({ path: out + '_' + tier + '_doorway.png' });
-      await p.keyboard.press('g'); await p.waitForTimeout(400); res.resumed = await p.evaluate(() => ({ walking: SS.walking, hold: SS.roomHold }));
-      if (!res.resumed.walking || res.resumed.hold) fail.push('G did not resume ' + JSON.stringify(res.resumed)); }
+      // A14: G always jumps (next room when already at one) and keeps the hold; W walks on; the hold is 40 GAME-s
+      await p.keyboard.press('g'); await p.waitForTimeout(600); res.next = await p.evaluate(() => ({ jump: SS.lastRoomJump, walking: SS.walking, hold: SS.roomHold }));
+      if (!res.next.hold || res.next.walking) fail.push('G released the hold ' + JSON.stringify(res.next));
+      if (res.next.jump && res.next.jump.ok && res.jump && res.next.jump.room.join() === res.jump.room.join()) fail.push('G jumped to the same room');
+      await p.waitForTimeout(3000); res.stillHeld = await p.evaluate(() => SS.roomHold && !SS.walking); if (!res.stillHeld) fail.push('hold ended within 3 s');
+      await p.keyboard.press('w'); await p.waitForTimeout(400); res.resumed = await p.evaluate(() => ({ walking: SS.walking, hold: SS.roomHold }));
+      if (!res.resumed.walking || res.resumed.hold) fail.push('W did not resume ' + JSON.stringify(res.resumed)); }
     await p.waitForTimeout(4000); await p.evaluate(() => SS.debugHurt()); await p.waitForTimeout(300);
     res.log = await p.evaluate(() => ({ quiet: SS.audioQuiet, steps: (SS.audioLog || []).filter((x) => x.kind === 'footstep' || x.kind === 'breath').length, hurt: (SS.audioLog || []).filter((x) => x.kind === 'hit taken').map((x) => x.detail), hp: Math.round(SS.player.health), overlay: (document.getElementById('dbg-audiolog') || {}).textContent || '' }));
     if (res.log.steps) fail.push('footstep/breath entries in audioLog');

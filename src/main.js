@@ -552,18 +552,23 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
   // 'room' cover point ahead (else the nearest one), stands on the rail 2.5 m short of the doorway facing it and holds the
   // walk until G is pressed again (or 25 s pass). SS.lastRoomJump records it.
   let roomHoldT = 0;
-  window.SS.debugToRoom = () => { if (window.SS.roomHold) { window.SS.roomHold = false; window.SS.walking = true; return 'resume'; }
+  // A14 (tester: &room=1 + one G press -> kept walking): G used to TOGGLE (a press while held resumed the walk) and the
+  // hold was 25 s REAL time (~9 game-s at the tester's 0.35x clock). Now G always jumps (to the next room when already
+  // at one), W walks on, and the hold lasts 40 GAME-s.
+  let roomLast = null;
+  window.SS.debugRoomWalk = () => { if (!window.SS.roomHold) return null; window.SS.roomHold = false; window.SS.walking = true; return 'resume'; };
+  window.SS.debugToRoom = () => {
     let best = null, bd = 1e9; const cz = camera.position.z;
-    for (const s of (world.segments || [])) for (const c of s.coverPoints || []) if (c.type === 'room') { const ahead = c.pos.z < cz + 2; const d = Math.abs(c.pos.z - cz) + (ahead ? 0 : 1000); if (d < bd) { bd = d; best = c; } }
+    for (const s of (world.segments || [])) for (const c of s.coverPoints || []) if (c.type === 'room' && c !== roomLast) { const ahead = c.pos.z < cz + 2; const d = Math.abs(c.pos.z - cz) + (ahead ? 0 : 1000); if (d < bd) { bd = d; best = c; } }
     if (!best) { window.SS.lastRoomJump = { ok: false, why: 'no room (rooms need ?bld=4 and not Ultra-low)' }; if (hud.hint) hud.hint('No room nearby (needs bld=4, Low/High)'); return null; }
     enemies.reset(); // debug only: clears enemies, nades, truck and the wave count (a clean street at the room)
     cover.reset();
     const z = best.pos.z + 2.5, dz = cz - z; camera.position.set(0, camera.position.y, z); window.SS.distance += dz;
     const side = best.pos.x > 0 ? 1 : -1; input.yaw = Math.atan2(best.pos.x - 0, -(best.pos.z - z)); input.pitch = -0.05;
-    window.SS.walking = false; window.SS.roomHold = true; roomHoldT = performance.now();
+    window.SS.walking = false; window.SS.roomHold = true; roomHoldT = window.SS.simTime || 0; roomLast = best;
     window.SS.lastRoomJump = { ok: true, room: [+best.pos.x.toFixed(1), +best.pos.z.toFixed(1)], side, jumped: +dz.toFixed(1), distance: +window.SS.distance.toFixed(1) };
-    if (hud.hint) hud.hint('Room doorway (' + (side > 0 ? 'right' : 'left') + ') - G to walk on'); return window.SS.lastRoomJump; };
-  setInterval(() => { if (window.SS.roomHold && performance.now() - roomHoldT > 25000) { window.SS.roomHold = false; window.SS.walking = true; } }, 1000);
+    if (hud.hint) hud.hint('Room doorway (' + (side > 0 ? 'right' : 'left') + ') - W walks on, G next room'); return window.SS.lastRoomJump; };
+  setInterval(() => { if (window.SS.roomHold && (window.SS.simTime || 0) - roomHoldT > 40) { window.SS.roomHold = false; window.SS.walking = true; } }, 500);
   if (/[?&]room=1\b/.test(location.search)) { const t = setInterval(() => { if (window.SS.running && !document.body.classList.contains('starting')) { clearInterval(t); setTimeout(() => window.SS.debugToRoom(), 500); } }, 300); }
   window.SS.debugMoveNearest = () => { const L = (window.SS.enemies && window.SS.enemies.list) || []; let best = null, bd = 1e9;
     for (const e of L) { if (!e.alive || e.dying) continue; const d = e.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = e; } }
@@ -572,6 +577,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     else if (e.key === 'm' || e.key === 'M') window.SS.debugMoveNearest();
     else if (e.key === 'h' || e.key === 'H') window.SS.debugHurt();
     else if (e.key === 'g' || e.key === 'G') window.SS.debugToRoom(); // R is reload
+    else if (e.key === 'w' || e.key === 'W') window.SS.debugRoomWalk();
     else if (e.key === 'l' || e.key === 'L') window.SS.debugHitNearest('legL'); else if (e.key === 'a' || e.key === 'A') window.SS.debugHitNearest('armL'); else if (e.key === 't' || e.key === 'T') window.SS.debugHitNearest('torso'); });
   if (/[?&]debug\b/.test(location.search)) { const kb = document.createElement('button'); kb.id = 'dbg-kill'; kb.textContent = 'KILL';
     kb.style.cssText = 'position:fixed;right:8px;top:64px;z-index:30;font:600 11px monospace;color:#fff;background:rgba(160,30,30,.8);border:0;border-radius:4px;padding:4px 8px';
