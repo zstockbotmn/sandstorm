@@ -19,6 +19,9 @@ const [tier = 'low', out = 'logs/a13/room'] = process.argv.slice(2); fs.mkdirSyn
       if (res.held.walking || !res.held.hold) fail.push('walk not held ' + JSON.stringify(res.held));
       await p.screenshot({ path: out + '_' + tier + '_doorway.png' });
       // A15c: hold log lines + DOORWAY chip
+      // A16: the room=1 start hold (no G yet) must log its start line
+      await p.waitForFunction(() => (SS.audioLog || []).some((x) => x.kind === 'room' && /^hold start \(door [\d.]+m\)/.test(x.detail)), null, { timeout: 8000 }).catch(() => {});
+      res.startLine = await p.evaluate(() => ((SS.audioLog || []).find((x) => x.kind === 'room') || {}).detail || null); if (!res.startLine || !/^hold start/.test(res.startLine)) fail.push('room=1: no "room hold start" line before any G (' + res.startLine + ')');
       res.chip1 = await p.evaluate(() => { const c = document.getElementById('room-hint'); return c ? { shown: getComputedStyle(c).display !== 'none', text: c.textContent } : null; });
       if (!res.chip1 || !res.chip1.shown || !/DOORWAY/.test(res.chip1.text)) fail.push('no DOORWAY chip while held ' + JSON.stringify(res.chip1));
       // A14: G always jumps (next room when already at one) and keeps the hold; W walks on; the hold is 40 GAME-s

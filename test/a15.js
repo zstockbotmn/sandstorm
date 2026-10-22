@@ -37,7 +37,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
         if (R._wa && !SS.waveActive) R.waveEnds.push(+sim.toFixed(1)); R._wa = !!SS.waveActive;
         for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /advances/.test(x.detail) && !R.advLines.includes(x.t)) R.advLines.push(x.t);
         if (!SS.player.alive) { R.died = +sim.toFixed(1); break; } await new Promise((r) => setTimeout(r, 250)); }
-      R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.picks = (SS.spPick && SS.spPick.hist) || [];
+      R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.aborts = SS.flankAbortLog || []; R.noneWhy = SS.stallNoneWhy || null; R.picks = (SS.spPick && SS.spPick.hist) || [];
       R.counters = { flankTells: SS.flankTells | 0, flankCapBlocked: SS.flankCapBlocked | 0, flankRetired: SS.flankRetired | 0, stallPushes: SS.stallPushes | 0, stallPushNone: SS.stallPushNone | 0, frontArcDuckHits: SS.frontArcDuckHits | 0 };
       R.log = (SS.audioLog || []).filter((x) => /grenade|gren|enemy|wave|rpg|truck/.test(x.kind)).map((x) => ({ t: x.t, kind: x.kind, d: x.detail })); return R; }, mode === 'random' ? [6, 40] : [4, 45]));
     // 1 + 2
@@ -50,6 +50,15 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     if (res.counters.frontArcDuckHits) fail.push('front-arc ducked hits ' + res.counters.frontArcDuckHits);
     res.flankPerWave = perWave;
     // 3
+    // A16: stall pushes re-arm every wave and repeat during long camps
+    { const byW = {}; for (const q of res.push) (byW[q.wave] = byW[q.wave] || []).push(q.sim); res.pushByWave = byW;
+      for (const w of res.waves) { if (w.n < 2) continue; const wv = byW[w.n] || []; if (!wv.length) fail.push('no stall push in wave ' + w.n + ' (' + JSON.stringify(res.noneWhy || null) + ')'); }
+      if (!Object.values(byW).some((a) => a.length >= 2)) fail.push('no wave with 2+ stall pushes (repeat during a long camp)'); }
+    // A16: no FLANKED tell after the wave's 2nd flank hit; every tell -> hit or 'flank aborted'
+    for (const w in perWave) { if (perWave[w] < 2) continue; const hs = res.recs.filter((r) => String(r.wave) === w).map((r) => r.sim).sort((a, b) => a - b), cap = hs[1];
+      const wEnd = (res.waves.find((x) => String(x.n) === String(+w + 1)) || {}).start || 1e9; const late = res.tells.filter((t) => t.tellSim > cap + 0.05 && t.tellSim < wEnd);
+      if (late.length) fail.push('wave ' + w + ': FLANKED at ' + late.map((t) => t.tellSim).join(',') + ' after the 2-hit cap ' + cap); }
+    if (res.tells.length > res.recs.length + (res.aborts || []).length + 1) fail.push('tells ' + res.tells.length + ' > hits ' + res.recs.length + ' + aborts ' + (res.aborts || []).length);
     if (!res.push.length) fail.push('no stall push in ' + res.waves.length + ' waves (none-found ' + res.counters.stallPushNone + ')');
     for (const q of res.push) if (!(q.to < q.from)) fail.push('stall push ' + q.sim + ' not nearer (' + q.from + ' -> ' + q.to + ')');
     if (res.push.length && !res.advLines.length) fail.push('no "advances" line in the sound log');
