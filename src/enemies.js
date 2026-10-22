@@ -2920,8 +2920,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const keep = alive.some((e) => !ground.includes(e)) ? 0 : 1; // someone has to lay fire: a roof shooter, else one ground fighter
     const nBound = Math.max(1, Math.min(want, ground.length - keep));
     const range = tier === 2 ? 8 : tier === 1 ? 10 : 11, sent = []; let k = 0; // assaultSpot takes +-2 m round the target
-    for (const e of ground) { if (k >= nBound) break; const c = assaultSpot(e, range + (Math.random() * 2 - 1)); if (!c) continue;
-      stallSend(e, c, 'assault', camera.position.z - e.group.position.z); e._suppressUntilSim = -1; e._suppressOnArrive = 8; e._assault = true; e._climaxUntil = cxEndSim; sent.push(e); k++; }
+    for (const e of ground) { if (k >= nBound) break; const c = climaxBoundSpot(e, range + (Math.random() * 2 - 1), sent); if (!c) continue;
+      stallSend(e, c, 'assault', camera.position.z - e.group.position.z); e._suppressUntilSim = -1; e._suppressOnArrive = 8; e._assault = true; e._climaxUntil = cxEndSim; e._cxTo = c.pos; sent.push(e); k++; }
     const flankers = [];
     if (tier === 2 && flankHitsWave < FLANK_CAP_WAVE) for (const e of ground) { if (flankers.length >= 2) break; if (sent.includes(e)) continue; if (alive.length - sent.length - flankers.length - 1 < 1) break; // keep one shooter laying fire
       const sp = climaxFlankSpot(e, flankers.map((f) => f._cxFlankTo)); if (!sp) continue;
@@ -2933,6 +2933,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, tier, bound: sent.length, range, flank: flankers.length, suppress: alive.length - sent.length - flankers.length, fallbackSim: null };
     SSx.climaxLog = (SSx.climaxLog || []).concat([cxRec]).slice(-20);
   }
+  function climaxBoundSpot(e, range, sent) { const c0 = assaultSpot(e, range); if (c0) return c0; // A22 (a15: W5/W6 got 1-2 bounders of 3-4): a wider open-street grid
+    const cam = camera.position, side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1);
+    const taken = (pos) => occupiedBy(pos, e) || sent.some((o) => o._cxTo && Math.hypot(o._cxTo.x - pos.x, o._cxTo.z - pos.z) < 1.6);
+    for (const need of [true, false]) for (const dz of [0, -1, 1, -2, 2]) for (const sx of [side, -side]) for (const ax of [2.2, 3.6, 5.2, 6.4]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - Math.max(6, range + dz));
+      if (taken(pos) || (need && !clearToEye(_losP.set(pos.x, 1.25, pos.z)))) continue; return { pos, type: 'wall', open: true }; }
+    return null; }
   function climaxFlankSpot(e, avoid) { const cam = camera.position; let best = null, bs = 1e9; // A22: flankTick's spot search, no timing gates
     for (const c of coverPool(['wall', 'barrel', 'car', 'door', 'alley'], [-12, 30])) { if (!c.pos || occupiedBy(c.pos, e)) continue;
       if (avoid.some((a) => a && Math.hypot(a.x - c.pos.x, a.z - c.pos.z) < 2.5)) continue;
