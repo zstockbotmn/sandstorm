@@ -133,7 +133,7 @@ export function createInput(canvas) {
   let focusAt = -1e9, wasBlurred = typeof document !== 'undefined' && document.hasFocus ? !document.hasFocus() : false;
   window.addEventListener('blur', () => { wasBlurred = true; }); window.addEventListener('focus', () => { focusAt = performance.now(); });
   canvas.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'mouse' && (wasBlurred || !document.hasFocus() || performance.now() - focusAt < 300)) { wasBlurred = false; focusAt = -1e9; input.focusClicks = (input.focusClicks | 0) + 1; e.preventDefault(); return; }
+    if (e.pointerType === 'mouse' && (wasBlurred || performance.now() - focusAt < 300)) { wasBlurred = false; focusAt = -1e9; input.focusClicks = (input.focusClicks | 0) + 1; e.preventDefault(); return; }
     if (kia()) return;
     if (controlName(e.target)) return;
     // The Play tap (and its synthetic follow-up events) must never fire: ignore canvas presses until 400 ms after the run starts.
