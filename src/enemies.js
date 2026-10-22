@@ -3008,10 +3008,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // A15 run 2 (a15 random: a 30 s long-camp grenade in every wave 3-6 = 'grenade every wave' again): long camp is 25 s on a
     // quiet wave, 40 s once this wave already had its RPG / truck, +10 s when the previous wave had a grenade.
     const otherPiece = spL.some((x) => (x.kind === 'rpg' || x.kind === 'truck') && x.wave === waveNo);
-    const longCamp = nadeWave ? 0 : Math.min(40, (otherPiece ? 40 : 25) + (prevNade ? 10 : 0)), capN // A16: capped at 40 s (tester A15: 50 s after an RPG) = nadeWave ? NADE_CAP : 1;
-    const capped = nadesWave >= capN, certainAt = nadeWave ? (!nadesWave ? 7 : 12 - 3 * pN) : longCamp, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
+    // A16 (PM): after a grenade wave there is NO long-camp grenade (a camp there gets a stall push / flank instead); else 25 s
+    // on a quiet wave, 40 s once the RPG / truck came (was up to 50).
+    const longCamp = nadeWave ? 0 : prevNade ? Infinity : (otherPiece ? 40 : 25), capN = nadeWave ? NADE_CAP : 1;
+    const capped = nadesWave >= capN, certainAt = nadeWave ? (!nadesWave ? 7 : 12) : longCamp /* A16: 2nd throw ~12 s after the 1st */, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
-    const gapOk = spGap >= SP_GAP_S; // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
+    const lastSp = spL[spL.length - 1], gapOk = spGap >= SP_GAP_S || (nadeWave && nadesWave === 1 && lastSp && lastSp.kind === 'grenade' && lastSp.wave === waveNo && spGap >= 11.9); // A16: a grenade wave's 2nd throw follows its 1st at ~12 s // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
     if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, waveNo, nadeWave: !!nadeWave, nadeThisWave, nadesWave, longCamp, prevNade, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
     if (waveActive && !capped && campT > (nadeWave && !nadesWave ? 3 : 5 - 1.5 * pN) && waveOk && gapOk && (campT > certainAt || (nadeWave && !nadesWave && Math.random() < dt * 0.35))) {
       let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
@@ -3026,7 +3028,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (capped) why = 'cap ' + capN + '/wave';
       else if (!(cov && cov.state === 'in')) why = 'not in cover (' + (cov ? cov.state : 'none') + ')';
       else if (!waveOk) why = 'wave ' + waveNo + ' < 3';
-      else if (!nadeWave && campT <= longCamp) why = 'long camp ' + campT.toFixed(1) + '/' + longCamp + 's (not a grenade wave' + (prevNade ? ', grenade last wave' : '') + ')';
+      else if (!nadeWave && prevNade) why = 'none: grenade last wave';
+      else if (!nadeWave && campT <= longCamp) why = 'long camp ' + campT.toFixed(1) + '/' + longCamp + 's (not a grenade wave)';
       else if (campT <= (nadeWave ? 3 : minCamp)) why = 'camp ' + campT.toFixed(1) + 's < ' + minCamp.toFixed(1);
       else if (!gapOk) why = 'set-piece gap ' + Math.min(spGap, 999).toFixed(1) + 's';
       else { let nd = 1e9, n = 0; for (const e of list) { if (!e.alive || e.dying) continue; n++; nd = Math.min(nd, e.group.position.distanceTo(camera.position)); }

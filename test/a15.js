@@ -59,13 +59,15 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     res.nadesBy = nadesBy; const pickWaves = Object.keys(nadesBy).filter((w) => nadesBy[w].some((x) => x.pick === 'grenade'));
     if (mode === 'random') { if (!pickWaves.length) warn.push('no director grenade wave this run (2nd-grenade re-arm unchecked)');
       else if (!pickWaves.some((w) => nadesBy[w].length >= 2)) fail.push('no 2nd grenade in a grenade wave ' + JSON.stringify(nadesBy)); }
+    for (const w of pickWaves) { const a = nadesBy[w]; if (a.length >= 2 && (a[1].sim - a[0].sim < 11.5 || a[1].sim - a[0].sim > 14)) fail.push('wave ' + w + ' 2nd throw ' + (a[1].sim - a[0].sim).toFixed(1) + ' s after the 1st (want ~12)'); }
     for (const w in nadesBy) { const a = nadesBy[w], quick = a.some((x) => x.pick === 'grenade'); if (a.length > (quick ? 2 : 1)) fail.push('wave ' + w + ': ' + a.length + ' grenades');
-      for (const x of a) if (x.pick !== 'grenade') { const need = Math.min(40, (res.spLog.some((y) => (y.kind === 'rpg' || y.kind === 'truck') && y.wave === x.wave && y.sim < x.sim) ? 40 : 25) + (nadesBy[w - 1] ? 10 : 0)); if (x.camp > 40.6) fail.push('wave ' + w + ' long-camp grenade at ' + x.camp + ' s (cap 40)'); if (!(x.camp >= need - 0.5)) fail.push('wave ' + w + ' long-camp grenade after ' + x.camp + ' s (want >= ' + need + ')'); } }
+      for (const x of a) if (x.pick !== 'grenade') { if (nadesBy[w - 1]) { fail.push('wave ' + w + ': long-camp grenade right after a grenade wave'); continue; } const need = res.spLog.some((y) => (y.kind === 'rpg' || y.kind === 'truck') && y.wave === x.wave && y.sim < x.sim) ? 40 : 25; if (x.camp > 40.6) fail.push('wave ' + w + ' long-camp grenade at ' + x.camp + ' s (cap 40)'); if (!(x.camp >= need - 0.5)) fail.push('wave ' + w + ' long-camp grenade after ' + x.camp + ' s (want >= ' + need + ')'); } }
     // A15a variety (random): the same set-piece kind never opens two waves in a row unless it is a long-camp grenade
     if (mode === 'random') { const kinds = {}; for (const s of res.spLog) (kinds[s.wave] = kinds[s.wave] || new Set()).add(s.kind + (s.kind === 'grenade' && s.pick !== 'grenade' ? '-long' : ''));
       for (const w in kinds) { const prev = kinds[w - 1]; if (!prev) continue; for (const k of kinds[w]) if (!/-long$/.test(k) && (prev.has(k) || (k === 'grenade' && prev.has('grenade-long')))) fail.push('wave ' + w + ' repeats ' + k + ' from wave ' + (w - 1)); }
       // A15e: director variety over waves 2-6 - log the sequence (pick + what happened), want >= 3 different picks and no back-to-back pick
       res.sequence = res.picks.map((pk, i) => 'w' + (i + 1) + ' ' + pk + (kinds[i + 1] ? ' [' + [...kinds[i + 1]].join('+') + ']' : ''));
+      if (res.picks.length >= 5 && !res.picks.slice(0, 5).includes('truck')) fail.push('no truck pick in waves 1-5: ' + res.picks.join(','));
       const p26 = res.picks.slice(1, 6); if (p26.length >= 5 && new Set(p26).size < 3) fail.push('director picks w2-6 not varied: ' + p26.join(','));
       for (let i = 1; i < p26.length; i++) if (p26[i] === p26[i - 1]) fail.push('director repeated ' + p26[i] + ' (w' + (i + 1) + '->w' + (i + 2) + ')');
       if (p26.length < 5) warn.push('only ' + p26.length + ' director picks w2+');
@@ -77,7 +79,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       if (!res.grenT.some((t) => t > g.sim + 0.5 && t <= end + 0.5)) fail.push('no gren: line after the throw at ' + g.sim + ' (wave went on to ' + end + ')'); }
     // 5
     const byW = {}; for (const s of res.spLog) (byW[s.wave] = byW[s.wave] || []).push(s);
-    for (const w in byW) { const a = byW[w].sort((x, y) => x.sim - y.sim); for (let i = 1; i < a.length; i++) if (a[i].sim - a[i - 1].sim < 14.9) fail.push('wave ' + w + ': ' + a[i - 1].kind + ' ' + a[i - 1].sim + ' -> ' + a[i].kind + ' ' + a[i].sim + ' (< 15 s)'); }
+    for (const w in byW) { const a = byW[w].sort((x, y) => x.sim - y.sim); for (let i = 1; i < a.length; i++) if (a[i].sim - a[i - 1].sim < 14.9 && !(a[i].kind === 'grenade' && a[i - 1].kind === 'grenade' && a[i].pick === 'grenade' && a[i].sim - a[i - 1].sim >= 11.8)) fail.push('wave ' + w + ': ' + a[i - 1].kind + ' ' + a[i - 1].sim + ' -> ' + a[i].kind + ' ' + a[i].sim + ' (< 15 s)'); }
     if (res.died != null) fail.push('died ' + res.died); if (errs.length) { res.errs = errs.slice(0, 5); fail.push('page errors'); } await ctx.close();
   } catch (e) { fail.push('exception ' + e.message); }
   await b.close(); srv.close(); res.fail = fail; res.warn = warn; fs.writeFileSync(out + '_' + mode + '_' + tier + '.json', JSON.stringify(res, null, 1));

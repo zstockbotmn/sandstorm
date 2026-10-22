@@ -231,6 +231,8 @@ export function createSetPieces({ scene, camera, player, hud }) {
         // A15a: no repeat of last wave's pick NOR of any set piece that actually happened last wave (a long-camp grenade counts).
         const did = new Set((SS.spLog || []).filter((x) => x.sim >= prevWaveT && x.sim < sim).map((x) => x.kind)); SS.spLastDid = [...did];
         if (state.wave >= 2) { const W = { rpg: 0.3, grenade: 0.3, truck: 0.25, quiet: 0.15 }; if (last) delete W[last]; for (const k of did) delete W[k];
+          // A16 (PM: no truck in the A15 run's 5 waves): a truck is due by wave 5 - x2.5 weight on wave 4, forced on wave 5 if allowed
+          if (W.truck && !hist.includes('truck')) { if (state.wave >= 5) { for (const k in W) if (k !== 'truck') delete W[k]; } else if (state.wave === 4) W.truck *= 2.5; }
           let tot = 0; for (const k in W) tot += W[k]; let r = Math.random() * tot; for (const k in W) { r -= W[k]; if (r <= 0) { pick = k; break; } } }
         hist.push(pick); if (hist.length > 12) hist.shift(); SS.spPick = { wave: state.wave, pick, hist, sim };
         fireAt = pick === 'rpg' ? 10 + Math.random() * 16 : -1; } // A13 window 10-26 s kept
