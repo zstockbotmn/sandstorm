@@ -154,16 +154,29 @@ export function createWorld(scene, seed) {
   const ROOM_DIM = [0.62, 0.5, 0.38], _roomMats = [];
   function roomMat(i) {
     if (_roomMats[i]) return _roomMats[i];
-    const m = matPlaster.clone();
-    m.color.multiplyScalar(ROOM_DIM[i]);
+    // A16 (tester A15: inside walls flat tan): matPlaster's procedural map stretched once over a 3.5 m unit box. Interior
+    // walls / floor / ceiling are now Poly Haven CC0 plastered_wall_02 with world-tiled UVs (uvTile at the call sites), dimmed.
+    const m = pbrMaterial('plastered_wall_02', { full: !LOWQ }); m.color.setRGB(1.0, 0.9, 0.78).multiplyScalar(ROOM_DIM[i] * 1.25); m.roughness = 0.95;
     return (_roomMats[i] = m);
   }
   let _roomWood = null;
   // A14 (tester: door / table / rug read as blocky flat-shaded boxes): Poly Haven CC0 planks (wood) and hessian (rug,
   // tinted red) with world-tiled UVs; the planks are dark (sRGB ~80) so the colour lifts them to a warm mid wood.
-  function roomWood() { if (!_roomWood) { _roomWood = pbrMaterial('weathered_planks'); _roomWood.color.setRGB(1.55, 1.25, 0.95); _roomWood.roughness = 0.82; } return _roomWood; }
+  function roomWood() { if (!_roomWood) { _roomWood = pbrMaterial('weathered_planks'); _roomWood.color.setRGB(1.35, 1.08, 0.82); /* A16: less lift so the board grain keeps its contrast */ _roomWood.roughness = 0.82; } return _roomWood; }
   let _rugMat = null;
-  function rugMat() { if (!_rugMat) { _rugMat = pbrMaterial('hessian_230', { full: !LOWQ }); _rugMat.color.set(0xb4553d); } return _rugMat; }
+  // A16 (tester A15: rug solid red): a tinted hessian weave reads as flat red at 8 m. The rug map is now a woven-rug pattern
+  // (border bands, field, medallion; canvas) multiplied by the CC0 hessian weave once that loads; one rug per UV square.
+  function rugMat() { if (_rugMat) return _rugMat;
+    const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+    const pat = () => { g.globalCompositeOperation = 'source-over'; g.fillStyle = '#7a1f17'; g.fillRect(0, 0, 256, 256);
+      g.fillStyle = '#d9b26a'; g.fillRect(10, 10, 236, 236); g.fillStyle = '#1f2f4a'; g.fillRect(18, 18, 220, 220); g.fillStyle = '#a3322a'; g.fillRect(30, 30, 196, 196);
+      g.fillStyle = '#e6cf98'; for (let i = 0; i < 12; i++) { g.fillRect(36 + i * 16, 22, 6, 4); g.fillRect(36 + i * 16, 230, 6, 4); g.fillRect(22, 36 + i * 16, 4, 6); g.fillRect(230, 36 + i * 16, 4, 6); }
+      g.save(); g.translate(128, 128); g.rotate(Math.PI / 4); g.fillStyle = '#1f2f4a'; g.fillRect(-48, -48, 96, 96); g.fillStyle = '#d9b26a'; g.fillRect(-30, -30, 60, 60); g.fillStyle = '#7a1f17'; g.fillRect(-14, -14, 28, 28); g.restore();
+      g.fillStyle = '#1f2f4a'; for (const [x, y] of [[48, 48], [208, 48], [48, 208], [208, 208]]) { g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.fill(); } };
+    pat(); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    const im = new Image(); im.onload = () => { pat(); g.globalCompositeOperation = 'multiply'; for (let y = 0; y < 256; y += 128) for (let x = 0; x < 256; x += 128) g.drawImage(im, x, y, 128, 128); g.globalCompositeOperation = 'source-over'; t.needsUpdate = true; };
+    im.src = 'assets/textures/hessian_230_diff.webp';
+    _rugMat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.97, metalness: 0 }); return _rugMat; }
   const BLDGS = [['bldg1', 0.3], ['bldg2', 0.3], ['bldg3', 0.2], ['bldg4', 0.2]];
   const ROOF_OK = { bldg1: 1, bldg2: 1, bldg3: 1 };
   // Poly Haven CC0 1k PBR (WebP) for building sides/backs/roofs and the background rows. World-scaled box UVs.
@@ -801,20 +814,20 @@ export function createWorld(scene, seed) {
     }
     addBox(seg, matPlaster, X(0.15), (2.2 + RH) / 2, zc, 0.3, RH - 2.2, 1.2);
     const iw = W - 0.06, id = 3.47;
-    addBox(seg, roomMat(0), X(2.035), 0.02, zc, id, 0.02, iw, nc);
-    addBox(seg, roomMat(1), X(2.035), RH - 0.02, zc, id, 0.02, iw, nc);
-    addBox(seg, roomMat(0), X(2.035), RH / 2, zc - W / 2 + 0.02, id, RH - 0.04, 0.02, nc);
-    addBox(seg, roomMat(0), X(2.035), RH / 2, zc + W / 2 - 0.02, id, RH - 0.04, 0.02, nc);
-    addBox(seg, roomMat(2), X(3.78), RH / 2, zc, 0.02, RH - 0.04, iw, nc);
+    addBox(seg, roomMat(0), X(2.035), 0.02, zc, id, 0.02, iw, { ...nc, uvTile: 1.6 });
+    addBox(seg, roomMat(1), X(2.035), RH - 0.02, zc, id, 0.02, iw, { ...nc, uvTile: 1.6 });
+    addBox(seg, roomMat(0), X(2.035), RH / 2, zc - W / 2 + 0.02, id, RH - 0.04, 0.02, { ...nc, uvTile: 1.6 });
+    addBox(seg, roomMat(0), X(2.035), RH / 2, zc + W / 2 - 0.02, id, RH - 0.04, 0.02, { ...nc, uvTile: 1.6 });
+    addBox(seg, roomMat(2), X(3.78), RH / 2, zc, 0.02, RH - 0.04, iw, { ...nc, uvTile: 1.6 });
     const A = (70 + seg._wrng() * 30) * Math.PI / 180;
     const leaf = addBox(seg, roomWood(), X(0.2) + side * 0.575 * Math.sin(A), 1.075, zc - 0.6 + 0.575 * Math.cos(A), 0.06, 2.15, 1.15, { collide: false, uvTile: 0.9 });
     leaf.rotation.y = side * A;
-    addBox(seg, roomWood(), X(2.2), 0.76, zc, 1.2, 0.06, 0.8, { uvTile: 0.9 });
+    addBox(seg, roomWood(), X(2.2), 0.76, zc, 1.2, 0.06, 0.8, { uvTile: 0.6 });
     addBox(seg, roomWood(), X(2.2), 0.38, zc, 0.9, 0.7, 0.5, { uvTile: 0.9 });
     const nC = 2 + Math.floor(seg._wrng() * 2), cS = seg._wrng() < 0.5 ? -1 : 1;
     for (let i = 0; i < nC; i++) addBox(seg, roomWood(), X(3.4), 0.3 + i * 0.6, zc + cS * (W / 2 - 0.4), 0.6, 0.6, 0.6, { uvTile: 0.9 });
     addBox(seg, roomWood(), X(3.58), 0.9, zc, 0.35, 1.8, 1.6, { uvTile: 0.9 });
-    addBox(seg, rugMat(), X(1.35), 0.03, zc, 1.6, 0.02, 1.0, { collide: false, uvTile: 0.6 });
+    addBox(seg, rugMat(), X(1.35), 0.03, zc, 1.6, 0.02, 1.0, { collide: false });
     for (let i = 0, n = 3 + Math.floor(seg._wrng() * 3); i < n; i++) {
       const rs = 0.15 + seg._wrng() * 0.2;
       addBox(seg, matPlaster, X(0.9 + seg._wrng() * 1.8), rs / 2, zc - cS * (W / 2 - 0.45) + (seg._wrng() - 0.5) * 0.4, rs, rs, rs, nc);
