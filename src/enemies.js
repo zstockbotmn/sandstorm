@@ -2020,7 +2020,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let fightSim0 = -1e9, lastShotSim = -1e9; // threat ramp clocks (game time)
   const LOW_HP_CHANCE = 0.3, LOW_HP_SLIVER = 6; // m1x: hit-chance floor once a hit would be lethal and the player is exposed
   const DMG_CAP_HPS = 2.8, DMG_CAP_BURST = 22; let dmgBucket = DMG_CAP_BURST, dmgBucketR = 0, dmgBucketSim = 0;
-  function dmgBudget(nowS, simS) { if (dmgBucketR) dmgBucket = Math.min(DMG_CAP_BURST, dmgBucket + DMG_CAP_HPS * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
+  function dmgBudget(nowS, simS) { const mul = cxPhase === 'active' ? 1.6 : 1; const hps = DMG_CAP_HPS * mul, burst = DMG_CAP_BURST * mul; /* A21: climax budget ~1.6x so an EXPOSED player can drop to ~35-50 */ if (dmgBucketR) dmgBucket = Math.min(burst, dmgBucket + hps * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
   // m1v: warning for fire from outside the view - edge flash on the shooter's side + a supersonic crack
   function warnFrom(pos) { const SSx = window.SS; if (!SSx) return; const c = camera.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = pos.x - c.x, dz = pos.z - c.z;
     const fwd = dx * Math.sin(yaw) + dz * -Math.cos(yaw), right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
@@ -2062,6 +2062,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function FLANK_GAP_S() { return 18 - 6 * pressureP(); }
   function flankTick() {
     const SSx = window.SS; if (!SSx || !SSx.running) return;
+    if (lullOn(SSx.simTime || 0)) return; // A21: no new flanks in the post-climax lull
     const t = SSx.simTime || 0, ducked = !!(SSx.input && SSx.input.cover);
     for (const f of list) if (f.alive && typeof f._flankTellSim === 'number' && t - f._flankTellSim >= FLANK_ABORT_S) retireFlanker(f, f._flankBlock || (ducked ? 'no shot' : 'player left cover')); // A16: an unused tell ends the attempt
     if (!ducked) { duckSinceSim = null; return; }
@@ -2246,6 +2247,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (hit && !flankHit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
     const dmgAmt = dmgAmt0, dmgCost = lowHp ? Math.min(dmgAmt, Math.max(1, player.health)) : dmgAmt;
     if (dmgBudget(nowS, simS) < dmgCost - 1e-6 && hit) { hit = false; if (window.SS) window.SS.dmgCapBlocked = (window.SS.dmgCapBlocked | 0) + 1; } // m1w: incoming damage-per-second cap
+    if (hit && cxPhase === 'active' && player.health >= 35 && player.health - dmgAmt < 35) { hit = false; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; } // A21: a climax never takes HP below 35 (unless already below)
     if (flankHit && !hit) enemy._flankBlock = 'blocked (spacing / damage cap)';
     // A17 (tester A16: FLANKED 150.3 -> a hit 0.8 s later): a fighter with a FLANKED tell younger than 1.5 s lands nothing at all
     // A19 (tester A18: FLANKED 149.9 -> a '(rifle)' hit 1.3 s later -> 'flank aborted' 154.5): the grenade at 149.7 moved the
@@ -2320,7 +2322,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function squadCall(text) {
     const hud = window.SS && window.SS.hud;
-    if (hud && typeof hud.callout === 'function') hud.callout(text, /Moving|moving up|Flanking|Grenade/.test(text));
+    if (hud && typeof hud.callout === 'function') hud.callout(text, /Moving|moving up|Flanking|Grenade|rushing/.test(text));
     if (window.SS && /Flanking/.test(text)) { const L = window.SS.flankCallLog || (window.SS.flankCallLog = []); L.push(+(window.SS.simTime || 0).toFixed(2)); if (L.length > 80) L.shift(); } // A17: test hook
   }
 
@@ -2713,8 +2715,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (LOCO2 && e.phase !== 'relocate') { parkCoverStep(e); startReposition(e, c); }
     else { e._relocAt = sim; e.anchor = c; e.home = standPos(c); e.path = pathOnto(e, c); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.exposed = true; e.goal = e.path[0]; }
     e.moveKind = 'run'; e._reposWhy = 'stall-' + kind; e.advanced = (e.advanced | 0) + 1;
-    try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {}
-    SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', kind + ' ' + Math.round(from) + 'm');
+    if (!/^fallback/.test(kind) && !(kind === 'assault' && cxPhase === 'active')) try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {} // A21: the climax / fallback have their own radio line
+    SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', /retreat/.test(kind) ? 'fallback (retreat)' : kind + ' ' + Math.round(from) + 'm');
     const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0))), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 40) L.shift();
     if (e._stallRec && e._stallRec.arrived == null) e._stallRec.cancelled = 'stall'; e._stallRec = rec; } // A16b: arrival (or why not) is filled in on the rec
   function openBound(e, a) { const cam = camera.position, p = e.group.position; const step = Math.min(7, a - 3); if (step < 5) return null;
@@ -2733,32 +2735,42 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (Math.hypot(pos.x - cam.x, pos.z - cam.z) < 2.4 || occupiedBy(pos, e)) continue; if (!clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue;
       return { pos, type: 'wall', open: true, near: true }; }
     return null; }
-  let assaultAt = -1e9, lastBeatSendSim = -1e9, lastStallSendSim = -1e9;
-  function assaultSpot(e) { const cam = camera.position; let best = null, bd = 1e9;
-    for (const c of coverPool(STALL_TYPES, [7, 15])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < 8 || az > 13 || Math.abs(c.pos.x) > 7) continue;
+  let assaultAt = -1e9, lastBeatSendSim = -1e9, lastStallSendSim = -1e9, assaultIv = 0, assaultIvs = [];
+  let cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null; // A21
+  function resetClimax() { cxWave = -1; cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxLullUntil = 0; cxTellSim = cxStartSim = cxEndSim = 0; cxRec = null; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; }
+  function assaultSpot(e, range) { const cam = camera.position, tgt = range != null ? range : 10.5, lo = Math.max(6, tgt - 2), hi = Math.min(18, tgt + 2); let best = null, bd = 1e9; // A21: target range (was fixed 8-13)
+    for (const c of coverPool(STALL_TYPES, [Math.max(5, lo - 1), hi + 1])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < lo || az > hi || Math.abs(c.pos.x) > 7) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
     if (best) return best;
     const side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1);
-    for (const az of [11 + Math.random() * 2, 9.5, 13]) for (const sx of [side, -side]) for (const ax of [3.6, 5.2]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az);
+    for (const az of [tgt, Math.max(8, tgt - 1.5), Math.min(16, tgt + 2)]) for (const sx of [side, -side]) for (const ax of [3.6, 5.2]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az);
       if (occupiedBy(pos, e) || !clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue; return { pos, type: 'wall', open: true }; }
     return null; }
-  function assault(sim) { const SSx = window.SS, pz = camera.position.z; assaultAt = sim;
+  function rollAssaultIv() { let iv, n = 0; do { iv = 8 + Math.random() * 10; n++; } while (n < 12 && assaultIvs.length >= 2 && Math.abs(iv - assaultIvs[assaultIvs.length - 1]) <= 1 && Math.abs(iv - assaultIvs[assaultIvs.length - 2]) <= 1); assaultIvs.push(iv); if (assaultIvs.length > 4) assaultIvs.shift(); return iv; } // A21: 8-18 s, never the same ±1 s three in a row
+  function assault(sim) { const SSx = window.SS, pz = camera.position.z, range = 8 + Math.random() * 8, want = 1 + (Math.random() < 0.5 ? 1 : 0), iv = rollAssaultIv(); assaultAt = sim + iv; assaultIv = iv; // A21
     const alive = list.filter((e) => e.alive && !e.dying);
     const moving = (e) => e.phase === 'relocate' && !(e._relocAt != null && sim - e._relocAt > 10);
-    const cand = alive.filter((e) => !moving(e) && e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 14.5)
+    const cand = alive.filter((e) => !moving(e) && e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > range)
       .sort((a, b) => b.group.position.z - a.group.position.z); // nearest first: the shortest bounds into the kill zone
     let n = 0; const sent = [];
-    for (const e of cand) { if (n >= 2) break; const a = pz - e.group.position.z, c = assaultSpot(e); if (!c) continue;
+    for (const e of cand) { if (n >= want) break; const a = pz - e.group.position.z, c = assaultSpot(e, range); if (!c) continue;
       stallSend(e, c, 'assault', a); e._suppressUntilSim = -1; e._suppressOnArrive = 3; e._assault = true; sent.push(e); n++; }
     if (n) { lastStallSendSim = sim; for (const o of alive) if (!sent.includes(o)) o._suppressUntilSim = sim + 3; // the rest cover the bound
-      SSx.assaultLog = (SSx.assaultLog || []).concat([{ sim: +sim.toFixed(1), n, wave: Math.max(burstIndex, waveClears + 1) }]).slice(-40); } }
+      SSx.assaultLog = (SSx.assaultLog || []).concat([{ sim: +sim.toFixed(1), n, wave: Math.max(burstIndex, waveClears + 1), interval: +iv.toFixed(1) }]).slice(-40); } }
   function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0;
     if (!waveActive) { waveProgSim = sim; stallWasActive = false; return; }
-    if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallWaveStart = sim; stallPushAt = 12 + Math.random() * 3; } // re-arm at each wave start
-    // A20 (tester A19: W5 all 6 alive 41 s after contact; W4 a group sat 13-23 m out 25+ s): ~40 s into the fight the wave
-    // ASSAULTS - every ~6 s two fighters bound (the rest suppress) to 8-14 m, where they are exposed and killable.
+    if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallWaveStart = sim; stallPushAt = 12 + Math.random() * 3; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; } // re-arm at each wave start
+    if (lullOn(sim) || cxPhase === 'tell' || cxPhase === 'active') return; // A21: the climax and its lull own this stretch
+    // A21 (tester A20: assault 15-16 m -> arrived 12-14 m every ~12 s forever, HP flat 73-81): from ~28 s after contact
+    // until the climax, 1-2 fighters bound at random 8-18 s to a random 8-16 m; stall pushes / mid-wave beat stay before that.
     const aStart = (mwContactSim != null ? mwContactSim : stallWaveStart + 6);
-    if (sim - aStart >= 40) { if (sim - assaultAt >= 6 && sim - lastBeatSendSim >= 5 && sim - lastStallSendSim >= 5) assault(sim); return; } // A20: never on top of a pair
+    if (sim - aStart >= 28) {
+      if (!(cxWave >= 2 && !cxDone && cxDue && sim + 5 >= cxDue)) {
+        if (assaultAt < aStart) assaultAt = aStart + 28;
+        if (sim >= assaultAt && sim - lastBeatSendSim >= 5 && sim - lastStallSendSim >= 5) assault(sim);
+      }
+      return;
+    }
     if (sim - waveProgSim < stallPushAt) return;
     // A20 (tester A19: pushes came as a burst of 3 in 1.2 s): never right on top of a mid-wave beat push - a clean pair
     if (sim - lastBeatSendSim < 5) return; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3;
@@ -2845,6 +2857,67 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (kind === 'push') SSx.midBeatAt = sim;
     slog('enemy', 'mid-wave beat: ' + kind + ' at ' + (sim - mwContactSim).toFixed(1) + 's' + (mwWaitWhy ? ' (waited: ' + mwWaitWhy + ')' : '')); mwWaitWhy = '';
     const L = SSx.midBeatLog || (SSx.midBeatLog = []); L.push({ wave: wv, kind, sim: +sim.toFixed(1), afterContact: +(sim - mwContactSim).toFixed(1) }); if (L.length > 30) L.shift();
+  }
+
+  // A21: one climax per wave from wave 2, then a fallback lull. Set pieces keep >= 8 s via SS.midBeatAt / SS.climaxAt.
+  function spBeatBlock(SSx, sim, wv) {
+    const sL = (SSx.spLog || []).filter((x) => x.wave === wv), nN = sL.filter((x) => x.kind === 'grenade').length, lastN = sL.filter((x) => x.kind === 'grenade').slice(-1)[0], sp = SSx.spPick;
+    const recent = SSx.setPieceAt != null && sim - SSx.setPieceAt >= 0 && sim - SSx.setPieceAt < 8;
+    const rpgDue = SSx.rpgDueAt != null && SSx.rpgDueAt - sim < 8;
+    const nadeDue = !!(sp && sp.wave === wv && sp.pick === 'grenade' && nN < 2 && (!lastN || lastN.sim + 12 - sim < 8));
+    return recent ? 'recent' : rpgDue ? 'rpg due' : SSx.truckPendingWave ? 'truck due' : nadeDue ? 'grenade due' : null;
+  }
+  function spInFlight(SSx) {
+    if (SSx.setpieces && SSx.setpieces.state && SSx.setpieces.state.flying) return true;
+    const tr = SSx.truckMoment && SSx.truckMoment.last; if (tr && tr.startSim != null && tr.bailSim == null) return true;
+    return nades.length > 0;
+  }
+  function cxStamp(sim) { const SSx = window.SS; if (!SSx) return; SSx.climaxAt = sim; } // own clock: setpiece.js + the grenade gate read it (midBeatAt stays the mid-wave beat's)
+  function lullOn(sim) { return cxLull && sim < cxLullUntil; } // A21 review: 12 s of quiet after the fallback, then mop-up assaults so a camped survivor can't stall the wave
+  function retreatSpot(e) {
+    const cam = camera.position, az = 22 + Math.random() * 13, side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1);
+    for (const sx of [side, -side]) for (const ax of [5.2, 3.6]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az); if (!occupiedBy(pos, e)) return { pos, type: 'wall', open: true }; }
+    return { pos: new THREE.Vector3(side * 4, 0, cam.z - az), type: 'wall', open: true };
+  }
+  function startClimax(sim) {
+    const SSx = window.SS, alive = list.filter((e) => e.alive && !e.dying), n = alive.length;
+    if (n < 2) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; cxPhase = 'idle'; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
+    slog('enemy', 'climax start'); cxPhase = 'active'; cxStartSim = sim; cxEndSim = sim + 8 + Math.random() * 2; cxStamp(sim);
+    const ground = alive.filter((e) => e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove)
+      .sort((a, b) => b.group.position.z - a.group.position.z);
+    const nBound = Math.min(3, Math.max(1, Math.round(ground.length / 2))), range = 8 + Math.random() * 4, sent = []; let k = 0;
+    for (const e of ground) { if (k >= nBound) break; const c = assaultSpot(e, range); if (!c) continue;
+      stallSend(e, c, 'assault', camera.position.z - e.group.position.z); e._suppressUntilSim = -1; e._suppressOnArrive = 8; e._assault = true; e._climaxUntil = cxEndSim; sent.push(e); k++; }
+    for (const o of alive) { if (sent.includes(o)) continue; o._suppressUntilSim = sim + 8; o._climaxUntil = cxEndSim; } // A21: rest + rooftops suppress
+    lastStallSendSim = sim;
+    cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, fallbackSim: null };
+    SSx.climaxLog = (SSx.climaxLog || []).concat([cxRec]).slice(-20);
+  }
+  function endClimax(sim) {
+    const SSx = window.SS; slog('enemy', 'climax end'); cxPhase = 'lull'; cxDone = true; cxLull = true; cxLullUntil = sim + 12; assaultAt = sim + 12 + rollAssaultIv(); cxStamp(sim); try { squadCall('They\'re falling back!'); } catch (_) {}
+    if (cxRec) cxRec.fallbackSim = +sim.toFixed(1);
+    let nFb = 0, nRet = 0;
+    for (const e of list) { if (!e.alive || e.dying) continue; e._climaxUntil = -1; e._lullUntil = sim + 6; e._suppressOnArrive = 0; e._assault = false; e._suppressUntilSim = Math.min(e._suppressUntilSim || 0, sim);
+      const c = stallCoverFor(e, 22, 35, 2);
+      if (c) { const az = camera.position.z - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0)); stallSend(e, c, 'fallback', az); nFb++; }
+      else { stallSend(e, retreatSpot(e), 'fallback (retreat)', camera.position.z - e.group.position.z); nRet++; } }
+    SSx.fallbackLog = (SSx.fallbackLog || []).concat([{ sim: +sim.toFixed(1), wave: cxWave, n: nFb + nRet, retreat: nRet }]).slice(-20);
+  }
+  function waveClimax() {
+    const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
+    if (!waveActive) { resetClimax(); if (SSx) SSx.climaxAt = null; return; }
+    if (cxWave === -1) { cxWave = Math.max(burstIndex, waveClears + 1); cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxRec = null; }
+    if (mwContactSim != null && !cxDue && cxWave >= 2) { const T = Math.max(40, Math.min(60, 55 - 3 * (cxWave - 2) - 10 * pressureP())); cxDue = mwContactSim + T + (Math.random() * 6 - 3); } // A21
+    SSx.climaxState = { wave: cxWave, phase: cxPhase, done: cxDone, due: cxDue ? +cxDue.toFixed(1) : null }; // A21: test hook
+    if (cxDone || cxWave < 2) return;
+    if (cxPhase === 'tell') { if (sim >= cxStartSim) startClimax(sim); return; }
+    if (cxPhase === 'active') { if (sim >= cxEndSim) endClimax(sim); return; }
+    if (cxPhase !== 'idle' || !cxDue || sim < cxDue) return;
+    if (spInFlight(SSx)) return; // wait out a live RPG / truck / grenade
+    const block = spBeatBlock(SSx, sim, cxWave); if (block && sim < cxDue + 15) return; // give up waiting 15 s later if nothing is mid-flight
+    const n = list.filter((e) => e.alive && !e.dying).length;
+    if (n < 2) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
+    squadCall("They're rushing us!"); slog('enemy', 'climax tell'); cxPhase = 'tell'; cxTellSim = sim; cxStartSim = sim + 1.5; cxStamp(sim);
   }
 
   // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.
@@ -3037,6 +3110,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         if (LOCO2) enemy._peekFired = true;
         let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff) * 1.2; // fix 7: ~20% slower fire
         const supp = (enemy._suppressUntilSim || -1) > (window.SS.simTime || 0); if (supp) cd *= 0.6; // A19: suppressing after a push (same per-hit damage and cover rules)
+        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= 0.7; // A21: climax fire-rate boost
+        if ((enemy._lullUntil || -1) > (window.SS.simTime || 0)) cd *= 2; // A21: fallback taper
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
         if (!(window.SS && window.SS.input && window.SS.input.cover)) cd *= 1 - 0.25 * pressureP(); // 5e: more rounds at an EXPOSED player later in the run (same damage per hit)
@@ -3087,6 +3162,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
         let cd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff) * 1.2;
+        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= 0.7; // A21
+        if ((enemy._lullUntil || -1) > (window.SS.simTime || 0)) cd *= 2; // A21
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
         if (!(window.SS && window.SS.input && window.SS.input.cover)) cd *= 1 - 0.25 * pressureP(); // 5e: more rounds at an EXPOSED player later in the run (same damage per hit)
@@ -3205,7 +3282,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const longCamp = nadeWave ? 0 : prevNade ? Infinity : (lcWave = Math.max(lcWave, otherPiece ? 40 : 25)), capN = nadeWave ? NADE_CAP : 1;
     const capped = nadesWave >= capN, certainAt = nadeWave ? (!nadesWave ? 7 : 12) : longCamp /* A16: 2nd throw ~12 s after the 1st */, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
-    const midGap = window.SS && window.SS.midBeatAt != null ? (window.SS.simTime || 0) - window.SS.midBeatAt : 1e9; // A19 (PM 8): 8 s after a mid-wave push
+    const _beat = window.SS ? Math.max(window.SS.midBeatAt == null ? -1e9 : window.SS.midBeatAt, window.SS.climaxAt == null ? -1e9 : window.SS.climaxAt) : -1e9;
+    const midGap = _beat > -1e8 ? (window.SS.simTime || 0) - _beat : 1e9; // A19 / A21: 8 s after a mid-wave push or climax
     const lastSp = spL[spL.length - 1], gapOk = !(midGap >= 0 && midGap < 8) && (spGap >= SP_GAP_S || (nadeWave && nadesWave === 1 && lastSp && lastSp.kind === 'grenade' && lastSp.wave === waveNo && spGap >= 11.9)); // A16: a grenade wave's 2nd throw follows its 1st at ~12 s // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
     if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, waveNo, nadeWave: !!nadeWave, nadeThisWave, nadesWave, longCamp, prevNade, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
     if (waveActive && !capped && campT > (nadeWave && !nadesWave ? 3 : 5 - 1.5 * pN) && waveOk && gapOk && (campT > certainAt || (nadeWave && !nadesWave && Math.random() < dt * 0.35))) {
@@ -3280,7 +3358,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function update(dt) {
     if (window.SS) window.SS.pressureP = +pressureP().toFixed(2);
     if (HITS2) { try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {} }
-    updateGrenades(dt); updateTruck(dt); if (REPOS) stallPush(); midWaveBeat();
+    updateGrenades(dt); updateTruck(dt); if (REPOS) stallPush(); midWaveBeat(); waveClimax();
     const diff = difficulty();
     phaseT -= dt;
     const alive = aliveCount();
@@ -3581,7 +3659,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; }
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; }
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
