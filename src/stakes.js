@@ -85,7 +85,8 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
     if (audio && audio.log) audio.log('pickup', 'medkit +' + (n | 0) + ' (hp ' + Math.round(from) + ' -> ' + Math.round(to) + ')');
     if (window.SS) window.SS.medkitLog = (window.SS.medkitLog || []).concat([{ sim: +(window.SS.simTime || 0).toFixed(1), from: Math.round(from), to: Math.round(to), gained: n | 0 }]);
     if (!healEl) { healEl = document.createElement('div'); healEl.id = 'heal-flash'; healEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;background:radial-gradient(ellipse at center,rgba(60,255,120,.06) 30%,rgba(40,230,100,.38) 100%)'; document.body.appendChild(healEl); }
-    healEl.style.transition = 'none'; healEl.style.opacity = '1'; void healEl.offsetWidth; healEl.style.transition = 'opacity 0.7s ease-in 1.2s'; healEl.style.opacity = '0'; // A19: holds 1.2 s, then fades
+    healEl.style.transition = 'none'; healEl.style.opacity = '1'; const hE = healEl; hE._tok = (hE._tok | 0) + 1; const tok = hE._tok;
+    holdFrames(1200, 3, () => { if (hE._tok !== tok) return; hE.style.transition = 'opacity 0.7s ease-in'; hE.style.opacity = '0'; }); // A19 holds 1.2 s; A20: and >= 3 rendered frames (at ~1.5 fps 1.2 s was ~2 frames)
     if (window.SS) window.SS.healFlashes = (window.SS.healFlashes | 0) + 1;
     if (!hud.setHealth) return; const t0 = performance.now();
     const step = () => { const k = Math.min(1, (performance.now() - t0) / 700); if (player.health < to) { hud.setHealth(player.health); return; } // took a hit mid-tween: show the real value
@@ -96,9 +97,13 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
   function popup(text, color, hold) {
     const el = document.createElement('div'); el.textContent = text; el.className = 'ss-pickpop'; const h = hold || 0;
     el.style.cssText = 'position:fixed;left:50%;top:58%;transform:translate(-50%,0);font:800 22px system-ui,sans-serif;color:' + color + ';text-shadow:0 2px 4px #000;pointer-events:none;z-index:40;transition:transform ' + (h ? 1.4 : 0.9) + 's ease-out,opacity ' + (h ? 0.6 : 0.9) + 's ease-in ' + (h / 1000) + 's;opacity:1';
+    if (h) { el.style.transition = 'none'; document.body.appendChild(el); // A20: fully visible for >= hold ms AND >= 3 rendered frames, then rise + fade
+      holdFrames(h, 3, () => { el.style.transition = 'transform 1.4s ease-out, opacity 0.6s ease-in'; el.style.transform = 'translate(-50%,-30px)'; el.style.opacity = '0'; setTimeout(() => el.remove(), 1000); }); return; }
     document.body.appendChild(el); requestAnimationFrame(() => { el.style.transform = 'translate(-50%,' + (h ? -30 : -60) + 'px)'; el.style.opacity = '0'; });
     setTimeout(() => el.remove(), 1000 + h);
   }
+  // A20 (tester A19 at ~1.5 fps: heal feedback seen in one frame at most): run done() once ms have passed AND n frames were drawn
+  function holdFrames(ms, n, done) { const t0 = performance.now(); let f = 0; const tick = () => { f++; if (f >= n + 1 && performance.now() - t0 >= ms) done(); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
   const _tgt = new THREE.Vector3();
   function update(dt) {
     const pz = camera.position.z;

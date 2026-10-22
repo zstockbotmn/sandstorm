@@ -66,7 +66,8 @@ export function createHud() {
   const flankEl = document.createElement('div'); flankEl.id = 'flanked'; flankEl.textContent = 'FLANKED';
   // A8: small ducked / exposed indicator next to the health bar (tester A7: no cue for whether you are ducked).
   const stanceEl = document.createElement('div'); stanceEl.id = 'stance'; stanceEl.style.display = 'none'; let stanceK = '';
-  const warn = document.createElement('div'); warn.id = 'edge-warn'; const [warnSvg, warnPath] = edgeSvg('edge-arc'); warn.appendChild(warnSvg);
+  const warn = document.createElement('div'); warn.id = 'edge-warn'; const [warnSvg, warnPath] = edgeSvg('edge-arc'); warn.appendChild(warnSvg); // A20: dark outline under a red-orange core (the pale-yellow arc vanished against a bright sky)
+  const warnOut = document.createElementNS(SVGNS, 'path'); warnOut.setAttribute('class', 'edge-out'); warnSvg.insertBefore(warnOut, warnPath); warnPath.setAttribute('class', 'edge-core');
   // Segment of the viewport rectangle (inset) centred where the ray from the centre toward the shooter meets it, so the
   // arc hugs the real screen edge at any aspect ratio, corners included. halfSpan = fraction of min(W,H) on each side.
   function edgePath(sv, pth, angle, halfSpan, inset) { const W = window.innerWidth || 844, H = window.innerHeight || 390; sv.setAttribute('viewBox', '0 0 ' + W + ' ' + H); sv.setAttribute('width', W); sv.setAttribute('height', H);
@@ -163,7 +164,7 @@ export function createHud() {
     flankHideAt = performance.now() + 1800; flankFrames = 4; hud.flankedCount = (hud.flankedCount | 0) + 1; hud.flankedAngle = angle; if (!flankRaf) flankRaf = requestAnimationFrame(flankTick);
     if (window.SS && window.SS.audio && window.SS.audio.log) try { window.SS.audio.log('FLANKED', ''); } catch (_) {} }
   function setStance(k) { if (k === stanceK) return; stanceK = k; stanceEl.style.display = k ? 'block' : 'none'; stanceEl.className = k || ''; stanceEl.textContent = k === 'ducked' ? 'IN COVER' : k === 'exposed' ? 'EXPOSED' : ''; hud.stance = k; }
-  function edgeWarn(angle) { hud.warnPoint = edgePath(warnSvg, warnPath, angle, 0.18, 6); warn.classList.add('show'); warnHideAt = performance.now() + 700; warnFrames = 3; hud.warnCount = (hud.warnCount | 0) + 1; hud.warnAngle = angle; if (!warnRaf) warnRaf = requestAnimationFrame(warnTick); }
+  function edgeWarn(angle) { hud.warnPoint = edgePath(warnSvg, warnPath, angle, 0.18, 6); for (const at of ['d', 'transform']) { const v = warnPath.getAttribute(at); if (v != null) warnOut.setAttribute(at, v); } warn.classList.add('show'); warnHideAt = performance.now() + 700; warnFrames = 3; hud.warnCount = (hud.warnCount | 0) + 1; hud.warnAngle = angle; if (!warnRaf) warnRaf = requestAnimationFrame(warnTick); }
 
   function setHealth(v) {
     health = v;

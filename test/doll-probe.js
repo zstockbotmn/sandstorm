@@ -27,8 +27,9 @@ const [tier = 'low', out = 'logs/a20/doll', thr = '1'] = process.argv.slice(2); 
           for (const b of bones) { b.updateWorldMatrix(true, false); const y = b.matrixWorld.elements[13]; if (y < mn) mn = y; if (y > mx) mx = y; }
           if (tmp) { tmp.updateWorldMatrix(true, false); hy = tmp.matrixWorld.elements[13]; }
           tr.push([+((performance.now() - t0) / 1000).toFixed(2), +((SS.simTime - s0)).toFixed(2), hy == null ? null : +(hy - y0).toFixed(2), +(mn - y0).toFixed(2), +(mx - y0).toFixed(2)]); }
+        const pose = {}; for (const [n, bn] of Object.entries(e.bones || {})) if (bn && bn.matrixWorld) pose[n] = +(bn.matrixWorld.elements[13] - y0).toFixed(2);
         const at1 = tr.find((x) => x[0] >= 1.0) || tr[tr.length - 1];
-        out.push({ k, y0: +y0.toFixed(2), mode: e.fallMode || null, fps: SS.benchFps || null, at1, last: tr[tr.length - 1], trace: tr.filter((_, i) => i % 3 === 0) });
+        out.push({ k, y0: +y0.toFixed(2), mode: e.fallMode || null, fps: SS.benchFps || null, at1, last: tr[tr.length - 1], pose, trace: tr.filter((_, i) => i % 3 === 0) });
         await new Promise((r) => setTimeout(r, 800)); if (!(SS.enemies.list || []).some((x) => x.alive && !x.dying)) await new Promise((r) => setTimeout(r, 15000)); }
       return out; });
     for (const d of res.dolls) { const h = d.at1; if (!h) continue; const hip = h[2] != null ? h[2] : h[3]; if (hip > 0.3) fail.push('kill ' + d.k + ' (' + d.mode + ', y0 ' + d.y0 + '): hips ' + hip + ' m up 1 s after the kill'); if (h[3] < -0.6) fail.push('kill ' + d.k + ': lowest bone ' + h[3] + ' m below its floor (past an edge / through the ground)'); }

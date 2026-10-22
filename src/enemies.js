@@ -1678,7 +1678,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // over from that pose (bindSkin offsets absorb it, no pop) with the hips' measured velocity + the shot impulse.
     // ?hits=2 shortens that beat by zone (head 0.12, torso 0.25, leg 0.35, arm 0.3) and buckles into the pose.
     if (enemy.art && enemy.mixer && enemy.actions && !enemy.pinned) {
-      enemy.dying = true; enemy.fallT = HITS2 ? enemy.preFallS : 0.3; enemy.fallPart = part; enemy.fallPoint = point;
+      enemy.dying = true; enemy._fallReal0 = performance.now(); enemy.fallT = HITS2 ? enemy.preFallS : 0.3; enemy.fallPart = part; enemy.fallPoint = point;
       const hit = (part === 'head' && enemy.actions.hitHead) || enemy.actions.hitBody || enemy.actions.hit;
       // ?hits=2 kills: the live clip carries on under the knee buckle (the standing hit clip's first frame jumped the hips ~40 cm,
       // and stood crouched head-shot fighters up behind cover before they fell: A2 'launch')
@@ -1741,9 +1741,41 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (root && e.fallRootY != null) { if (e._buckleRoom == null) { const hy = b && b.Hips ? b.Hips.getWorldPosition(_wA).y : 0.9; const sc = Math.max(1e-3, root.parent ? root.parent.getWorldScale(_wB).y : 1); e._buckleRoom = Math.max(0, Math.min(torso ? 0.18 : 0.15, (hy - 0.45) / sc)); }
       root.position.y = e.fallRootY - e._buckleRoom * k; }
   }
+  // A20 (tester A19, q=ultra-low: after a K kill the body froze horizontal ~1.5 m up for 7-10 s; on a roof it lay past
+  // the edge). Cause: the canned death pose (no physics) was placed at the fighter's pre-fall root height, and the clip's
+  // own hip height (pinned Hips track, scaled rig) left the lying body 0.7-1.4 m above the floor, frozen there by stopMixer.
+  // Now the posed body is measured (lowest bone) and dropped onto the floor it stood on in ~0.3 s of REAL time (so it lands
+  // on the next frame at 1-2 fps); on a roof the body is turned to lie away from the street and pulled back from the edge.
+  const cannedDrops = []; const _cA = new THREE.Vector3(), _cB = new THREE.Vector3();
+  function settleCanned(e, model) {
+    const bones = Object.values(e.bones || {}).filter((x) => x && x.isObject3D); if (!bones.length) return;
+    const floor = e._standY != null ? e._standY : 0; model.updateMatrixWorld(true);
+    const hips = e.bones.Hips, head = e.bones.Head;
+    if (floor > 0.5 && hips && head) { // roof: lie away from the street (the edge faces the street), hips 0.4 m back from the stand point
+      hips.getWorldPosition(_cA); head.getWorldPosition(_cB); const out = Math.sign(_cA.x) || 1;
+      if ((_cB.x - _cA.x) * out < 0) { // head points toward the street: turn the body 180 deg about the hips
+        const dx = model.position.x - _cA.x, dz = model.position.z - _cA.z; model.position.x = _cA.x - dx; model.position.z = _cA.z - dz; model.rotation.y += Math.PI; }
+      model.position.x += out * 0.4; model.updateMatrixWorld(true); }
+    // the clip's last pose props the body on one forearm (torso joints ~0.33 m above that hand): rest the TORSO on the floor
+    // (hips / spine / head joints ~0.15 m up, the propping arm tucks under the body), never more than 0.3 m below the lowest bone
+    let mn = 1e9, core = 1e9; for (const bn of bones) { bn.getWorldPosition(_cA); if (_cA.y < mn) mn = _cA.y; }
+    for (const n of ['Hips', 'Spine', 'Spine01', 'Head']) { const bn = e.bones[n]; if (bn) { bn.getWorldPosition(_cA); core = Math.min(core, _cA.y); } }
+    const sink = core < 1e8 ? Math.min(core - (floor + 0.15), mn - (floor - 0.3)) : mn - (floor + 0.08);
+    const to = model.position.y - sink;
+    const slow = window.SS && window.SS.lastRawDt > 0.15; // at < ~7 fps a 0.3 s tween is already over by the next frame: land now
+    if (slow) model.position.y = to; else if (Math.abs(to - model.position.y) > 0.02) cannedDrops.push({ model, from: model.position.y, to, t0: performance.now() });
+    e.fallMode = 'canned';
+  }
+  function stepCannedDrops() { const now = performance.now();
+    for (let i = cannedDrops.length - 1; i >= 0; i--) { const d = cannedDrops[i], k = Math.min(1, (now - d.t0) / 300);
+      d.model.position.y = d.from + (d.to - d.from) * k * k; if (k >= 1) cannedDrops.splice(i, 1); } }
   function stepFallers(dt) {
+    stepCannedDrops();
     for (let i = fallers.length - 1; i >= 0; i--) {
       const e = fallers[i]; e.fallT -= dt;
+      // A20: the hit-reaction beat is sim time (0.12-0.35 s); at 1-2 fps or in a hitch it stood the body up for 1-2 s real -
+      // it now also ends after 0.35 s of REAL time
+      if (e._fallReal0 != null && performance.now() - e._fallReal0 > 350) e.fallT = Math.min(e.fallT, 0);
       if (HITS2) buckleRestore(e);
       try { e.mixer.update(dt); proceduralLean(e, 'hit', dt); } catch (err) { e.fallT = 0; }
       if (HITS2) fallBuckle(e);
@@ -1812,10 +1844,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       model.traverse((obj) => { if (obj.isMesh) obj.frustumCulled = false; });
       doll.skin = { model, links: ragdolls.bindSkin(doll, enemy.bones) };
     } catch (err) { reportErr('ragdoll skin', err); if (enemy.art && enemy.art.root.parent) enemy.art.root.parent.remove(enemy.art.root); }
-    else if (enemy.art) { // no ragdoll (physics failed, or ?hits=2 tier cap): leave the body in its death pose for 25 s instead of vanishing
+    else if (enemy.art) { enemy._standY = enemy.group.getWorldPosition(_cA).y; } if (!doll && enemy.art) { // no ragdoll (physics failed, or ?hits=2 tier cap): leave the body in its death pose for 25 s instead of vanishing
       try { const model = enemy.art.root; if (HITS2 && enemy.fallRootY != null) model.position.y = enemy.fallRootY; scene.attach(model); const death = enemy.actions && enemy.actions.death;
         if (death && enemy.mixer) { enemy.mixer.stopAllAction(); death.reset().setLoop(THREE.LoopOnce, 1); death.clampWhenFinished = true; death.play(); enemy.mixer.update((death.getClip().duration || 1) * 0.99); }
-        stopMixer(model, enemy.mixer); setTimeout(() => { if (model.parent) model.parent.remove(model); }, 25000); } catch (err) { reportErr('static corpse', err); } }
+        stopMixer(model, enemy.mixer); settleCanned(enemy, model); setTimeout(() => { if (model.parent) model.parent.remove(model); }, 25000); } catch (err) { reportErr('static corpse', err); } }
     enemy.group.visible = false;
     root.remove(enemy.group);
   }
@@ -2699,10 +2731,35 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (Math.hypot(pos.x - cam.x, pos.z - cam.z) < 2.4 || occupiedBy(pos, e)) continue; if (!clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue;
       return { pos, type: 'wall', open: true, near: true }; }
     return null; }
+  let assaultAt = -1e9, lastBeatSendSim = -1e9, lastStallSendSim = -1e9;
+  function assaultSpot(e) { const cam = camera.position; let best = null, bd = 1e9;
+    for (const c of coverPool(STALL_TYPES, [7, 15])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < 8 || az > 14 || Math.abs(c.pos.x) > 9) continue;
+      if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
+    if (best) return best;
+    const side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1);
+    for (const az of [11 + Math.random() * 2, 9.5, 13]) for (const sx of [side, -side]) for (const ax of [3.6, 5.2]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az);
+      if (occupiedBy(pos, e) || !clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue; return { pos, type: 'wall', open: true }; }
+    return null; }
+  function assault(sim) { const SSx = window.SS, pz = camera.position.z; assaultAt = sim;
+    const alive = list.filter((e) => e.alive && !e.dying);
+    const moving = (e) => e.phase === 'relocate' && !(e._relocAt != null && sim - e._relocAt > 10);
+    const cand = alive.filter((e) => !moving(e) && e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 14.5)
+      .sort((a, b) => b.group.position.z - a.group.position.z); // nearest first: the shortest bounds into the kill zone
+    let n = 0; const sent = [];
+    for (const e of cand) { if (n >= 2) break; const a = pz - e.group.position.z, c = assaultSpot(e); if (!c) continue;
+      stallSend(e, c, 'assault', a); e._suppressUntilSim = -1; e._suppressOnArrive = 3; e._assault = true; sent.push(e); n++; }
+    if (n) { lastStallSendSim = sim; for (const o of alive) if (!sent.includes(o)) o._suppressUntilSim = sim + 3; // the rest cover the bound
+      SSx.assaultLog = (SSx.assaultLog || []).concat([{ sim: +sim.toFixed(1), n, wave: Math.max(burstIndex, waveClears + 1) }]).slice(-40); } }
   function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0;
     if (!waveActive) { waveProgSim = sim; stallWasActive = false; return; }
     if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallWaveStart = sim; stallPushAt = 12 + Math.random() * 3; } // re-arm at each wave start
-    if (sim - waveProgSim < stallPushAt) return; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3;
+    // A20 (tester A19: W5 all 6 alive 41 s after contact; W4 a group sat 13-23 m out 25+ s): ~40 s into the fight the wave
+    // ASSAULTS - every ~6 s two fighters bound (the rest suppress) to 8-14 m, where they are exposed and killable.
+    const aStart = (mwContactSim != null ? mwContactSim : stallWaveStart + 6);
+    if (sim - aStart >= 40) { if (sim - assaultAt >= 6 && sim - lastBeatSendSim >= 3) assault(sim); return; }
+    if (sim - waveProgSim < stallPushAt) return;
+    // A20 (tester A19: pushes came as a burst of 3 in 1.2 s): never right on top of a mid-wave beat push - a clean pair
+    if (sim - lastBeatSendSim < 5) return; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3;
     const pz = camera.position.z, alive = list.filter((e) => e.alive && !e.dying);
     // A17 (tester A16: from ~30 s every push was 'none (no free cover for 1 fighter)' / 'no free ground fighter (2 moving, 1
     // within 9 m)'): a move stuck > 10 s no longer hides a fighter, a fighter > 7.6 m away counts, and when no nearer free
@@ -2715,14 +2772,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // is >= 28 s old a push sends a PAIR (one bounds while the other covers) and goes for the free cover slot nearest the
     // player first; pushed fighters suppress from where they land (e._suppressUntilSim).
     const late = sim - stallWaveStart >= 28, want = late ? 2 : 1, used = new Set(); let sent = 0;
-    const send = (e, c, kind, a) => { stallSend(e, c, kind, a); used.add(e); e._suppressUntilSim = -1; e._suppressOnArrive = late ? 3.5 : 2.5; sent++; return sent >= want; };
+    const send = (e, c, kind, a) => { stallSend(e, c, kind, a); lastStallSendSim = sim; used.add(e); e._suppressUntilSim = -1; e._suppressOnArrive = late ? 3.5 : 2.5; sent++; return sent >= want; };
     const free = () => cand.filter((e) => !used.has(e));
     if (late) for (const e of free()) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = nearCover(e, a); if (c && send(e, c, 'advances', a)) return; }
     for (const e of free()) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = stallCoverFor(e, 6, a - 5.5, 2); if (c && send(e, c, 'advances', a)) return; } // A16b: >= 5 m nearer
     for (const e of free()) { const a = pz - e.group.position.z, spot = openBound(e, a); if (spot && send(e, spot, 'advances (open)', a)) return; }
     for (const e of free()) { const a = pz - e.group.position.z, spot = openBoundNear(e, a); if (spot && send(e, spot, 'closes in (open)', a)) return; } // A19: a short (2.5-6 m) bound for a close fighter
     if (sent) return;
-    for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) return stallSend(e, c, 'repositions', a); }
+    for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) { lastStallSendSim = sim; return stallSend(e, c, 'repositions', a); } }
     const wv = Math.max(burstIndex, waveClears + 1);
     // A19 (a15 quiet W5: 46 s with no push - '4 alive: 1 moving, 1 flanking, 2 elevated, 1 within 9 m'): late in a wave with
     // nothing pushable, a fresh fighter runs in at 14-22 m (twice a wave at most, < 6 alive) so the pressure still moves
@@ -2743,8 +2800,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // review: latch the wave number at the wave start (it can step mid-wave, which would re-arm a 2nd beat)
     if (mwWave === -1) { mwWave = Math.max(burstIndex, waveClears + 1); mwContactSim = null; mwDone = false; mwShots0 = SSx.enemyShots|0; mwPush = []; }
     if (mwContactSim == null) { if ((SSx.enemyShots|0) > mwShots0) { mwContactSim = sim; mwAt = 20 + Math.random()*5; const L = SSx.waveContactLog || (SSx.waveContactLog = []); L.push({ wave: mwWave, sim: +sim.toFixed(1) }); if (L.length > 30) L.shift(); } else return; }
-    for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue;
-      if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) { stallSend(rec.e, c, c.near ? 'closes in (open)' : c.open ? 'advances (open)' : 'advances', a); rec.e._suppressOnArrive = 5; } }
+    for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue; if (sim - lastStallSendSim < 5) { rec.at = lastStallSendSim + 5; continue; } // A20: no 3-push bursts
+      if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) { stallSend(rec.e, c, c.near ? 'closes in (open)' : c.open ? 'advances (open)' : 'advances', a); rec.e._suppressOnArrive = 5; lastBeatSendSim = sim; } }
       rec.sent = true; }
     const wv = mwWave; if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return;
     const sp = SSx.spPick, quiet = !!(sp && sp.wave === wv && sp.pick === 'quiet');
