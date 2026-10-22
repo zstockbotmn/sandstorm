@@ -1,5 +1,5 @@
 // A11 targeted checks on one tier (?sp=5&rpg=1&truck=1&debug&test=fast):
-//  calm  - every wave clear gives >= 10 game-s (A16c: 10-14 s) before the next wave, exactly 1 ambient beat (radio / dog / fire, no back-to-back repeat; SS.calmLog) and no enemy shots in it
+//  calm  - every wave clear gives a 10-12 game-s walk to first contact (A17), exactly 1 ambient beat (radio / dog / fire, no back-to-back repeat; SS.calmLog) and no enemy shots in it
 //  nade  - wave 3, ducked, waves 1-2 K-skipped, the two nearest fighters killed: a grenade by ~22 game-s, ring + GRENADE!
 //  rpg   - 6 debug RPGs at 100 HP: damage spread inside 10-30, HP >= 5, hurt log line names (RPG)
 //  nm    - near misses in cover at most ~1 per 1.5 s
@@ -30,8 +30,9 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
           SS.enemies.killAll(); await waitFor(() => (SS.waveClears | 0) > c0 && live() === 0, 20);
           const cs = SS.simTime, sh0 = SS.enemyShots | 0, a0 = Object.values((SS.ambient && SS.ambient.counts) || {}).reduce((a, b) => a + b, 0);
           await waitFor(() => SS.bursting, 60);
-          const a1 = Object.values((SS.ambient && SS.ambient.counts) || {}).reduce((a, b) => a + b, 0);
-          out.calms.push({ after: w, calm: +(SS.simTime - cs).toFixed(1), ambient: a1 - a0, shots: (SS.enemyShots | 0) - sh0, last: SS.ambient && SS.ambient.last });
+          const a1 = Object.values((SS.ambient && SS.ambient.counts) || {}).reduce((a, b) => a + b, 0), spawnS = SS.simTime, sh1 = SS.enemyShots | 0;
+          await waitFor(() => (SS.enemyShots | 0) > sh1, 12); // A17: the walk ends at first contact (first enemy shot)
+          out.calms.push({ after: w, calm: +(spawnS - cs).toFixed(1), walk: +(SS.simTime - cs).toFixed(1), ambient: a1 - a0, shots: sh1 - sh0, last: SS.ambient && SS.ambient.last });
         } else {
           // wave 3: emulate the tester - stay ducked, kill the nearest two (leaving far / roof shooters)
           await waitFor(() => !SS.bursting, 30); await waitFor(() => !!SS.input.cover, 15); SS.debugKillNearest(); await sleep(600); SS.debugKillNearest();
@@ -56,7 +57,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
       for (const c of cl) { if ((c.beats | 0) !== 1) fail.push('calm at ' + c.clearSim + ': ' + c.beats + ' beats'); if (!/^(radio|dog|gunfire)$/.test(c.kind)) fail.push('calm beat kind ' + c.kind); }
       if (cl.length >= 3 && new Set(cl.slice(0, 3).map((c) => c.kind)).size < 3) fail.push('not all 3 beat kinds by the 3rd calm: ' + cl.slice(0, 3).map((c) => c.kind).join(','));
       for (let i = 1; i < cl.length; i++) if (cl[i].kind === cl[i - 1].kind) fail.push('calm beat repeated ' + cl[i].kind); }
-    for (const c of r.calms || []) { if (c.calm < 9.8) fail.push('calm ' + c.calm + ' s (want >= 10)'); if (c.ambient !== 1) fail.push(c.ambient + ' ambient beats in calm after wave ' + c.after + ' (want exactly 1)'); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
+    for (const c of r.calms || []) { if (!(c.walk >= 9.5 && c.walk <= 12.5)) fail.push('walk clear -> contact ' + c.walk + ' s (want 10-12; spawn at ' + c.calm + ' s)'); if (c.ambient !== 1) fail.push(c.ambient + ' ambient beats in calm after wave ' + c.after + ' (want exactly 1)'); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
     if (r.nade && !r.nade.thrown) fail.push('no wave-3 grenade ' + JSON.stringify(r.nade.gate)); else if (r.nade && (!r.nade.ring || !r.nade.hint)) fail.push('grenade ring/callout missing');
     if (r.nearMiss && r.nearMiss.shown > Math.ceil(r.nearMiss.gameS / 1.4) + 1) fail.push('near misses ' + JSON.stringify(r.nearMiss));
     const hits = (r.rpg || []).filter((x) => x.dmg > 0 && !x.shielded).map((x) => x.dmg);
