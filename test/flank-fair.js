@@ -24,6 +24,7 @@ const [tier = 'low', out = 'logs/a14/flank'] = process.argv.slice(2); fs.mkdirSy
       R.hurt = (SS.audioLog || []).filter((x) => x.kind === 'hit taken').map((x) => x.t + ' ' + x.detail); return R; }));
     for (const r of res.recs) { if (!r.mover) fail.push('flank hit ' + r.sim + ' from a non-mover'); if (r.inArc) fail.push('flank hit ' + r.sim + ' from inside the front arc'); if (r.tellAge < 1.5) fail.push('flank hit ' + r.sim + ' only ' + r.tellAge + ' s after the tell'); }
     for (let i = 1; i < res.recs.length; i++) if (res.recs[i].sim - res.recs[i - 1].sim < 5) fail.push('flank hits ' + res.recs[i - 1].sim + ' -> ' + res.recs[i].sim + ' (< 5 s)');
+    for (const r of res.recs) if (res.rpgHit != null && Math.abs(r.sim - res.rpgHit) < 4) fail.push('flank hit ' + r.sim + ' within 4 s of an RPG hit ' + res.rpgHit);
     if (res.counters.frontArcDuckHits) fail.push('front-arc ducked hits ' + res.counters.frontArcDuckHits);
     res.flankPerMin = res.ducked > 0 ? +(res.recs.length / (res.ducked / 60)).toFixed(2) : null;
     if (res.died != null) fail.push('died ' + res.died); if (errs.length) { res.errs = errs.slice(0, 5); fail.push('page errors'); } await ctx.close();

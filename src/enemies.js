@@ -2056,6 +2056,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return out; }
   const _cf = { x: 0, z: -1 };
   const FLANK_LULL_S = 5; // A14: game-s between two flank hits
+  // A14: seconds of lull left after the last flank hit, RPG hit or RPG launch (in flight); stale stamps (> now) ignored
+  function flankLullLeft() { const SSx = window.SS, now = SSx.simTime || 0, lr = SSx.setpiece && SSx.setpiece.lastRpg; let last = -99;
+    for (const v of [SSx.lastFlankHitSim, SSx.lastRpgHitSim, lr && lr.launchSim]) if (v != null && v <= now && v > last) last = v;
+    return FLANK_LULL_S - (now - last); }
   const _flR = new THREE.Ray(), _flT = new THREE.Vector3(), _flD = new THREE.Vector3(), _flB = new THREE.Box3(), _flH = new THREE.Vector3(), _flRc = new THREE.Raycaster();
   // A14: a flank round lands only if the muzzle sees the head OR the torso past the player's cover box and the buildings.
   function flankLine(muzzle) { const c = camera.position, sb = window.SS && window.SS.cover && window.SS.cover.surface;
@@ -2105,7 +2109,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (!(enemy._flankTellSim > -1e8) || fS - (enemy._flankLastSim == null ? -99 : enemy._flankLastSim) > FLANK_RESET_S) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); }
       enemy._flankLastSim = fS; flankReady = fS - enemy._flankTellSim >= FLANK_TELL_S && fR - enemy._flankTellR >= FLANK_TELL_S; }
     if (flankShot && !flankLine(_muzzle)) { flankReady = false; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; }
-    if (flankShot && flankReady && window.SS && (window.SS.simTime || 0) - Math.max(window.SS.lastFlankHitSim != null ? window.SS.lastFlankHitSim : -99, window.SS.lastRpgHitSim != null ? window.SS.lastRpgHitSim : -99) < FLANK_LULL_S) { flankReady = false; window.SS.flankLullBlocked = (window.SS.flankLullBlocked | 0) + 1; }
+    if (flankShot && flankReady && window.SS && flankLullLeft() > 0) { flankReady = false; window.SS.flankLullBlocked = (window.SS.flankLullBlocked | 0) + 1; }
     const flankHit = flankShot && flankReady;
     // Fix 7 (tester: slightly easier): ~20% lower base accuracy; each enemy's first 3 shots at first contact are mostly
     // misses (sighting-in), so the player gets a beat to react. Damage per hit is unchanged (~5 hits to kill).
