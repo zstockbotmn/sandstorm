@@ -2991,6 +2991,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A15: every set piece start (RPG launch, truck start, grenade throw) for the spacing check: SS.spLog [{ kind, sim, wave }]
   function spLog(kind, wave, extra) { const SSx = window.SS; if (!SSx) return; const L = SSx.spLog || (SSx.spLog = []); L.push(Object.assign({ kind, sim: +((SSx.simTime || 0)).toFixed(2), wave: wave != null ? wave : Math.max(burstIndex, waveClears + 1) }, extra || {})); if (L.length > 60) L.shift(); }
   api.spLog = spLog;
+  let nadeWaveNo = null, lcWave = 0;
   const nades = []; let nadeThisWave = false, campT = 0, nadesWave = 0; const NADE_CAP = 2, SP_GAP_S = 15;
   let nadeWhyT = 0; const slog = (k, d) => { try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log(k, d); } catch (_) {} };
   function throwGrenade(e, stay) {
@@ -3024,13 +3025,18 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // A15a (tester A14: grenade, grenade, grenade, grenade+RPG over w2-w5): the camp grenade is a set piece of its own. Only
     // a director 'grenade' wave gets the quick camp grenade (3/7 s, re-arm 12 s, cap 2). Any other wave (rpg / truck / quiet /
     // forced flags) gets at most ONE, and only for a LONG camp: 22 s, or 30 s when the previous wave already had a grenade.
-    const spL = (window.SS && window.SS.spLog) || [], prevNade = spL.some((x) => x.kind === 'grenade' && x.wave === waveNo - 1);
+    // A17 (tester A16: 'long camp 25.0/48s' between 40s lines): the wave number can step mid-wave (burstIndex vs clears), which
+    // re-keyed prevNade / otherPiece. The thresholds now key on the wave number latched at the wave start, and within a wave the
+    // displayed / effective threshold only ever rises (25 -> 40 once its RPG / truck came).
+    if (!waveActive) { nadeWaveNo = null; lcWave = 0; } else if (nadeWaveNo == null) nadeWaveNo = waveNo;
+    const wN = nadeWaveNo != null ? nadeWaveNo : waveNo;
+    const spL = (window.SS && window.SS.spLog) || [], prevNade = spL.some((x) => x.kind === 'grenade' && x.wave === wN - 1);
     // A15 run 2 (a15 random: a 30 s long-camp grenade in every wave 3-6 = 'grenade every wave' again): long camp is 25 s on a
     // quiet wave, 40 s once this wave already had its RPG / truck, +10 s when the previous wave had a grenade.
-    const otherPiece = spL.some((x) => (x.kind === 'rpg' || x.kind === 'truck') && x.wave === waveNo);
+    const otherPiece = spL.some((x) => (x.kind === 'rpg' || x.kind === 'truck') && x.wave === wN);
     // A16 (PM): after a grenade wave there is NO long-camp grenade (a camp there gets a stall push / flank instead); else 25 s
     // on a quiet wave, 40 s once the RPG / truck came (was up to 50).
-    const longCamp = nadeWave ? 0 : prevNade ? Infinity : (otherPiece ? 40 : 25), capN = nadeWave ? NADE_CAP : 1;
+    const longCamp = nadeWave ? 0 : prevNade ? Infinity : (lcWave = Math.max(lcWave, otherPiece ? 40 : 25)), capN = nadeWave ? NADE_CAP : 1;
     const capped = nadesWave >= capN, certainAt = nadeWave ? (!nadesWave ? 7 : 12) : longCamp /* A16: 2nd throw ~12 s after the 1st */, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
     const lastSp = spL[spL.length - 1], gapOk = spGap >= SP_GAP_S || (nadeWave && nadesWave === 1 && lastSp && lastSp.kind === 'grenade' && lastSp.wave === waveNo && spGap >= 11.9); // A16: a grenade wave's 2nd throw follows its 1st at ~12 s // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
