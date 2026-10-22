@@ -169,3 +169,15 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 + Room jump: G always jumps (next room), W walks on, 40 game-s hold. + CC0 textures: room wood/rug, bldg4 end caps.
 + HUD: streak below the IN COVER tag.
 Then: window-table tuning, 4e1-4e4, 4e5.
+
+## A15 window-table tuning (light, not built / not run in a browser)
+- tools/window-table.mjs: local-contrast darkness (13x13 neighbourhood, >= 28% darker, not the absolute < 0.22 that the
+  bright Meshy facades never hit), shallow recess 0.05-4 m (was 0.12), 3x3 closing, two passes (recess components first,
+  then dark-only components away from them, fill > 55%) so dirt/sill cells no longer chain windows into one blob, shop
+  windows up to 3.4 m when >= 1.2 m tall, and a row x column grid prior that fills slots with >= 30% evidence (inferred:true).
+  Flags: --dry (no write), --map=bldgN (ASCII: # recess, d dark), --list (positions in m). ~10 s, pure node.
+- Counts (bldg1-4): before 4/6/4/2, after 12/14/4/9 (1 inferred on bldg1). bldg3 (souk, 5 m tall arcade) stays low.
+- ?bld=4&winDbg=1 draws every table rect: green placed, yellow placed+inferred, red skipped (low/door/tier/occluded);
+  SS.winDbg counts. Verify by eye on Low/High before trusting the table.
+- Run order after the tester: build -> winDbg look (Low + High screenshots) -> tools/step4-runs.sh (shots/skyline/perf) ->
+  4e1 -> 4e2 -> 4e3 -> 4e4 -> 4e5a -> 4e5b -> doorway-stop.js -> 4e5c.

@@ -20,6 +20,15 @@ function windowMaterial() {
   return winMat;
 }
 let WIN_TABLE = null;
+// A15: ?bld=4&winDbg=1 draws every windows.json rect on the art facades (green placed, yellow placed + grid-inferred,
+// red skipped: too low / door / quality tier / occluded) so the table can be checked by eye. Debug only, no rng() use.
+const WIN_DBG = BLD4 && typeof location !== 'undefined' && /[?&]winDbg=1\b/.test(location.search);
+const _winDbgMats = {};
+function winDbgRect(seg, x, y, z, w, h, hex) {
+  const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, y - h / 2, z - w / 2), new THREE.Vector3(x, y - h / 2, z + w / 2), new THREE.Vector3(x, y + h / 2, z + w / 2), new THREE.Vector3(x, y + h / 2, z - w / 2)]);
+  const m = _winDbgMats[hex] || (_winDbgMats[hex] = new THREE.LineBasicMaterial({ color: hex, depthTest: false, transparent: true }));
+  const l = new THREE.LineLoop(g, m); l.renderOrder = 999; l.name = 'winDbg'; seg.group.add(l);
+  if (typeof window !== 'undefined' && window.SS) { const d = window.SS.winDbg || (window.SS.winDbg = { placed: 0, inferred: 0, skipped: 0 }); d[hex === 0xff3030 ? 'skipped' : hex === 0xffd000 ? 'inferred' : 'placed']++; } }
 if (BLD4 && typeof fetch !== 'undefined') fetch('assets/models/windows.json').then((r) => (r.ok ? r.json() : null)).then((j) => { WIN_TABLE = j || {}; }).catch(() => { WIN_TABLE = {}; });
 const ROOM_N = 8;
 const ROOM_UA = { value: Array.from({ length: ROOM_N }, () => new THREE.Vector3(1e9, 1e9, 1e9)) }, ROOM_UB = { value: Array.from({ length: ROOM_N }, () => new THREE.Vector3(-1e9, -1e9, -1e9)) };
@@ -611,14 +620,13 @@ export function createWorld(scene, seed) {
           const centre = new THREE.Vector3(wi.c[0], wi.c[1], wi.c[2]).applyMatrix4(model.matrixWorld);
           centre.x += side * (wi.depth || 0) * s - side * 0.03; // c is on the bbox face plane; the dark window sits depth (model units) behind it
           const ww = wi.w * s, wh = wi.h * s * yMul;
-          if (centre.y < 0.8) continue;
-          if (centre.y < 3 && Math.abs(centre.z - doorZ) < 0.8 + ww / 2) continue;
-          if (LOWQ && !ULTRA && centre.y > 7) continue;
-          if (ULTRA && centre.y > 4) continue;
-          _rc.set(new THREE.Vector3(centre.x - side * 1.5, centre.y, centre.z), new THREE.Vector3(side, 0, 0));
-          _rc.far = 1.5;
-          const hh = _rc.intersectObject(model, true)[0];
-          if (hh && hh.distance < 1.5 - 0.03 - 0.25) continue;
+          let why = centre.y < 0.8 ? 'low' : (centre.y < 3 && Math.abs(centre.z - doorZ) < 0.8 + ww / 2) ? 'door' : (LOWQ && !ULTRA && centre.y > 7) ? 'tier' : (ULTRA && centre.y > 4) ? 'tier' : null;
+          if (!why) { _rc.set(new THREE.Vector3(centre.x - side * 1.5, centre.y, centre.z), new THREE.Vector3(side, 0, 0));
+            _rc.far = 1.5;
+            const hh = _rc.intersectObject(model, true)[0];
+            if (hh && hh.distance < 1.5 - 0.03 - 0.25) why = 'occluded'; }
+          if (WIN_DBG) winDbgRect(seg, centre.x - side * (wi.depth || 0) * s, centre.y, centre.z, ww, wh, why ? 0xff3030 : wi.inferred ? 0xffd000 : 0x30ff60);
+          if (why) continue;
           seg._wins.push({ pos: centre, normal: new THREE.Vector3(-side, 0, 0), w: ww, h: wh, room: Math.floor(seg._wrng() * 8), lit: seg._wrng() < 0.3 ? 0.6 + 0.4 * seg._wrng() : 0 });
           seg._artWinN = (seg._artWinN | 0) + 1;
         }
