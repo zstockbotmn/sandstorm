@@ -7,8 +7,12 @@ function alog(kind, detail) {
   if (typeof window === 'undefined' || !window.SS) return;
   const L = window.SS.audioLog || (window.SS.audioLog = []);
   const t = +(window.SS.simTime || 0).toFixed(1), last = L[L.length - 1];
-  if (last && last.kind === kind && last.detail === detail) { last.n++; last.t = t; }
-  else { L.push({ t, kind, detail: detail || '', n: 1 }); if (L.length > 30) L.shift(); }
+  // A13 (tester: steps/breath crowded out ambience, near misses and set pieces): footsteps and breath never enter the log;
+  // they are counted (SS.audioQuiet) and shown as ONE trailing 'footsteps xN' line (N since the last other sound).
+  const Q = window.SS.audioQuiet || (window.SS.audioQuiet = { steps: 0, total: 0, breath: '' });
+  if (kind === 'footstep' || kind === 'breath') { if (kind === 'footstep') { Q.steps++; Q.total++; } else Q.breath = detail || ''; }
+  else { Q.steps = 0; if (last && last.kind === kind && last.detail === detail) { last.n++; last.t = t; }
+  else { L.push({ t, kind, detail: detail || '', n: 1 }); if (L.length > 30) L.shift(); } }
   if (!ALOG_ON || typeof document === 'undefined') return;
   if (!alogEl) { alogEl = document.createElement('div'); alogEl.id = 'dbg-audiolog';
     alogEl.style.cssText = 'position:fixed;left:calc(14px + env(safe-area-inset-left));top:calc(96px + env(safe-area-inset-top));z-index:31;pointer-events:none;font:11px/1.35 monospace;color:#ffe9b0;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;white-space:pre;max-width:46vw';
@@ -16,9 +20,10 @@ function alog(kind, detail) {
   // A11 (tester could not read the 0.3 s thump -> whoosh): set-piece lines are also PINNED in their own block for 12 s
   // (real time) after the latest one, so footsteps / near misses cannot scroll them away.
   const fmt = (e) => e.t.toFixed(1) + 's ' + e.kind + (e.detail ? ' ' + e.detail : '') + (e.n > 1 ? ' x' + e.n : '');
-  if (SP_KIND.test(kind) || (kind === 'hit taken' && /\((RPG|grenade|truck)\)/.test(detail || ''))) { SP_PIN.push(fmt(L[L.length - 1])); if (SP_PIN.length > 5) SP_PIN.shift(); spPinAt = performance.now(); }
+  if (kind !== 'footstep' && kind !== 'breath' && (SP_KIND.test(kind) || (kind === 'hit taken' && /\((RPG|RPG, cover|grenade|truck)\)/.test(detail || '')))) { SP_PIN.push(fmt(L[L.length - 1])); if (SP_PIN.length > 5) SP_PIN.shift(); spPinAt = performance.now(); }
   const pin = SP_PIN.length && performance.now() - spPinAt < 12000 ? '\nSET PIECE\n' + SP_PIN.join('\n') : '';
-  alogEl.textContent = 'SOUND\n' + L.slice(-6).map(fmt).join('\n') + pin;
+  const quiet = Q.steps || Q.breath ? '\n' + (Q.steps ? 'footsteps x' + Q.steps : '') + (Q.breath ? (Q.steps ? ' · ' : '') + 'breath ' + Q.breath : '') : '';
+  alogEl.textContent = 'SOUND\n' + L.slice(-6).map(fmt).join('\n') + quiet + pin;
 }
 export function createAudio() {
   let ctx = null;
@@ -247,7 +252,8 @@ export function createAudio() {
   // A6: every hit on the player has its own sound event: a dull body thump + a short ring, panned toward the shooter
   const HURT_SRC = { gun: 'rifle', flank: 'rifle, flank', rpg: 'RPG', 'rpg-cover': 'RPG, cover', grenade: 'grenade', truck: 'truck', test: 'test' };
   function hurt(pos, dmg, src) {
-    alog('hit taken', '-' + Math.round(dmg || 0) + ' hp' + (src ? ' (' + (HURT_SRC[src] || src) + ')' : '')); // A11: the source, so set-piece hits can be told from rifle hits
+    const hpNow = window.SS && window.SS.player ? Math.round(window.SS.player.health) : null; // A13: debug-only HP after the hit (log/overlay, never the HUD)
+    alog('hit taken', '-' + Math.round(dmg || 0) + ' hp' + (src ? ' (' + (HURT_SRC[src] || src) + ')' : '') + (hpNow != null ? ' \u2192 ' + hpNow : '')); // A11: the source, so set-piece hits can be told from rifle hits
     if (window.SS) window.SS.hurtSounds = (window.SS.hurtSounds | 0) + 1;
     if (!ctx) return;
     const p = panNode(pos ? bearing(pos) : 0); p.connect(master);
