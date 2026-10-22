@@ -76,6 +76,7 @@ export function createAmbient({ scene, camera, hud }) {
   }
   function startRadio() {
     if (hud && hud.radio) hud.radio(LINES[(Math.random() * LINES.length) | 0], 3200);
+    { const a = clip(); if (a && a.log) a.log('radio', 'chatter'); } // A14: the radio had no sound-log line
     return { kind: 'radio', t: 0, dur: 3.2, pos: null };
   }
   function startDoor() {
@@ -113,11 +114,12 @@ export function createAmbient({ scene, camera, hud }) {
     if ((ev.pos && dist(ev.pos) < 40) || ev.t >= ev.dur) endEv();
   }
   const liveEnemy = () => { const list = (window.SS && window.SS.enemies && window.SS.enemies.list) || []; return !list.every((e) => !e || !e.alive); };
+  let firstPending = false;
   function resetRun() {
     const id = (window.SS && window.SS.runs) || 0;
     if (seenRun == null) { seenRun = id; return; }
     if (id === seenRun) return;
-    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; prev = ''; wait = rnd(7, 14);
+    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; firstPending = false; if (window.SS) window.SS.calmLog = []; prev = ''; wait = rnd(7, 14);
     counts.fire = counts.radio = counts.dog = counts.door = counts.heli = 0; pub.last = null;
     if (window.SS) window.SS.ambient = pub; endEv();
   }
@@ -130,9 +132,17 @@ export function createAmbient({ scene, camera, hud }) {
     // A11 (tester: no ambience at all): SS.bursting is only the 8-14 s spawn window, the fight runs on after it, and the old
     // rule (>= 6 s after bursting AND a 7-14 s countdown) never fit the ~5 s gaps. Now: quiet = no live enemy for >= 1.5 s;
     // the first event comes 2-3.5 s into the calm, then every 5-8 s; none starts in the last 2.5 s before the next contact.
+    // A14 (tester: the wave 1->2 gap had no ambience line): the calm's FIRST event is guaranteed within ~3 s of the clear:
+    // 0.5 s debounce + 1.5-2.4 s, it ends any event still running from before, it is never the (visual-only) radio, and
+    // it is logged ('ambient <kind>' + SS.calmLog { clearSim, firstSim, kind }).
     if (liveEnemy() || SS.bursting) { lastLive = sim; eligible = false; }
-    if (ev || !SS.running || SS.bursting || sim - lastLive < 1.5) return;
-    if (!eligible) { eligible = true; wait = Math.min(wait, rnd(2, 3.5)); }
+    if (!SS.running || SS.bursting || sim - lastLive < 0.5) return;
+    if (!eligible) { eligible = true; firstPending = true; wait = rnd(1.5, 2.4); if (ev) endEv();
+      const L = SS.calmLog || (SS.calmLog = []); L.push({ clearSim: lastLive > -1e8 ? +lastLive.toFixed(1) : null, firstSim: null, kind: null }); if (L.length > 20) L.shift(); }
+    if (ev) return;
+    if (firstPending) { wait -= dt; if (wait > 0) return; firstPending = false; let k = pick(); if (k === 'radio') k = 'door';
+      const r = begin(k, sim), L = SS.calmLog; if (L && L.length) { L[L.length - 1].firstSim = +sim.toFixed(1); L[L.length - 1].kind = k; }
+      { const a = clip(); if (a && a.log) a.log('ambient', k + ' (calm +' + (sim - lastLive).toFixed(1) + 's)'); } return r; }
     if (SS.calmUntil != null && sim < SS.calmUntil && SS.calmUntil - sim < 2.5) return;
     wait -= dt; if (wait > 0) return; begin(pick(), sim);
   }
