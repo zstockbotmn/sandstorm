@@ -2299,9 +2299,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return n;
   }
 
+  let forcePoolRange = null;
   function spawnOne(prefer) { const ts = performance.now(); const r = spawnOne_(prefer); const d = performance.now() - ts; if (d > 40) (window.SS_SPIKES = window.SS_SPIKES || []).push(['spawn', Math.round(ts), Math.round(d)]); return r; }
   function spawnOne_(prefer) {
-    poolRange = Math.random() < 0.8 ? [10, 20] : [22, 40];
+    poolRange = forcePoolRange || (Math.random() < 0.8 ? [10, 20] : [22, 40]); // A16: stall push 'runs in' forces a far spot
     const roofOnly = prefer === 'roof'; if (roofOnly) { prefer = 'popper'; poolRange = [12, 40]; }
     const diff = difficulty();
     const roll = prefer || (Math.random() < 0.45 ? 'popper' : Math.random() < 0.55 ? 'shifter' : 'flanker');
@@ -2616,14 +2617,42 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A15 (tester A14: 'enemies never advance, the wave stalls'): a wave with no progress (no kill, no advance) for 15-20
   // game-s pushes ONE fighter - the farthest ground fighter that is not flanking or moving - to a cover 5+ m nearer (at
   // least 8 m ahead of the player), via advanceNearer (the existing exposed run + cover entry, then its normal peek/fire).
-  let waveProgSim = 0, stallPushAt = 17;
-  function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0; if (!waveActive) { waveProgSim = sim; return; }
-    if (sim - waveProgSim < stallPushAt) return; waveProgSim = sim; stallPushAt = 15 + Math.random() * 5;
-    const pz = camera.position.z, cand = list.filter((e) => e.alive && !e.dying && !e.pinned && e.phase !== 'relocate' && e.group.position.y < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 13)
+  // A16 (tester A15: pushes only in W1 at 21.9 / 39.6, none in W2-W5 even with 39-50 s camps; stallPushNone 8 in the a15 run):
+  // fighters spawn 10-20 m ahead 80% of the time (spawnOne_ poolRange), and the push only took fighters > 13 m away and only
+  // cover in [8, ahead - 5] m with |x| <= 9 of 4 types - after W1 nobody qualified (W1 fighters sat ~30 m). It also needed
+  // y < 0.05. Now: every wave re-arms (timer from the wave start), it repeats every 12-15 game-s without progress, and each
+  // push tries, farthest fighter first: (1) cover >= 3 m nearer (>= 6 m ahead, |x| <= 11, + alley); (2) a peek spot along
+  // the street - another free cover >= 4 m from its own at about the same range (a visible reposition); (3) once a wave, a
+  // fresh fighter runs in at far cover (26-40 m; the next push moves it up). Sound log: 'enemy advances Nm' / 'enemy repositions Nm' /
+  // 'enemy runs in Nm' or 'stall push none (reason)'. SS.stallPushLog [{ sim, kind, from, to, wave }].
+  let waveProgSim = 0, stallPushAt = 14, stallWasActive = false, stallFreshWave = -1;
+  const STALL_TYPES = ['wall', 'barrel', 'car', 'door', 'alley'];
+  function stallCoverFor(e, aMin, aMax, minMove) { const pz = camera.position.z, here = e.group.position; let best = null, bd = 1e9;
+    for (const c of coverPool(STALL_TYPES, [Math.max(0, aMin - 1), aMax + 1])) { const a = pz - c.pos.z; if (a < aMin || a > aMax || Math.abs(c.pos.x) > 11) continue;
+      if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(here); if (d < minMove * minMove) continue; if (d < bd) { bd = d; best = c; } }
+    return best; }
+  function stallSend(e, c, kind, from) { const SSx = window.SS, sim = SSx.simTime || 0, pz = camera.position.z;
+    if (LOCO2 && e.phase !== 'relocate') { parkCoverStep(e); startReposition(e, c); }
+    else { e.anchor = c; e.home = standPos(c); e.path = pathOnto(e, c); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.exposed = true; e.goal = e.path[0]; }
+    e.moveKind = 'run'; e._reposWhy = 'stall-' + kind; e.advanced = (e.advanced | 0) + 1;
+    try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {}
+    SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', kind + ' ' + Math.round(from) + 'm');
+    const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z), wave: Math.max(burstIndex, waveClears + 1) }); if (L.length > 40) L.shift(); }
+  function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0;
+    if (!waveActive) { waveProgSim = sim; stallWasActive = false; return; }
+    if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3; } // re-arm at each wave start
+    if (sim - waveProgSim < stallPushAt) return; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3;
+    const pz = camera.position.z, alive = list.filter((e) => e.alive && !e.dying);
+    const cand = alive.filter((e) => !e.pinned && e.phase !== 'relocate' && e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 9)
       .sort((a, b) => a.group.position.z - b.group.position.z); // farthest first
-    for (const e of cand) { const ahead = pz - e.group.position.z; if (advanceNearer(e, 8, ahead - 5)) { e._reposWhy = 'stall-push'; SSx.stallPushes = (SSx.stallPushes | 0) + 1;
-        slog('enemy', 'advances ' + Math.round(ahead) + 'm'); const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), id: e.id, from: Math.round(ahead), to: Math.round(pz - e.anchor.pos.z) }); if (L.length > 30) L.shift(); return; } }
-    if (SSx) SSx.stallPushNone = (SSx.stallPushNone | 0) + 1; }
+    for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a - 3, 2); if (c) return stallSend(e, c, 'advances', a); }
+    for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) return stallSend(e, c, 'repositions', a); }
+    const wv = Math.max(burstIndex, waveClears + 1);
+    if (stallFreshWave !== wv && alive.length < 6) { const keep = poolRange; forcePoolRange = [26, 40]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
+      if (ne) { stallFreshWave = wv; ne.engaged = true; const a = pz - ne.group.position.z; // spawns at far cover with its normal entry; the next push moves it up (farthest first)
+        SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', 'runs in ' + Math.round(a) + 'm'); const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), kind: 'runs in', from: Math.round(a), to: Math.round(a), wave: wv }); return; } }
+    const why = !alive.length ? 'none alive' : !cand.length ? 'no free ground fighter (' + alive.length + ' alive: ' + alive.filter((e) => e.phase === 'relocate').length + ' moving, ' + alive.filter((e) => e._flankArr || e._flankMove).length + ' flanking, ' + alive.filter((e) => e.anchor && isElevated(e.anchor.type)).length + ' elevated, ' + alive.filter((e) => pz - e.group.position.z <= 9).length + ' within 9 m)' : 'no free cover for ' + cand.length + ' fighter(s)';
+    slog('enemy', 'stall push none (' + why + ')'); if (SSx) { SSx.stallPushNone = (SSx.stallPushNone | 0) + 1; SSx.stallNoneWhy = why; } }
 
   // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.
   // Tier 0 is the 3c spec (6-20 m hop, 12-30 m ahead, clear shot). p1b: on the real street that often found nothing
