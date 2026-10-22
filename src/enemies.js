@@ -2230,6 +2230,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const pEx = pressureP();
     const slope = 0.05 + 0.02 * pEx, exposedCap = 0.5 + 0.12 * pEx;
     if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : exposedCap, 0.10 + slope * (dryS - 3))); // A8: ducking now blocks the front arc outright, so the exposed ramp is a bit steeper (0.10 + slope/s, cap 0.5+0.12p) // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
+    if (cxPhase === 'active' && !ducked) chance = Math.max(chance, 0.25); // A21 (a15 exposed: only 2 hits, HP 81 -> 62): an exposed player in the climax really bleeds (floor 35, cap 1.6x still apply)
     if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3), ducked, flankShot, flankReady };
     if (flankHit) chance = 1; // A16: a told flank shot in its window lands (each tell leads to a hit or an abort + reposition)
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
