@@ -128,7 +128,12 @@ export function createInput(canvas) {
 
   canvas.style.touchAction = 'none';
 
+  // A16 (tester A15: clicking the canvas to focus the window fired a shot): desktop only - a mouse press that gives the page
+  // focus (window not focused, or focus gained < 300 ms ago) is swallowed. Touch taps are unchanged (a tap is always a shot).
+  let focusAt = -1e9, wasBlurred = typeof document !== 'undefined' && document.hasFocus ? !document.hasFocus() : false;
+  window.addEventListener('blur', () => { wasBlurred = true; }); window.addEventListener('focus', () => { focusAt = performance.now(); });
   canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && (wasBlurred || !document.hasFocus() || performance.now() - focusAt < 300)) { wasBlurred = false; focusAt = -1e9; input.focusClicks = (input.focusClicks | 0) + 1; e.preventDefault(); return; }
     if (kia()) return;
     if (controlName(e.target)) return;
     // The Play tap (and its synthetic follow-up events) must never fire: ignore canvas presses until 400 ms after the run starts.
