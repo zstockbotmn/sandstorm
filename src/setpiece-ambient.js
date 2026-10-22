@@ -142,7 +142,7 @@ export function createAmbient({ scene, camera, hud }) {
     if (ev) return;
     if (firstPending) { wait -= dt; if (wait > 0) return; firstPending = false; let k = pick(); if (k === 'radio') k = 'door';
       const r = begin(k, sim), L = SS.calmLog; if (L && L.length) { L[L.length - 1].firstSim = +sim.toFixed(1); L[L.length - 1].kind = k; }
-      { const a = clip(); if (a && a.log) a.log('ambient', k + ' (calm +' + (sim - lastLive).toFixed(1) + 's)'); } return r; }
+      { const a = clip(); if (a && a.log) a.log('ambient', k + (lastLive > -1e8 ? ' (calm +' + (sim - lastLive).toFixed(1) + 's)' : ' (opening)')); } return r; }
     if (SS.calmUntil != null && sim < SS.calmUntil && SS.calmUntil - sim < 2.5) return;
     wait -= dt; if (wait > 0) return; begin(pick(), sim);
   }
