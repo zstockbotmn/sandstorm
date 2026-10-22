@@ -553,8 +553,8 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     let best = null, bd = 1e9; const cz = camera.position.z;
     for (const s of (world.segments || [])) for (const c of s.coverPoints || []) if (c.type === 'room') { const ahead = c.pos.z < cz + 2; const d = Math.abs(c.pos.z - cz) + (ahead ? 0 : 1000); if (d < bd) { bd = d; best = c; } }
     if (!best) { window.SS.lastRoomJump = { ok: false, why: 'no room (rooms need ?bld=4 and not Ultra-low)' }; if (hud.hint) hud.hint('No room nearby (needs bld=4, Low/High)'); return null; }
-    if (window.SS.enemies && window.SS.enemies.killAll) window.SS.enemies.killAll();
-    if (cover.reset) cover.reset();
+    enemies.reset(); // debug only: clears enemies, nades, truck and the wave count (a clean street at the room)
+    cover.reset();
     const z = best.pos.z + 2.5, dz = cz - z; camera.position.set(0, camera.position.y, z); window.SS.distance += dz;
     const side = best.pos.x > 0 ? 1 : -1; input.yaw = Math.atan2(best.pos.x - 0, -(best.pos.z - z)); input.pitch = -0.05;
     window.SS.walking = false; window.SS.roomHold = true; roomHoldT = performance.now();
