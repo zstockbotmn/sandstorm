@@ -150,7 +150,11 @@ export function createWorld(scene, seed) {
     return (_roomMats[i] = m);
   }
   let _roomWood = null;
-  function roomWood() { return _roomWood || (_roomWood = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 0.9 })); }
+  // A14 (tester: door / table / rug read as blocky flat-shaded boxes): Poly Haven CC0 planks (wood) and hessian (rug,
+  // tinted red) with world-tiled UVs; the planks are dark (sRGB ~80) so the colour lifts them to a warm mid wood.
+  function roomWood() { if (!_roomWood) { _roomWood = pbrMaterial('weathered_planks'); _roomWood.color.setRGB(1.55, 1.25, 0.95); _roomWood.roughness = 0.82; } return _roomWood; }
+  let _rugMat = null;
+  function rugMat() { if (!_rugMat) { _rugMat = pbrMaterial('hessian_230', { full: !LOWQ }); _rugMat.color.set(0xb4553d); } return _rugMat; }
   const BLDGS = [['bldg1', 0.3], ['bldg2', 0.3], ['bldg3', 0.2], ['bldg4', 0.2]];
   const ROOF_OK = { bldg1: 1, bldg2: 1, bldg3: 1 };
   // Poly Haven CC0 1k PBR (WebP) for building sides/backs/roofs and the background rows. World-scaled box UVs.
@@ -362,9 +366,12 @@ export function createWorld(scene, seed) {
   let shotT = -1;
   function shotList() { const k = colliders.length + ':' + shotVer, now = performance.now(); if (k !== shotKey || !shotCache || now - shotT > 100) { shotKey = k; shotT = now; shotCache = colliders.filter((m) => !m.userData.noShot).concat(shotMeshes.filter(drawn)); } return shotCache; }
 
+  // A14: opts.uvTile -> a world-UV box (texture tiles every uvTile m on every face, no stretch); cached by size
+  const _uvBoxes = new Map();
   function addBox(seg, mat, x, y, z, sx, sy, sz, opts = {}) {
-    const m = new THREE.Mesh(boxGeo, mat);
-    m.scale.set(sx, sy, sz);
+    let geo = boxGeo; if (opts.uvTile) { const k = sx.toFixed(2) + ',' + sy.toFixed(2) + ',' + sz.toFixed(2) + ',' + opts.uvTile; geo = _uvBoxes.get(k); if (!geo) _uvBoxes.set(k, geo = worldBox(sx, sy, sz, opts.uvTile)); }
+    const m = new THREE.Mesh(geo, mat);
+    if (geo === boxGeo) m.scale.set(sx, sy, sz);
     m.position.set(x, y, z);
     m.castShadow = opts.cast !== false;
     m.receiveShadow = true;
@@ -485,9 +492,15 @@ export function createWorld(scene, seed) {
   // A12 tester ("a large black and white square panel at the left edge"): bldg4 (the burnt ruin) has Meshy end walls
   // (local +-X) that are one flat, stretched soot texel patch, read as a floating panel up close at a lot edge. Cap each
   // end with a plain ruin-grey board shaped to the real mass (raycast in raw local space once per model, cached).
-  const _capCache = {}, _capMat = new THREE.MeshStandardMaterial({ color: 0xa9a297, roughness: 1, metalness: 0 });
+  // A14 (tester / Zack: the grey board read as a big untextured slab; every face textured): CC0 plastered_wall_02 with
+  // world-metre UVs (tiles every 2.2 m) and a soot tint - vertex colour darkens toward the base and the top edge.
+  const _capCache = {}; let _capMat = null;
+  function capMat() { if (!_capMat) { _capMat = pbrMaterial('plastered_wall_02', { full: !LOWQ, vertexColors: true }); _capMat.color.set(0xc9bfae); } return _capMat; }
+  function sootBox(mw, mh, md) { const g = worldBox(mw, mh, md, 2.2), pos = g.attributes.position, col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) { const v = pos.getY(i) / mh + 0.5; const k = v < 0.5 ? 0.62 + 0.5 * v : 0.87 - 0.12 * Math.max(0, v - 0.85) / 0.15; col[i * 3] = k; col[i * 3 + 1] = k * 0.97; col[i * 3 + 2] = k * 0.93; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g; }
   const _capD = new THREE.Vector3(), _capO = new THREE.Vector3();
-  function endCaps(model, raw, name) {
+  function endCaps(model, raw, name, sc, yMul) {
     let spec = _capCache[name];
     if (!spec) { spec = _capCache[name] = [];
       const d = raw.max.z - raw.min.z, h = raw.max.y - raw.min.y, w = raw.max.x - raw.min.x;
@@ -500,7 +513,8 @@ export function createWorld(scene, seed) {
         if (n >= 4) spec.push({ e, xd, top: Math.min(raw.max.y, top + h * 0.05), z0: Math.max(raw.min.z, z0 - d * 0.06), z1: Math.min(raw.max.z - d * 0.04, z1 + d * 0.06) }); } }
     const out = [];
     for (const c of spec) { const t = (raw.max.x - raw.min.x) * 0.006;
-      const m = new THREE.Mesh(boxGeo, _capMat); m.scale.set(t, c.top - raw.min.y, c.z1 - c.z0);
+      const ss = sc || 1, sy = ss * (yMul || 1); // build in metres (world UVs), then undo the model's scale
+      const m = new THREE.Mesh(sootBox(t * ss, (c.top - raw.min.y) * sy, (c.z1 - c.z0) * ss), capMat()); m.scale.set(1 / ss, 1 / sy, 1 / ss);
       m.position.set(c.e > 0 ? raw.max.x - c.xd + t / 2 : raw.min.x + c.xd - t / 2, (raw.min.y + c.top) / 2, (c.z0 + c.z1) / 2); m.name = 'endCap'; m.receiveShadow = true; out.push(m); }
     return out;
   }
@@ -543,7 +557,7 @@ export function createWorld(scene, seed) {
     const patch = name === 'bldg2' ? plankPatch(model, raw, s, yMul) : null;
     model.scale.set(s, s * yMul, s);
     if (patch) model.add(patch);
-    if (name === 'bldg4') for (const c of endCaps(model, raw, name)) model.add(c);
+    if (name === 'bldg4') for (const c of endCaps(model, raw, name, s, yMul)) model.add(c);
     // bldg3's Meshy texture bakes AI-gibberish shop lettering ('NAIVATS'); the glyphs are not mirrored, so a UV flip
     // would make it worse. Cover the main sign board with a readable painted sign instead.
     if (name === 'bldg3') model.add(shopSign(raw));
@@ -785,14 +799,14 @@ export function createWorld(scene, seed) {
     addBox(seg, roomMat(0), X(2.035), RH / 2, zc + W / 2 - 0.02, id, RH - 0.04, 0.02, nc);
     addBox(seg, roomMat(2), X(3.78), RH / 2, zc, 0.02, RH - 0.04, iw, nc);
     const A = (70 + seg._wrng() * 30) * Math.PI / 180;
-    const leaf = addBox(seg, roomWood(), X(0.2) + side * 0.575 * Math.sin(A), 1.075, zc - 0.6 + 0.575 * Math.cos(A), 0.06, 2.15, 1.15, { collide: false });
+    const leaf = addBox(seg, roomWood(), X(0.2) + side * 0.575 * Math.sin(A), 1.075, zc - 0.6 + 0.575 * Math.cos(A), 0.06, 2.15, 1.15, { collide: false, uvTile: 0.9 });
     leaf.rotation.y = side * A;
-    addBox(seg, roomWood(), X(2.2), 0.76, zc, 1.2, 0.06, 0.8);
-    addBox(seg, roomWood(), X(2.2), 0.38, zc, 0.9, 0.7, 0.5);
+    addBox(seg, roomWood(), X(2.2), 0.76, zc, 1.2, 0.06, 0.8, { uvTile: 0.9 });
+    addBox(seg, roomWood(), X(2.2), 0.38, zc, 0.9, 0.7, 0.5, { uvTile: 0.9 });
     const nC = 2 + Math.floor(seg._wrng() * 2), cS = seg._wrng() < 0.5 ? -1 : 1;
-    for (let i = 0; i < nC; i++) addBox(seg, roomWood(), X(3.4), 0.3 + i * 0.6, zc + cS * (W / 2 - 0.4), 0.6, 0.6, 0.6);
-    addBox(seg, roomWood(), X(3.58), 0.9, zc, 0.35, 1.8, 1.6);
-    addBox(seg, matAwning, X(1.35), 0.03, zc, 1.6, 0.02, 1.0, { collide: false });
+    for (let i = 0; i < nC; i++) addBox(seg, roomWood(), X(3.4), 0.3 + i * 0.6, zc + cS * (W / 2 - 0.4), 0.6, 0.6, 0.6, { uvTile: 0.9 });
+    addBox(seg, roomWood(), X(3.58), 0.9, zc, 0.35, 1.8, 1.6, { uvTile: 0.9 });
+    addBox(seg, rugMat(), X(1.35), 0.03, zc, 1.6, 0.02, 1.0, { collide: false, uvTile: 0.6 });
     for (let i = 0, n = 3 + Math.floor(seg._wrng() * 3); i < n; i++) {
       const rs = 0.15 + seg._wrng() * 0.2;
       addBox(seg, matPlaster, X(0.9 + seg._wrng() * 1.8), rs / 2, zc - cS * (W / 2 - 0.45) + (seg._wrng() - 0.5) * 0.4, rs, rs, rs, nc);
