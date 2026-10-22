@@ -2021,7 +2021,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let fightSim0 = -1e9, lastShotSim = -1e9; // threat ramp clocks (game time)
   const LOW_HP_CHANCE = 0.3, LOW_HP_SLIVER = 6; // m1x: hit-chance floor once a hit would be lethal and the player is exposed
   const DMG_CAP_HPS = 2.8, DMG_CAP_BURST = 22; let dmgBucket = DMG_CAP_BURST, dmgBucketR = 0, dmgBucketSim = 0;
-  function dmgBudget(nowS, simS) { const mul = cxPhase === 'active' ? 1.6 : 1; const hps = DMG_CAP_HPS * mul, burst = DMG_CAP_BURST * mul; /* A21: climax budget ~1.6x so an EXPOSED player can drop to ~35-50 */ if (dmgBucketR) dmgBucket = Math.min(burst, dmgBucket + hps * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
+  function dmgBudget(nowS, simS) { const mul = cxPhase === 'active' ? [1.4, 1.6, 2.0][cxTier] : 1; const hps = DMG_CAP_HPS * mul, burst = DMG_CAP_BURST * mul; /* A21: climax budget ~1.6x so an EXPOSED player can drop to ~35-50 */ if (dmgBucketR) dmgBucket = Math.min(burst, dmgBucket + hps * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
   // m1v: warning for fire from outside the view - edge flash on the shooter's side + a supersonic crack
   function warnFrom(pos) { const SSx = window.SS; if (!SSx) return; const c = camera.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = pos.x - c.x, dz = pos.z - c.z;
     const fwd = dx * Math.sin(yaw) + dz * -Math.cos(yaw), right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
@@ -2231,7 +2231,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const pEx = pressureP();
     const slope = 0.05 + 0.02 * pEx, exposedCap = 0.5 + 0.12 * pEx;
     if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : exposedCap, 0.10 + slope * (dryS - 3))); // A8: ducking now blocks the front arc outright, so the exposed ramp is a bit steeper (0.10 + slope/s, cap 0.5+0.12p) // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
-    if (cxPhase === 'active' && !ducked) chance = Math.max(chance, 0.25); // A21 (a15 exposed: only 2 hits, HP 81 -> 62): an exposed player in the climax really bleeds (floor 35, cap 1.6x still apply)
+    if (cxPhase === 'active' && !ducked) chance = Math.max(chance, [0.2, 0.25, 0.35][cxTier]); // A22: by climax tier // A21 (a15 exposed: only 2 hits, HP 81 -> 62): an exposed player in the climax really bleeds (floor 35, cap 1.6x still apply)
     if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3), ducked, flankShot, flankReady };
     if (flankHit) chance = 1; // A16: a told flank shot in its window lands (each tell leads to a hit or an abort + reposition)
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
@@ -2750,7 +2750,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       return { pos, type: 'wall', open: true, near: true }; }
     return null; }
   let assaultAt = -1e9, lastBeatSendSim = -1e9, lastStallSendSim = -1e9, assaultIv = 0, assaultIvs = [];
-  let cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null; // A21
+  let cxTier = 0, cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null; // A21
   function resetClimax() { cxWave = -1; cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxLullUntil = 0; cxTellSim = cxStartSim = cxEndSim = 0; cxRec = null; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; }
   function assaultSpot(e, range) { const cam = camera.position, tgt = range != null ? range : 10.5, lo = Math.max(6, tgt - 2), hi = Math.min(18, tgt + 2); let best = null, bd = 1e9; // A21: target range (was fixed 8-13)
     for (const c of coverPool(STALL_TYPES, [Math.max(5, lo - 1), hi + 1])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < lo || az > hi || Math.abs(c.pos.x) > 7) continue;
@@ -2900,19 +2900,44 @@ export function createEnemies(scene, camera, world, weapon, player) {
     slog('enemy', 'climax start'); cxPhase = 'active'; cxStartSim = sim; cxEndSim = sim + 8 + Math.random() * 2; cxStamp(sim);
     const ground = alive.filter((e) => e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove)
       .sort((a, b) => b.group.position.z - a.group.position.z);
-    const nBound = Math.min(3, Math.max(1, Math.round(ground.length / 2))), range = 8 + Math.random() * 4, sent = []; let k = 0;
-    for (const e of ground) { if (k >= nBound) break; const c = assaultSpot(e, range); if (!c) continue;
+    // A22 (tester A21: W4 didn't escalate past W2/W3): the climax grows with the wave and 5e pressure.
+    // tier 0 (W2): 2 bounders to 9-13 m; tier 1 (W3): 3 to 8-12 m; tier 2 (W4+, or W3 at high pressure): 3-4 to 6-10 m,
+    // plus a flanking pair, heavier suppression and a bigger damage budget / exposed hit floor (HP floor 35 always holds).
+    const pP = pressureP(), tier = cxWave >= 4 || (cxWave === 3 && pP > 0.6) ? 2 : cxWave === 3 ? 1 : 0; cxTier = tier;
+    const want = tier === 2 ? 3 + ((ground.length >= 5 || Math.random() < 0.5 + 0.4 * pP) ? 1 : 0) : tier === 1 ? 3 : 2;
+    const keep = alive.some((e) => !ground.includes(e)) ? 0 : 1; // someone has to lay fire: a roof shooter, else one ground fighter
+    const nBound = Math.max(1, Math.min(want, ground.length - keep));
+    const range = tier === 2 ? 8 : tier === 1 ? 10 : 11, sent = []; let k = 0; // assaultSpot takes +-2 m round the target
+    for (const e of ground) { if (k >= nBound) break; const c = assaultSpot(e, range + (Math.random() * 2 - 1)); if (!c) continue;
       stallSend(e, c, 'assault', camera.position.z - e.group.position.z); e._suppressUntilSim = -1; e._suppressOnArrive = 8; e._assault = true; e._climaxUntil = cxEndSim; sent.push(e); k++; }
-    for (const o of alive) { if (sent.includes(o)) continue; o._suppressUntilSim = sim + 8; o._climaxUntil = cxEndSim; } // A21: rest + rooftops suppress
+    const flankers = [];
+    if (tier === 2 && flankHitsWave < FLANK_CAP_WAVE) for (const e of ground) { if (flankers.length >= 2) break; if (sent.includes(e)) continue; if (alive.length - sent.length - flankers.length - 1 < 1) break; // keep one shooter laying fire
+      const sp = climaxFlankSpot(e, flankers.map((f) => f._cxFlankTo)); if (!sp) continue;
+      e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, sp); e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; e._cxFlankTo = sp.pos; e._climaxUntil = cxEndSim; flankers.push(e); }
+    if (flankers.length) { lastFlankSim = sim; SSx.flankMoves = (SSx.flankMoves | 0) + flankers.length; slog('enemy', 'climax flank pair (' + flankers.length + ')'); }
+    for (const o of alive) { if (sent.includes(o) || flankers.includes(o)) continue; o._suppressUntilSim = tier === 2 ? cxEndSim : sim + 8; o._climaxUntil = cxEndSim; } // A21: rest + rooftops suppress (A22: W4+ for the whole climax)
     lastStallSendSim = sim;
-    cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, fallbackSim: null };
+    slog('enemy', 'climax size: ' + sent.length + ' bound ~' + range + 'm, ' + flankers.length + ' flank, ' + (alive.length - sent.length - flankers.length) + ' suppress (tier ' + tier + ')');
+    cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, tier, bound: sent.length, range, flank: flankers.length, suppress: alive.length - sent.length - flankers.length, fallbackSim: null };
     SSx.climaxLog = (SSx.climaxLog || []).concat([cxRec]).slice(-20);
   }
+  function climaxFlankSpot(e, avoid) { const cam = camera.position; let best = null, bs = 1e9; // A22: flankTick's spot search, no timing gates
+    for (const c of coverPool(['wall', 'barrel', 'car', 'door', 'alley'], [-12, 30])) { if (!c.pos || occupiedBy(c.pos, e)) continue;
+      if (avoid.some((a) => a && Math.hypot(a.x - c.pos.x, a.z - c.pos.z) < 2.5)) continue;
+      const d = Math.hypot(c.pos.x - cam.x, c.pos.z - cam.z); if (d < 5 || d > 18 || inFrontArc(c.pos)) continue;
+      const sp = standPos(c); if (!clearToEye(_losP.set(sp.x, 1.25, sp.z))) continue;
+      const sc = Math.abs(d - 9) + 0.15 * Math.hypot(c.pos.x - e.group.position.x, c.pos.z - e.group.position.z); if (sc < bs) { bs = sc; best = c; } }
+    if (best) return best;
+    for (const side of [Math.sign(e.group.position.x) || 1, -(Math.sign(e.group.position.x) || 1)]) { const pos = new THREE.Vector3(side * 5.6, 0, cam.z + 1.5);
+      if (avoid.some((a) => a && Math.hypot(a.x - pos.x, a.z - pos.z) < 2.5)) continue;
+      if (!inFrontArc(pos) && clearToEye(_losP.set(pos.x - side * 0.3, 1.25, pos.z))) return { pos, type: 'wall' }; }
+    return null; }
   function endClimax(sim) {
     const SSx = window.SS; slog('enemy', 'climax end'); cxPhase = 'lull'; cxDone = true; cxLull = true; cxLullUntil = sim + LULL_S; assaultAt = sim + LULL_S + 2 + Math.random() * 3; if (SSx) SSx.lullUntil = cxLullUntil; /* A22 (tester A21: quiet ~20 s, fire never stopped): 11 s of sparse fire, then mop-up */ cxStamp(sim); try { squadCall('They\'re falling back!'); } catch (_) {}
     if (cxRec) cxRec.fallbackSim = +sim.toFixed(1);
     let nFb = 0, nRet = 0;
-    for (const e of list) { if (!e.alive || e.dying) continue; e._climaxUntil = -1; e._lullUntil = sim + LULL_S; e._suppressOnArrive = 0; e._assault = false; e._suppressUntilSim = Math.min(e._suppressUntilSim || 0, sim);
+    for (const e of list) { if (!e.alive || e.dying) continue; if (e._flankMove || e._flankArr) { if (typeof e._flankTellSim === 'number') retireFlanker(e, 'fallback'); e._flankMove = false; e._flankArr = null; } e._cxFlankTo = null; // A22: climax flankers fall back too (an open tell ends as 'flank aborted (fallback)')
+      e._climaxUntil = -1; e._lullUntil = sim + LULL_S; e._suppressOnArrive = 0; e._assault = false; e._suppressUntilSim = Math.min(e._suppressUntilSim || 0, sim);
       const c = stallCoverFor(e, 22, 35, 2);
       if (c) { const az = camera.position.z - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0)); stallSend(e, c, 'fallback', az); nFb++; }
       else { stallSend(e, retreatSpot(e), 'fallback (retreat)', camera.position.z - e.group.position.z); nRet++; } }
@@ -3125,7 +3150,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         if (LOCO2) enemy._peekFired = true;
         let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff) * 1.2; // fix 7: ~20% slower fire
         const supp = (enemy._suppressUntilSim || -1) > (window.SS.simTime || 0); if (supp) cd *= 0.6; // A19: suppressing after a push (same per-hit damage and cover rules)
-        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= 0.7; // A21: climax fire-rate boost
+        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= [0.7, 0.65, 0.55][cxTier]; // A21: climax fire-rate boost (A22: by tier)
         if ((enemy._lullUntil || -1) > (window.SS.simTime || 0)) cd *= 4; // A21/A22: fallback taper - sparse fire through the lull
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
@@ -3177,7 +3202,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
         let cd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff) * 1.2;
-        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= 0.7; // A21
+        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= [0.7, 0.65, 0.55][cxTier]; // A21/A22
         if ((enemy._lullUntil || -1) > (window.SS.simTime || 0)) cd *= 4; // A22
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
