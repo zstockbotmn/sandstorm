@@ -2199,7 +2199,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!flankHit && !playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       if (flankHit && enemy._flankRec && enemy._flankRec.firstHitSim == null) enemy._flankRec.firstHitSim = +(simS).toFixed(2);
-      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); } }
+      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: +(simS - (enemy._flankTellSim || 0)).toFixed(2), mover: !!enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, flankHit ? 'flank' : 'gun'); // cover also softens hits (x0.6, in dmgAmt)
     } else if (window.SS && window.SS.fx) {
       if (coverImpact && window.SS.fx.impact) { window.SS.fx.impact(coverImpact.point, coverImpact.normal, coverImpact.object); window.SS.coverImpacts = (window.SS.coverImpacts | 0) + 1; }
@@ -3288,7 +3288,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     phase = 'quiet';
     phaseT = 0;
-    calmUntil = -1e9; if (window.SS) window.SS.calmUntil = null; if (window.SS) { window.SS.lastRpgHitSim = null; window.SS.lastFlankHitSim = null; window.SS.flankHitSims = []; }
+    calmUntil = -1e9; if (window.SS) window.SS.calmUntil = null; if (window.SS) { window.SS.lastRpgHitSim = null; window.SS.lastFlankHitSim = null; window.SS.flankHitSims = []; window.SS.flankHitRecs = []; }
     breatherTo = FIRST_WAVE_AT; // first wave at the same distance every run (tester: 6/8/12 m)
     quietCap = 0;
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
