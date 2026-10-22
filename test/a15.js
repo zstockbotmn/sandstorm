@@ -12,24 +12,37 @@ const D = path.resolve(__dirname, '../dist'); const PORT = 8848;
 const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.json': 'application/json', '.hdr': 'application/octet-stream', '.jpg': 'image/jpeg', '.png': 'image/png' };
 const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(PORT);
-const [tier = 'low', out = 'logs/a15/a15', mode = 'random'] = process.argv.slice(2); fs.mkdirSync(path.dirname(out), { recursive: true });
-(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 1500000 });
+const [tier = 'low', out = 'logs/a15/a15', mode = 'random'] = process.argv.slice(2);
+// A15f: every flank hit needs ITS OWN FLANKED tell from the same fighter 1.5-5 s before it (a tell is used by one hit only).
+// Independent of the game's own tellAge: matches SS.flankLog tells (tellSim, id) to hits greedily, oldest first.
+function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
+  for (const h of [...hits].sort((a, b) => a.sim - b.sim)) { let k = -1;
+    tells.forEach((t, i) => { if (used.has(i) || t.id !== h.id) return; const age = h.sim - t.tellSim; if (age >= 1.5 - 0.05 && age <= 5 + 0.05 && (k < 0 || t.tellSim < tells[k].tellSim)) k = i; });
+    if (k < 0) bad.push(h.sim); else used.add(k); }
+  return bad; }
+{ // self-check on the tester's A14 cases: W2 one tell then hits 219.5 / 236.6 / 252.5, W5 575.7 and W6 631.8 with no tell before
+  const tells = [{ id: 1, tellSim: 216.9 }, { id: 2, tellSim: 560.0 }, { id: 3, tellSim: 620.2 }];
+  const hits = [{ id: 1, sim: 219.5 }, { id: 1, sim: 236.6 }, { id: 1, sim: 252.5 }, { id: 2, sim: 575.7 }, { id: 3, sim: 631.8 }];
+  const bad = unmatchedHits(hits, tells); if (bad.join() !== '236.6,252.5,575.7,631.8') { console.log('A15 FAIL tell-matcher self-check got ' + bad.join()); process.exit(1); } } fs.mkdirSync(path.dirname(out), { recursive: true });
+(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 2500000 });
   const res = { tier, mode }, fail = [], warn = [];
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true }); const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug' + (mode === 'forced' ? '&rpg=1&truck=1' : '') + '&q=' + tier);
     await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.tap('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
-    Object.assign(res, await p.evaluate(async () => { SS.testAccuracy = 3; const R = { waves: [] }; let waveAt = null, lastKill = 0; const t0 = performance.now();
-      while (performance.now() - t0 < 1400000 && (SS.waveClears | 0) < 4) { const sim = SS.simTime || 0; SS.input.scope = false; if (SS.player.health < 40) SS.player.health = 90;
-        if (SS.waveActive) { if (waveAt == null) { waveAt = sim; R.waves.push({ start: +sim.toFixed(1), n: (SS.waveClears | 0) + 1 }); } if (sim - waveAt > 45 && sim - lastKill > 2) { SS.debugKillNearest(); lastKill = sim; } } else waveAt = null;
+    Object.assign(res, await p.evaluate(async ([NW, KILL_AFTER]) => { SS.testAccuracy = 3; const R = { waves: [] }; let waveAt = null, lastKill = 0; const t0 = performance.now();
+      while (performance.now() - t0 < 2400000 && (SS.waveClears | 0) < NW) { const sim = SS.simTime || 0; SS.input.scope = false; if (SS.player.health < 40) SS.player.health = 90;
+        if (SS.waveActive) { if (waveAt == null) { waveAt = sim; R.waves.push({ start: +sim.toFixed(1), n: (SS.waveClears | 0) + 1 }); } if (sim - waveAt > KILL_AFTER && sim - lastKill > 2) { SS.debugKillNearest(); lastKill = sim; } } else waveAt = null;
         if (!SS.player.alive) { R.died = +sim.toFixed(1); break; } await new Promise((r) => setTimeout(r, 250)); }
-      R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || [];
+      R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.picks = (SS.spPick && SS.spPick.hist) || [];
       R.counters = { flankTells: SS.flankTells | 0, flankCapBlocked: SS.flankCapBlocked | 0, flankRetired: SS.flankRetired | 0, stallPushes: SS.stallPushes | 0, stallPushNone: SS.stallPushNone | 0, frontArcDuckHits: SS.frontArcDuckHits | 0 };
-      R.log = (SS.audioLog || []).filter((x) => /grenade|gren|enemy|wave|rpg|truck/.test(x.kind)).map((x) => ({ t: x.t, kind: x.kind, d: x.detail })); return R; }));
+      R.log = (SS.audioLog || []).filter((x) => /grenade|gren|enemy|wave|rpg|truck/.test(x.kind)).map((x) => ({ t: x.t, kind: x.kind, d: x.detail })); return R; }, mode === 'random' ? [6, 40] : [4, 45]));
     // 1 + 2
     const perWave = {}; for (const r of res.recs) { if (!(r.tellAge >= 1.5 && r.tellAge <= 5)) fail.push('flank hit ' + r.sim + ' tellAge ' + r.tellAge + ' (want 1.5-5)'); if (!r.mover) fail.push('flank hit ' + r.sim + ' non-mover'); perWave[r.wave] = (perWave[r.wave] | 0) + 1; }
     for (const w in perWave) if (perWave[w] > 2) fail.push('wave ' + w + ': ' + perWave[w] + ' flank hits (cap 2)');
     for (let i = 1; i < res.recs.length; i++) if (res.recs[i].sim - res.recs[i - 1].sim < 5) fail.push('flank hits ' + res.recs[i - 1].sim + ' -> ' + res.recs[i].sim + ' (< 5 s)');
+    res.untold = unmatchedHits(res.recs, res.tells); for (const u of res.untold) fail.push('flank hit ' + u + ' has no own FLANKED tell 1.5-5 s before');
+    if (res.recs.length && res.tells.length >= 79) warn.push('flankLog may have wrapped');
     if (Object.values(perWave).some((n) => n >= 2) && !res.counters.flankRetired) fail.push('a flanker landed 2 but none retired');
     if (res.counters.frontArcDuckHits) fail.push('front-arc ducked hits ' + res.counters.frontArcDuckHits);
     res.flankPerWave = perWave;
@@ -48,6 +61,11 @@ const [tier = 'low', out = 'logs/a15/a15', mode = 'random'] = process.argv.slice
     // A15a variety (random): the same set-piece kind never opens two waves in a row unless it is a long-camp grenade
     if (mode === 'random') { const kinds = {}; for (const s of res.spLog) (kinds[s.wave] = kinds[s.wave] || new Set()).add(s.kind + (s.kind === 'grenade' && s.pick !== 'grenade' ? '-long' : ''));
       for (const w in kinds) { const prev = kinds[w - 1]; if (!prev) continue; for (const k of kinds[w]) if (!/-long$/.test(k) && (prev.has(k) || (k === 'grenade' && prev.has('grenade-long')))) fail.push('wave ' + w + ' repeats ' + k + ' from wave ' + (w - 1)); }
+      // A15e: director variety over waves 2-6 - log the sequence (pick + what happened), want >= 3 different picks and no back-to-back pick
+      res.sequence = res.picks.map((pk, i) => 'w' + (i + 1) + ' ' + pk + (kinds[i + 1] ? ' [' + [...kinds[i + 1]].join('+') + ']' : ''));
+      const p26 = res.picks.slice(1, 6); if (p26.length >= 5 && new Set(p26).size < 3) fail.push('director picks w2-6 not varied: ' + p26.join(','));
+      for (let i = 1; i < p26.length; i++) if (p26[i] === p26[i - 1]) fail.push('director repeated ' + p26[i] + ' (w' + (i + 1) + '->w' + (i + 2) + ')');
+      if (p26.length < 5) warn.push('only ' + p26.length + ' director picks w2+');
       res.kinds = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, [...v]]));
       // A15b: wave 1 quiet - no flank hits, no set pieces
       if (res.recs.some((r) => r.wave === 1)) fail.push('flank hit in wave 1'); if (res.spLog.some((x) => x.wave === 1)) fail.push('set piece in wave 1 ' + JSON.stringify(res.spLog.filter((x) => x.wave === 1))); }

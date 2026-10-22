@@ -2087,7 +2087,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const ang = Math.atan2(dx * Math.cos(yaw) + dz * Math.sin(yaw), dx * Math.sin(yaw) + dz * -Math.cos(yaw));
     if (SSx.hud && SSx.hud.flanked) SSx.hud.flanked(ang); else if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(ang);
     if (SSx.audio && SSx.audio.crack) SSx.audio.crack(p);
-    const L = SSx.flankLog || (SSx.flankLog = []); L.push({ tellSim: +(SSx.simTime || 0).toFixed(2), firstHitSim: null, id: enemy.id }); if (L.length > 20) L.shift(); enemy._flankRec = L[L.length - 1]; }
+    const L = SSx.flankLog || (SSx.flankLog = []); L.push({ tellSim: +(SSx.simTime || 0).toFixed(2), firstHitSim: null, id: enemy.id }); if (L.length > 80) L.shift(); enemy._flankRec = L[L.length - 1]; }
   function enemyShoot(enemy) {
     { const nR = performance.now() / 1000, nS = window.SS ? (window.SS.simTime || 0) : 0; if (enemy.noFireUntilR > nR || enemy.noFireUntilSim > nS) { enemy.shootCd = Math.max(enemy.shootCd || 0, 0.1); return; } } // just relocated: let the player see them first
     // m1u: a balcony/window/roof shooter fires only while visibly present (a tracer from an empty balcony otherwise)
