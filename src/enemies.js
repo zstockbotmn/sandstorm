@@ -2665,7 +2665,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // 'enemy runs in Nm' or 'stall push none (reason)'. SS.stallPushLog [{ sim, kind, from, to, wave }].
   let waveProgSim = 0, stallPushAt = 14, stallWasActive = false, stallFreshWave = -1, stallWaveStart = 0;
   const STALL_TYPES = ['wall', 'barrel', 'car', 'door', 'alley'];
-  let mwWave = -1, mwContactSim = null, mwShots0 = 0, mwAt = 0, mwDone = false, mwPush = []; // A18: mid-wave second beat
+  let mwWave = -1, mwContactSim = null, mwShots0 = 0, mwAt = 0, mwDone = false, mwPush = [], mwWaitWhy = ''; // A18: mid-wave second beat
   function stallCoverFor(e, aMin, aMax, minMove) { const pz = camera.position.z, here = e.group.position; let best = null, bd = 1e9;
     for (const c of coverPool(STALL_TYPES, [Math.max(0, aMin - 1), aMax + 1])) { const a = pz - c.pos.z; if (a < aMin || a > aMax || Math.abs(c.pos.x) > 11) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(here); if (d < minMove * minMove) continue; if (d < bd) { bd = d; best = c; } }
@@ -2735,15 +2735,28 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue;
       if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) { stallSend(rec.e, c, c.open ? 'advances (open)' : 'advances', a); rec.e._suppressOnArrive = 5; } }
       rec.sent = true; }
-    const wv = mwWave; if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return; mwDone = true;
+    const wv = mwWave; if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return;
     const sp = SSx.spPick, quiet = !!(sp && sp.wave === wv && sp.pick === 'quiet');
+    // A19 (PM ruling 8): the beat keeps >= 8 s from any set piece, before or after. It waits while one fired < 8 s ago or is
+    // due within 8 s (the director's RPG, a pending truck, a grenade wave's next throw), up to 30 s after contact; past that it
+    // is skipped ('mid-wave beat skipped (set piece)'). Set pieces in turn wait 8 s after a push beat (SS.midBeatAt).
+    { const sL = (SSx.spLog || []).filter((x) => x.wave === wv), nN = sL.filter((x) => x.kind === 'grenade').length, lastN = sL.filter((x) => x.kind === 'grenade').slice(-1)[0];
+      const recent = SSx.setPieceAt != null && sim - SSx.setPieceAt >= 0 && sim - SSx.setPieceAt < 8;
+      const rpgDue = SSx.rpgDueAt != null && SSx.rpgDueAt - sim < 8;
+      const nadeDue = !!(sp && sp.wave === wv && sp.pick === 'grenade' && nN < 2 && (!lastN || lastN.sim + 12 - sim < 8));
+      const block = recent ? 'recent' : rpgDue ? 'rpg due' : SSx.truckPendingWave ? 'truck due' : nadeDue ? 'grenade due' : null;
+      const forceSP = !!SSx.spQuietForce, roomNow = (SSx.setPieceAt == null || sim - SSx.setPieceAt >= 15) && (SSx.lastFlankHitSim == null || sim - SSx.lastFlankHitSim >= 6);
+      if (block || (forceSP && quiet && !roomNow)) { mwWaitWhy = block || 'room (forced quiet)'; if (sim - mwContactSim < 30) return;
+        if (block) { mwDone = true; slog('enemy', 'mid-wave beat skipped (set piece: ' + block + ')'); const L = SSx.midBeatLog || (SSx.midBeatLog = []); L.push({ wave: wv, kind: 'skipped', why: block, sim: +sim.toFixed(1), afterContact: +(sim - mwContactSim).toFixed(1) }); if (L.length > 30) L.shift(); return; } } }
+    mwDone = true;
     const room = (SSx.setPieceAt == null || sim - SSx.setPieceAt >= 15) && (SSx.lastFlankHitSim == null || sim - SSx.lastFlankHitSim >= 6) && !SSx.truckPendingWave && !(SSx.truckState && /drive|crash/.test(SSx.truckState));
     const prevNade = (SSx.spLog||[]).some((x) => x.kind === 'grenade' && x.wave === wv - 1), thisWave = (SSx.spLog||[]).filter((x) => x.wave === wv).map((x) => x.kind);
     let kind;
-    if (quiet && room && Math.random() < 0.5) {
+    const forceSP = !!SSx.spQuietForce; // A19 (PM 10): ?spquiet=1 - every wave 2+ is director-quiet and its beat is the grenade / RPG version
+    if (quiet && room && (forceSP || Math.random() < 0.5)) {
       let nadeE = null, nadeD = 1e9;
       for (const e of list) { if (!e.alive || e.dying || e.group.position.y >= 0.5) continue; const d = Math.hypot(e.group.position.x - camera.position.x, e.group.position.z - camera.position.z); if (d <= 36 && d < nadeD) { nadeD = d; nadeE = e; } }
-      if (!prevNade && !thisWave.includes('grenade') && Math.random() < 0.5 && nadeE) { throwGrenade(nadeE); spLog('grenade', wv, { pick: 'mid-wave' }); kind = 'grenade'; }
+      if (!prevNade && !thisWave.includes('grenade') && (forceSP ? wv % 2 === 1 || !(SSx.setpieces && SSx.setpieces.debugRpg) : Math.random() < 0.5) && nadeE) { throwGrenade(nadeE); spLog('grenade', wv, { pick: 'mid-wave' }); kind = 'grenade'; }
       else if (SSx.setpieces && SSx.setpieces.debugRpg && !thisWave.includes('rpg')) { SSx.setpieces.debugRpg(); kind = 'rpg'; }
     }
     if (!kind) {
@@ -2759,7 +2772,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         for (let i = 0; i < exist.length && mwPush.length < 2; i++) if (!mwPush.some((r) => r.e === exist[i])) mwPush.push({ e: exist[i], at: sim + 1.6 + mwPush.length * 1.2, sent: false });
       }
     }
-    slog('enemy', 'mid-wave beat: ' + kind + ' at ' + (sim - mwContactSim).toFixed(1) + 's');
+    if (kind === 'push') SSx.midBeatAt = sim;
+    slog('enemy', 'mid-wave beat: ' + kind + ' at ' + (sim - mwContactSim).toFixed(1) + 's' + (mwWaitWhy ? ' (waited: ' + mwWaitWhy + ')' : '')); mwWaitWhy = '';
     const L = SSx.midBeatLog || (SSx.midBeatLog = []); L.push({ wave: wv, kind, sim: +sim.toFixed(1), afterContact: +(sim - mwContactSim).toFixed(1) }); if (L.length > 30) L.shift();
   }
 
@@ -3121,7 +3135,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const longCamp = nadeWave ? 0 : prevNade ? Infinity : (lcWave = Math.max(lcWave, otherPiece ? 40 : 25)), capN = nadeWave ? NADE_CAP : 1;
     const capped = nadesWave >= capN, certainAt = nadeWave ? (!nadesWave ? 7 : 12) : longCamp /* A16: 2nd throw ~12 s after the 1st */, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
-    const lastSp = spL[spL.length - 1], gapOk = spGap >= SP_GAP_S || (nadeWave && nadesWave === 1 && lastSp && lastSp.kind === 'grenade' && lastSp.wave === waveNo && spGap >= 11.9); // A16: a grenade wave's 2nd throw follows its 1st at ~12 s // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
+    const midGap = window.SS && window.SS.midBeatAt != null ? (window.SS.simTime || 0) - window.SS.midBeatAt : 1e9; // A19 (PM 8): 8 s after a mid-wave push
+    const lastSp = spL[spL.length - 1], gapOk = !(midGap >= 0 && midGap < 8) && (spGap >= SP_GAP_S || (nadeWave && nadesWave === 1 && lastSp && lastSp.kind === 'grenade' && lastSp.wave === waveNo && spGap >= 11.9)); // A16: a grenade wave's 2nd throw follows its 1st at ~12 s // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
     if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, waveNo, nadeWave: !!nadeWave, nadeThisWave, nadesWave, longCamp, prevNade, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
     if (waveActive && !capped && campT > (nadeWave && !nadesWave ? 3 : 5 - 1.5 * pN) && waveOk && gapOk && (campT > certainAt || (nadeWave && !nadesWave && Math.random() < dt * 0.35))) {
       let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
@@ -3496,7 +3511,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; }
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; }
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;

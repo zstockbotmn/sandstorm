@@ -27,7 +27,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
 (async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 2500000 });
   const res = { tier, mode }, fail = [], warn = [];
   try { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true }); const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
-    await p.goto('http://127.0.0.1:' + PORT + '/?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug' + (mode === 'forced' ? '&rpg=1&truck=1' : '') + '&q=' + tier);
+    await p.goto('http://127.0.0.1:' + PORT + '/?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug' + (mode === 'forced' ? '&rpg=1&truck=1' : mode === 'quiet' ? '&spquiet=1' : '') + '&q=' + tier);
     await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.tap('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
     Object.assign(res, await p.evaluate(async ([NW, KILL_AFTER]) => { SS.testAccuracy = 3; const R = { waves: [], advLines: [], grenT: [], waveEnds: [] }; let waveAt = null, lastKill = 0; const t0 = performance.now();
@@ -36,11 +36,12 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
         for (const x of (SS.audioLog || [])) if (x.kind === 'gren' && !R.grenT.includes(x.t)) R.grenT.push(x.t);
         if (R._wa && !SS.waveActive) R.waveEnds.push(+sim.toFixed(1)); R._wa = !!SS.waveActive;
         for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /advances/.test(x.detail) && !R.advLines.includes(x.t)) R.advLines.push(x.t);
+        R.spLines = R.spLines || []; for (const x of (SS.audioLog || [])) if (/launch thump|whoosh|boom|grenade|blast|hit taken/.test(x.kind) && !R.spLines.some((y) => y.t === x.t && y.kind === x.kind && y.d === x.detail)) R.spLines.push({ t: x.t, kind: x.kind, d: x.detail });
         R.noneLines = R.noneLines || []; for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /stall push none/.test(x.detail) && !R.noneLines.some((y) => y.t === x.t)) R.noneLines.push({ t: x.t, d: x.detail });
         if (!SS.player.alive) { R.died = +sim.toFixed(1); break; } await new Promise((r) => setTimeout(r, 250)); }
       R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim, outcome: t.outcome || null, outSim: t.outSim })); R.aborts = SS.flankAbortLog || []; R.flankCalls = SS.flankCallLog || []; R.tells2 = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.mid = SS.midBeatLog || []; R.contacts = SS.waveContactLog || []; R.held = SS.stallPushHeld | 0; R.noneWhy = SS.stallNoneWhy || null; R.picks = (SS.spPick && SS.spPick.hist) || [];
       R.counters = { flankTells: SS.flankTells | 0, flankCapBlocked: SS.flankCapBlocked | 0, flankRetired: SS.flankRetired | 0, stallPushes: SS.stallPushes | 0, stallPushNone: SS.stallPushNone | 0, frontArcDuckHits: SS.frontArcDuckHits | 0 };
-      R.log = (SS.audioLog || []).filter((x) => /grenade|gren|enemy|wave|rpg|truck/.test(x.kind)).map((x) => ({ t: x.t, kind: x.kind, d: x.detail })); return R; }, mode === 'random' ? [6, 40] : [4, 45]));
+      R.log = (SS.audioLog || []).filter((x) => /grenade|gren|enemy|wave|rpg|truck/.test(x.kind)).map((x) => ({ t: x.t, kind: x.kind, d: x.detail })); return R; }, mode === 'random' || mode === 'quiet' ? [6, 40] : [4, 45]));
     // 1 + 2
     const perWave = {}; for (const r of res.recs) { if (!(r.tellAge >= 1.5 && r.tellAge <= 5)) fail.push('flank hit ' + r.sim + ' tellAge ' + r.tellAge + ' (want 1.5-5)'); if (!r.mover) fail.push('flank hit ' + r.sim + ' non-mover'); perWave[r.wave] = (perWave[r.wave] | 0) + 1; }
     for (const w in perWave) if (perWave[w] > 2) fail.push('wave ' + w + ': ' + perWave[w] + ' flank hits (cap 2)');
@@ -81,7 +82,17 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       const end = (res.waveEnds || []).find((t) => t > c.sim) || (nx && nx.start) || res.sim; const mb = (res.mid || []).filter((m) => m.wave === c.wave);
       if (end - c.sim < 28.5) { if (mb.length > 1) fail.push('wave ' + c.wave + ': ' + mb.length + ' mid-wave beats'); continue; }
       if (mb.length !== 1) fail.push('wave ' + c.wave + ': ' + mb.length + ' mid-wave beats (want 1; contact ' + c.sim + ', end ' + end + ')');
-      for (const m of mb) if (!(m.afterContact >= 18 && m.afterContact <= 28)) fail.push('wave ' + c.wave + ': mid-wave ' + m.kind + ' at +' + m.afterContact + ' s after contact (want 18-28)'); void w; }
+      for (const m of mb) if (!(m.afterContact >= 18 && m.afterContact <= 30.5)) fail.push('wave ' + c.wave + ': mid-wave ' + m.kind + ' at +' + m.afterContact + ' s after contact (want 18-30)');
+      // A19 (PM 8): a push beat keeps >= 8 s from every set piece (RPG launch / truck start / grenade) before or after
+      for (const m of mb.filter((x) => x.kind === 'push')) for (const sp of res.spLog) if (Math.abs(sp.sim - m.sim) < 8) fail.push('wave ' + c.wave + ': mid-wave push ' + m.sim + ' only ' + Math.abs(sp.sim - m.sim).toFixed(1) + ' s from ' + sp.kind + ' ' + sp.sim);
+      void w; }
+    // A19 (PM 10): ?spquiet=1 - the grenade / RPG beat fires, warns ~1 s+ ahead (launch thump -> boom, throw -> blast), no death
+    if (mode === 'quiet') { const sb = (res.mid || []).filter((m) => m.kind === 'rpg' || m.kind === 'grenade'); res.spBeats = sb; if (!sb.length) fail.push('quiet mode: no grenade / RPG mid-wave beat');
+      const L = res.spLines || []; for (const m of sb) { const isR = m.kind === 'rpg', start = L.find((x) => x.t >= m.sim - 0.3 && x.t <= m.sim + 3 && (isR ? x.kind === 'launch thump' : x.kind === 'grenade' && /thrown/.test(x.d)));
+        const bang = start && L.find((x) => x.t > start.t && x.t <= start.t + 6 && (x.kind === 'boom' || /blast/.test(x.kind + ' ' + x.d)));
+        m.warnS = start && bang ? +(bang.t - start.t).toFixed(1) : null; if (m.warnS == null) warn.push('quiet: ' + m.kind + ' beat ' + m.sim + ' start/boom lines not both seen'); else if (m.warnS < 0.8) fail.push('quiet: ' + m.kind + ' beat ' + m.sim + ' warning only ' + m.warnS + ' s');
+        const hits = L.filter((x) => x.kind === 'hit taken' && x.t >= m.sim && x.t <= m.sim + 7 && /RPG|grenade/.test(x.d)); for (const h of hits) { const dm = +((/-(\d+)/.exec(h.d) || [])[1] || 0); if (dm >= 40) fail.push('quiet: ' + m.kind + ' hit ' + h.d + ' (near-instant kill)'); } } }
+
     if ((res.mid || []).some((m) => m.wave < 2)) fail.push('mid-wave beat in wave 1');
     for (const n of res.noneLines || []) fail.push('stall push none at ' + n.t + ': ' + n.d);
     // A16b: 'flank aborted' once per attempt (no repeats within 1 s)
