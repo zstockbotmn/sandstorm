@@ -1989,7 +1989,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // m1v: warning for fire from outside the view - edge flash on the shooter's side + a supersonic crack
   function warnFrom(pos) { const SSx = window.SS; if (!SSx) return; const c = camera.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = pos.x - c.x, dz = pos.z - c.z;
     const fwd = dx * Math.sin(yaw) + dz * -Math.cos(yaw), right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
-    if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(Math.atan2(right, fwd)); if (SSx.audio && SSx.audio.crack) SSx.audio.crack(pos); }
+    if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(Math.atan2(right, fwd)); if (SSx.audio && SSx.audio.crack) SSx.audio.crack(pos);
+    // A19 (tester A18: 'a brief yellow bar / glow top right' 243-270 s): that is this cue - the pale-yellow #edge-warn arc for a
+    // shot from a fighter outside the view (no damage) - so it is now named in the sound log (once per 4 s)
+    const sN = SSx.simTime || 0; if (!(sN - (SSx._offViewLogSim || -9) < 4)) { SSx._offViewLogSim = sN; const deg = Math.round(Math.atan2(right, fwd) * 180 / Math.PI); slog('enemy', 'off-view fire warning ' + (deg >= 0 ? 'right ' : 'left ') + Math.abs(deg) + 'deg ' + Math.round(Math.hypot(dx, dz)) + 'm'); } }
   function coverMiss() {
     const SSx = window.SS, w = SSx && SSx.world; if (!w) return null;
     const c = camera.position, ux0 = _muzzle.x - c.x, uz0 = _muzzle.z - c.z, ul = Math.hypot(ux0, uz0) || 1, ux = ux0 / ul, uz = uz0 / ul; // toward the shooter
