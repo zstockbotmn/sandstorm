@@ -2100,6 +2100,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (SSx.hud && SSx.hud.flanked) SSx.hud.flanked(ang); else if (SSx.hud && SSx.hud.edgeWarn) SSx.hud.edgeWarn(ang);
     if (SSx.audio && SSx.audio.crack) SSx.audio.crack(p);
     squadCall('Flanking!'); // A17 (tester A16: '[RADIO] Flanking!' x3 with no FLANKED): the radio line comes only from the tell
+    // A19 (a15 quiet run: tell 247.0 cleared with no outcome, a new tell 250.97 from the same fighter; root cause not found):
+    // a tell still open when the next one starts is closed as one 'flank aborted (superseded)' so every tell has one outcome
+    if (enemy._flankRec && !enemy._flankRec.outcome) { const pr = enemy._flankRec, sN = +(SSx.simTime || 0).toFixed(2); pr.outcome = 'abort'; pr.outSim = sN; SSx.flankSuperseded = (SSx.flankSuperseded | 0) + 1; SSx.flankAborts = (SSx.flankAborts | 0) + 1;
+      slog('enemy', 'flank aborted (superseded)'); const AL = SSx.flankAbortLog || (SSx.flankAbortLog = []); AL.push({ sim: sN, why: 'superseded', id: enemy.id, tell: pr.tellSim }); if (AL.length > 40) AL.shift(); }
     const L = SSx.flankLog || (SSx.flankLog = []); L.push({ tellSim: +(SSx.simTime || 0).toFixed(2), firstHitSim: null, id: enemy.id }); if (L.length > 80) L.shift(); enemy._flankRec = L[L.length - 1]; }
   function enemyShoot(enemy) {
     { const nR = performance.now() / 1000, nS = window.SS ? (window.SS.simTime || 0) : 0; if (enemy.noFireUntilR > nR || enemy.noFireUntilSim > nS) { enemy.shootCd = Math.max(enemy.shootCd || 0, 0.1); return; } } // just relocated: let the player see them first
@@ -2664,7 +2668,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // the street - another free cover >= 4 m from its own at about the same range (a visible reposition); (3) once a wave, a
   // fresh fighter runs in at far cover (26-40 m; the next push moves it up). Sound log: 'enemy advances Nm' / 'enemy repositions Nm' /
   // 'enemy runs in Nm' or 'stall push none (reason)'. SS.stallPushLog [{ sim, kind, from, to, wave }].
-  let waveProgSim = 0, stallPushAt = 14, stallWasActive = false, stallFreshWave = -1, stallWaveStart = 0;
+  let waveProgSim = 0, stallPushAt = 14, stallWasActive = false, stallFreshWave = -1, stallWaveStart = 0, stallLateRuns = { w: -1, n: 0 };
   const STALL_TYPES = ['wall', 'barrel', 'car', 'door', 'alley'];
   let mwWave = -1, mwContactSim = null, mwShots0 = 0, mwAt = 0, mwDone = false, mwPush = [], mwWaitWhy = ''; // A18: mid-wave second beat
   function stallCoverFor(e, aMin, aMax, minMove) { const pz = camera.position.z, here = e.group.position; let best = null, bd = 1e9;
@@ -2720,6 +2724,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (sent) return;
     for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) return stallSend(e, c, 'repositions', a); }
     const wv = Math.max(burstIndex, waveClears + 1);
+    // A19 (a15 quiet W5: 46 s with no push - '4 alive: 1 moving, 1 flanking, 2 elevated, 1 within 9 m'): late in a wave with
+    // nothing pushable, a fresh fighter runs in at 14-22 m (twice a wave at most, < 6 alive) so the pressure still moves
+    if (!cand.length && late && alive.length < 6 && (stallLateRuns.w !== wv || stallLateRuns.n < 2)) { if (stallLateRuns.w !== wv) stallLateRuns = { w: wv, n: 0 };
+      const keep = poolRange; forcePoolRange = [14, 22]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
+      if (ne) { stallLateRuns.n++; ne.engaged = true; ne._suppressOnArrive = 2.5; const a = pz - ne.group.position.z; SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', 'runs in ' + Math.round(a) + 'm (late)');
+        const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), kind: 'runs in', from: Math.round(a), to: Math.round(a), wave: wv, late: true }); if (L.length > 40) L.shift(); return; } }
     if (stallFreshWave !== wv && alive.length < 4) { // A19: no extra far camper when 4+ are already up const keep = poolRange; forcePoolRange = [26, 40]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
       if (ne) { stallFreshWave = wv; ne.engaged = true; const a = pz - ne.group.position.z; // spawns at far cover with its normal entry; the next push moves it up (farthest first)
         SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', 'runs in ' + Math.round(a) + 'm'); const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), kind: 'runs in', from: Math.round(a), to: Math.round(a), wave: wv }); return; } }
@@ -2757,7 +2767,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (quiet && room && (forceSP || Math.random() < 0.5)) {
       let nadeE = null, nadeD = 1e9;
       for (const e of list) { if (!e.alive || e.dying || e.group.position.y >= 0.5) continue; const d = Math.hypot(e.group.position.x - camera.position.x, e.group.position.z - camera.position.z); if (d <= 36 && d < nadeD) { nadeD = d; nadeE = e; } }
-      if (!prevNade && !thisWave.includes('grenade') && (forceSP ? wv % 2 === 1 || !(SSx.setpieces && SSx.setpieces.debugRpg) : Math.random() < 0.5) && nadeE) { throwGrenade(nadeE); spLog('grenade', wv, { pick: 'mid-wave' }); kind = 'grenade'; }
+      if (!prevNade && !thisWave.includes('grenade') && (forceSP ? wv % 2 === 1 || !(SSx.setpieces && SSx.setpieces.debugRpg) : Math.random() < 0.5) && nadeE) { throwGrenade(nadeE); spLog('grenade', wv, { pick: 'mid-wave', camp: +campT.toFixed(1) }); nadeThisWave = true; nadesWave++; campT = 0; slog('grenade', 'thrown ' + Math.round(nadeD) + 'm (mid-wave)'); kind = 'grenade'; } // A19: counts as the wave's one grenade (a15 quiet: a long-camp grenade followed it)
       else if (SSx.setpieces && SSx.setpieces.debugRpg && !thisWave.includes('rpg') && !(SSx.spLog || []).some((x) => x.kind === 'rpg' && x.wave === wv - 1)) { SSx.setpieces.debugRpg(); kind = 'rpg'; } // A19: no RPG right after an RPG wave (director variety)
     }
     if (!kind) {
