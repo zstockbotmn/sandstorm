@@ -219,16 +219,18 @@ export function createSetPieces({ scene, camera, player, hud }) {
       if (s.life <= 0) s.mesh.visible = false;
     }
   }
-  let starvedAt = null;
+  let starvedAt = null, prevWaveT = 0;
   function update(dt) {
     const SS = window.SS || {}, sim = SS.simTime || 0, bursting = !!SS.bursting;
-    if (bursting && !wasBurst) { state.wave += 1; waveT = sim; firedWave = false; // A10: a random moment in the wave (4-18 s), ~65% of waves from wave 2; ?rpg=1 keeps 6 s every wave
+    if (bursting && !wasBurst) { state.wave += 1; prevWaveT = waveT; waveT = sim; firedWave = false; // A10: a random moment in the wave (4-18 s), ~65% of waves from wave 2; ?rpg=1 keeps 6 s every wave
       // A14 (tester: truck -> RPG every wave, predictable): random mode has a per-wave DIRECTOR - wave 1 quiet, then each
       // wave picks one of rpg / grenade (an earlier camping grenade) / truck / quiet, never the same as the last wave, at a
       // varied moment. Forced flags (rpg=1 / truck=1) bypass it and behave as before. SS.spPick = { wave, pick, hist }.
       if (!FORCED_ANY) { const hist = state.wave <= 1 ? [] : ((SS.spPick && SS.spPick.hist) || []), last = hist[hist.length - 1];
         let pick = 'quiet';
-        if (state.wave >= 2) { const W = { rpg: 0.3, grenade: 0.3, truck: 0.25, quiet: 0.15 }; if (last) delete W[last];
+        // A15a: no repeat of last wave's pick NOR of any set piece that actually happened last wave (a long-camp grenade counts).
+        const did = new Set((SS.spLog || []).filter((x) => x.sim >= prevWaveT && x.sim < sim).map((x) => x.kind)); SS.spLastDid = [...did];
+        if (state.wave >= 2) { const W = { rpg: 0.3, grenade: 0.3, truck: 0.25, quiet: 0.15 }; if (last) delete W[last]; for (const k of did) delete W[k];
           let tot = 0; for (const k in W) tot += W[k]; let r = Math.random() * tot; for (const k in W) { r -= W[k]; if (r <= 0) { pick = k; break; } } }
         hist.push(pick); if (hist.length > 12) hist.shift(); SS.spPick = { wave: state.wave, pick, hist, sim };
         fireAt = pick === 'rpg' ? 10 + Math.random() * 16 : -1; } // A13 window 10-26 s kept
