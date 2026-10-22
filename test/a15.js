@@ -61,7 +61,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     if (res.tells.length > res.recs.length + (res.aborts || []).length + 1) fail.push('tells ' + res.tells.length + ' > hits ' + res.recs.length + ' + aborts ' + (res.aborts || []).length);
     if (!res.push.length) fail.push('no stall push in ' + res.waves.length + ' waves (none-found ' + res.counters.stallPushNone + ')');
     // A16b: an 'advances' push must really bring the fighter >= 5 m nearer, measured on ARRIVAL (repositions / runs in are other kinds)
-    for (const q of res.push.filter((x) => x.kind === 'advances')) { if (q.died) continue; if (q.arrived == null) { if (q.cancelled) warn.push('push ' + q.sim + ' cancelled: ' + q.cancelled); else if (q.sim < res.sim - 15) fail.push('stall push ' + q.sim + ' never arrived'); continue; }
+    for (const q of res.push.filter((x) => /^advances/.test(x.kind))) { if (q.died) continue; if (q.arrived == null) { if (q.cancelled) warn.push('push ' + q.sim + ' cancelled: ' + q.cancelled); else if (q.sim < res.sim - 15) fail.push('stall push ' + q.sim + ' never arrived'); continue; }
       if (q.from - q.arrived < 4.5) fail.push('stall push ' + q.sim + ' arrived ' + q.arrived + ' m (from ' + q.from + ', < 5 m nearer)'); }
     // A16b: 'flank aborted' once per attempt (no repeats within 1 s)
     for (let i = 1; i < (res.aborts || []).length; i++) if (res.aborts[i].sim - res.aborts[i - 1].sim < 1) { fail.push('flank aborted repeats (' + res.aborts[i - 1].sim + ', ' + res.aborts[i].sim + ')'); break; }

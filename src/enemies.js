@@ -2649,20 +2649,32 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return best; }
   function stallSend(e, c, kind, from) { const SSx = window.SS, sim = SSx.simTime || 0, pz = camera.position.z;
     if (LOCO2 && e.phase !== 'relocate') { parkCoverStep(e); startReposition(e, c); }
-    else { e.anchor = c; e.home = standPos(c); e.path = pathOnto(e, c); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.exposed = true; e.goal = e.path[0]; }
+    else { e._relocAt = sim; e.anchor = c; e.home = standPos(c); e.path = pathOnto(e, c); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.exposed = true; e.goal = e.path[0]; }
     e.moveKind = 'run'; e._reposWhy = 'stall-' + kind; e.advanced = (e.advanced | 0) + 1;
     try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {}
     SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', kind + ' ' + Math.round(from) + 'm');
     const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 40) L.shift();
     if (e._stallRec && e._stallRec.arrived == null) e._stallRec.cancelled = 'stall'; e._stallRec = rec; } // A16b: arrival (or why not) is filled in on the rec
+  function openBound(e, a) { const cam = camera.position, p = e.group.position; const step = Math.min(7, a - 3); if (step < 5) return null;
+    const side = Math.abs(p.x) > 0.8 ? Math.sign(p.x) : (cam.x <= 0 ? 1 : -1);
+    for (const sx of [side, -side]) for (const ax of [5.2, 3.6]) { const pos = new THREE.Vector3(sx * ax, 0, p.z + step);
+      if (Math.hypot(pos.x - cam.x, pos.z - cam.z) < 2.4 || occupiedBy(pos, e)) continue; if (!clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue;
+      return { pos, type: 'wall', open: true }; }
+    return null; }
   function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0;
     if (!waveActive) { waveProgSim = sim; stallWasActive = false; return; }
     if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3; } // re-arm at each wave start
     if (sim - waveProgSim < stallPushAt) return; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3;
     const pz = camera.position.z, alive = list.filter((e) => e.alive && !e.dying);
-    const cand = alive.filter((e) => !e.pinned && e.phase !== 'relocate' && e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 9)
+    // A17 (tester A16: from ~30 s every push was 'none (no free cover for 1 fighter)' / 'no free ground fighter (2 moving, 1
+    // within 9 m)'): a move stuck > 10 s no longer hides a fighter, a fighter > 7.6 m away counts, and when no nearer free
+    // cover exists the push uses OPEN GROUND - a short exposed dash to a bound >= 5 m nearer (>= 2.4 m from the camera) on
+    // the player's flank side of the street, then its normal kneel/peek there ('advances (open) Nm') - a second pressure beat.
+    const moving = (e) => e.phase === 'relocate' && !(e._relocAt != null && sim - e._relocAt > 10);
+    const cand = alive.filter((e) => !e.pinned && !moving(e) && e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 7.6)
       .sort((a, b) => a.group.position.z - b.group.position.z); // farthest first
-    for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a - 5.5, 2); if (c) return stallSend(e, c, 'advances', a); } // A16b: >= 5 m nearer
+    for (const e of cand) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = stallCoverFor(e, 6, a - 5.5, 2); if (c) return stallSend(e, c, 'advances', a); } // A16b: >= 5 m nearer
+    for (const e of cand) { const a = pz - e.group.position.z, spot = openBound(e, a); if (spot) return stallSend(e, spot, 'advances (open)', a); }
     for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) return stallSend(e, c, 'repositions', a); }
     const wv = Math.max(burstIndex, waveClears + 1);
     if (stallFreshWave !== wv && alive.length < 6) { const keep = poolRange; forcePoolRange = [26, 40]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
@@ -2742,6 +2754,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Hand the run to the existing relocate path. Rise overlaps the first steps. No teleport.
   function startReposition(e, c) {
+    e._relocAt = (window.SS && window.SS.simTime) || 0; // A17: a move stuck > 10 s no longer blocks stall pushes
     if (e._stallRec) { e._stallRec.cancelled = 'moved again (' + (e._reposWhy || '?') + ')'; e._stallRec = null; } // A16b
     e._flankArr = null; // A14: a new move ends flanker status (a flank move re-earns it on arrival)
     e._prevAnchor = e.anchor;
