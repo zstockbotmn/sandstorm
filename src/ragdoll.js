@@ -695,11 +695,17 @@ export function createRagdollSystem(scene) {
 
   function update(dt, cameraZ) {
     if (!phys) return;
-    const step = Math.min(0.1, dt || 0.016);
+    // A19 (tester A18: a corpse hung horizontal ~1 m up for 4 frames): not a collider - at ~1 fps the game clock is capped at
+    // 0.2 s per frame, so a ~0.8 s fall spans 4 frames. While a young doll is still falling, its physics catches up to real
+    // time (up to 3x the frame's game time), so the fall reads in 1-2 frames; settled / old dolls are unaffected.
+    const SSr = (typeof window !== 'undefined' && window.SS) || {}; let k = 1;
+    if (SSr.lastRawDt > 0 && SSr.lastSimDt > 0 && dolls.some((d) => !d.settled && d.age < 2.5)) k = Math.min(3, Math.max(1, SSr.lastRawDt / SSr.lastSimDt));
+    const step = Math.min(0.1 * k, (dt || 0.016) * k);
     acc += step;
     phys.timestep = H;
     let n = 0;
-    while (acc >= H && n < 4) {
+    const nMax = 4 * Math.ceil(k);
+    while (acc >= H && n < nMax) {
       for (let d = 0; d < dolls.length; d++) { if (!dolls[d].settled) limitAndPower(dolls[d]); }
       phys.step(); acc -= H; n++;
       for (let d = 0; d < dolls.length; d++) {
@@ -729,7 +735,7 @@ export function createRagdollSystem(scene) {
         }
       }
     }
-    if (n === 4) acc = Math.min(acc, H); // spiral-of-death guard on slow devices
+    if (n === nMax) acc = Math.min(acc, H); // spiral-of-death guard on slow devices
     const alpha = acc / H;
     for (let d = dolls.length - 1; d >= 0; d--) {
       const doll = dolls[d];
