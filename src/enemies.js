@@ -2723,7 +2723,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (Math.hypot(pos.x - cam.x, pos.z - cam.z) < 2.4 || occupiedBy(pos, e)) continue; if (!clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue;
       return { pos, type: 'wall', open: true }; }
     return null; }
-  function nearCover(e, a) { const cam = camera.position, aMax = Math.min(13, a - 3); let best = null, bd = 1e9;
+  function nearCover(e, a) { const cam = camera.position, aMax = Math.min(13, a - 5); /* A20: >= 5 m nearer (a 16 -> 12 m hop failed a15) */ let best = null, bd = 1e9;
     for (const c of coverPool(STALL_TYPES, [5, 14])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < 6 || az > aMax || Math.abs(c.pos.x) > 11) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(cam); if (d < bd) { bd = d; best = c; } }
     return best; }
@@ -2735,7 +2735,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return null; }
   let assaultAt = -1e9, lastBeatSendSim = -1e9, lastStallSendSim = -1e9;
   function assaultSpot(e) { const cam = camera.position; let best = null, bd = 1e9;
-    for (const c of coverPool(STALL_TYPES, [7, 15])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < 8 || az > 14 || Math.abs(c.pos.x) > 9) continue;
+    for (const c of coverPool(STALL_TYPES, [7, 15])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < 8 || az > 13 || Math.abs(c.pos.x) > 7) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
     if (best) return best;
     const side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1);
@@ -2758,7 +2758,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // A20 (tester A19: W5 all 6 alive 41 s after contact; W4 a group sat 13-23 m out 25+ s): ~40 s into the fight the wave
     // ASSAULTS - every ~6 s two fighters bound (the rest suppress) to 8-14 m, where they are exposed and killable.
     const aStart = (mwContactSim != null ? mwContactSim : stallWaveStart + 6);
-    if (sim - aStart >= 40) { if (sim - assaultAt >= 6 && sim - lastBeatSendSim >= 3) assault(sim); return; }
+    if (sim - aStart >= 40) { if (sim - assaultAt >= 6 && sim - lastBeatSendSim >= 5 && sim - lastStallSendSim >= 5) assault(sim); return; } // A20: never on top of a pair
     if (sim - waveProgSim < stallPushAt) return;
     // A20 (tester A19: pushes came as a burst of 3 in 1.2 s): never right on top of a mid-wave beat push - a clean pair
     if (sim - lastBeatSendSim < 5) return; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3;
