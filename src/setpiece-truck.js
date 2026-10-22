@@ -133,7 +133,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
       if (enemies.dismount) enemies.dismount(e); // re-path from the wreck (else it slides on its old spawn path)
       fighters += 1;
     }
-    run.rec.fighters = fighters; publish();
+    run.rec.fighters = fighters; run.rec.bailSim = +((window.SS && window.SS.simTime) || 0).toFixed(2); if (window.SS) window.SS.truckBailAt = (window.SS.simTime || 0); publish(); // A13: the RPG waits 12 s from here
     if (hud && hud.radio) hud.radio('Truck down - bailing out!', 2200);
     run.phase = 'wreck'; state.phase = 'wreck';
   }
@@ -145,7 +145,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     wasBurst = false; firedWave = false; armed = false; waveT = (window.SS && window.SS.simTime) || 0;
     if (run && run.g) scene.remove(run.g);
     run = null;
-    if (window.SS) window.SS.truckMoment = { count: 0, last: null };
+    if (window.SS) { window.SS.truckMoment = { count: 0, last: null }; window.SS.truckBailAt = null; window.SS.truckPendingWave = false; window.SS.lastFlankHitSim = null; }
   }
   function update(dt, sim) {
     const SS = window.SS || {}; sim = sim || SS.simTime || 0; resetRun(); stepChunks(dt || 0);
@@ -160,6 +160,8 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     else if (run && run.phase === 'crash' && sim - run.crashSim >= 0.6) bail();
     else if (run && run.phase === 'wreck' && camera.position.z < run.cz - 25) { scene.remove(run.g); run = null; state.phase = 'idle'; }
     if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt < 8) && !SS.nadeStarved) start(sim); // A11: a starved grenade goes first // A10: shared set-piece gap
+    // A13: a truck wave in waiting (armed, not started, < 20 s into the wave) holds the RPG until the bail-out + 12 s
+    if (window.SS) window.SS.truckPendingWave = !!(armed && !firedWave && sim - waveT < 20);
   }
   function debugTruck() { return start((window.SS && window.SS.simTime) || 0); }
   function probe() { if (!run) return null; const v = run.g.position.clone(), w = new THREE.Vector3(); run.g.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(run.g); v.project(camera); let vis = true; for (let q = run.g; q; q = q.parent) if (!q.visible) vis = false;

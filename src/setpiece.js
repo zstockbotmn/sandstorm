@@ -221,7 +221,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   function update(dt) {
     const SS = window.SS || {}, sim = SS.simTime || 0, bursting = !!SS.bursting;
     if (bursting && !wasBurst) { state.wave += 1; waveT = sim; firedWave = false; // A10: a random moment in the wave (4-18 s), ~65% of waves from wave 2; ?rpg=1 keeps 6 s every wave
-      fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 4 + Math.random() * 14 : -1; }
+      fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 10 + Math.random() * 16 : -1; } // A13: random mode 10-26 s (middle / late wave; it may fire after the spawn window now)
     wasBurst = bursting;
     if (flying) stepFlight(sim);
     stepVfx(dt || 0);
@@ -234,6 +234,12 @@ export function createSetPieces({ scene, camera, player, hud }) {
     const waveOn = !!(SS.running && player.alive && (bursting || SS.waveActive) && ((SS.engaged | 0) > 0));
     if (flying || !waveOn || firedWave || fireAt < 0 || sim - waveT < fireAt) return;
     if (truck.state.phase === 'drive' || truck.state.phase === 'crash') return; // 5c: never an RPG on top of the truck tell
+    // A13: truck waves - the RPG comes >= 12 s after the bail-out (measured from the bail, not the crash); none while the
+    // wave's truck is still pending
+    if (SS.truckPendingWave) return;
+    if (SS.truckBailAt != null && SS.truckBailAt >= waveT - 0.5 && sim >= SS.truckBailAt && sim - SS.truckBailAt < 12) return;
+    // A13 (random mode only): a lull of 4.5 s after a rifle flank hit before an RPG may launch; forced mode unchanged
+    if (!forced && SS.lastFlankHitSim != null && sim - SS.lastFlankHitSim >= 0 && sim - SS.lastFlankHitSim < 4.5) return;
     if (SS.setPieceAt != null && sim - SS.setPieceAt < 8) return; // A10: one shared set-piece gap (RPG / truck / grenade)
     // A11: a starved camping grenade goes first (the forced RPG used to keep starving it). A12: but only for 6 s - with no
     // thrower in range the grenade can stay 'starved' for the rest of the wave, which cancelled the RPG (wave 3, rpg=1).
