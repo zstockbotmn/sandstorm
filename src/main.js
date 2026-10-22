@@ -548,6 +548,12 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     best.health = Math.max(best.health, 80); best.takeHit(spec[0], pt); window.SS.lastDebugHit = { zone, got: best.lastHitZone || null }; return best; };
   // A5 tester: H / HURT = -30 HP through the normal damage path (vignette, regen delay), never below 5 (no debug deaths)
   window.SS.debugHurt = () => { const pl = window.SS.player; if (!pl || !pl.alive) return null; const n = Math.max(0, Math.min(30, pl.health - 5)); if (n > 0) pl.damage(n, null, 'debug'); return pl.health; };
+  // A21 (tester A20: the heal flash could not be caught at low fps): J / MEDKIT / ?medtest=1 = -30 HP (debug path), then a medkit
+  // dropped 2 m ahead of the player; it auto-collects ~0.6 s later and fires the heal flash + '+HP HEALED'. ?medtest=1 repeats every 20 s.
+  window.SS.debugMedTest = () => { const pl = window.SS.player; if (!pl || !pl.alive) return null; window.SS.debugHurt(); const yaw = window.SS.input ? window.SS.input.yaw : 0;
+    const p = new THREE.Vector3(camera.position.x + Math.sin(yaw) * 2, 0, camera.position.z - Math.cos(yaw) * 2); stakes.drop('health', p);
+    try { audio.log('debug', 'medtest: hurt -> ' + Math.round(pl.health) + ', medkit dropped 2m'); } catch (_) {} window.SS.medTests = (window.SS.medTests | 0) + 1; return pl.health; };
+  if (/[?&]medtest=1\b/.test(location.search)) { let mtNext = 8; setInterval(() => { const SSm = window.SS; if (!SSm.running || !SSm.player || !SSm.player.alive) return; if ((SSm.simTime || 0) >= mtNext) { mtNext = (SSm.simTime || 0) + 20; SSm.debugMedTest(); } }, 500); }
   // A13 (tester could not reach a walk-in room): G / ?room=1 (needs bld=4) clears the fight, jumps the walk to the nearest
   // 'room' cover point ahead (else the nearest one), stands on the rail 2.5 m short of the doorway facing it and holds the
   // walk until G is pressed again (or 25 s pass). SS.lastRoomJump records it.
@@ -593,6 +599,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
   window.addEventListener('keydown', (e) => { if (!window.SS.running) return; if (e.key === 'k' || e.key === 'K') window.SS.debugKillNearest();
     else if (e.key === 'm' || e.key === 'M') window.SS.debugMoveNearest();
     else if (e.key === 'h' || e.key === 'H') window.SS.debugHurt();
+    else if (e.key === 'j' || e.key === 'J') window.SS.debugMedTest();
     else if (e.key === 'g' || e.key === 'G') window.SS.debugToRoom(); // R is reload
     else if (e.key === 'w' || e.key === 'W') window.SS.debugRoomWalk();
     else if (e.key === 'l' || e.key === 'L') window.SS.debugHitNearest('legL'); else if (e.key === 'a' || e.key === 'A') window.SS.debugHitNearest('armL'); else if (e.key === 't' || e.key === 'T') window.SS.debugHitNearest('torso'); });
@@ -605,6 +612,9 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     { const hb = document.createElement('button'); hb.id = 'dbg-hurt'; hb.textContent = 'HURT';
       hb.style.cssText = 'position:fixed;right:8px;top:204px;z-index:30;font:600 11px monospace;color:#fff;background:rgba(170,40,90,.85);border:0;border-radius:4px;padding:4px 8px';
       hb.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (window.SS.running) window.SS.debugHurt(); }); document.body.appendChild(hb); }
+    { const mb = document.createElement('button'); mb.id = 'dbg-med'; mb.textContent = 'MEDKIT';
+      mb.style.cssText = 'position:fixed;right:8px;top:232px;z-index:30;font:600 11px monospace;color:#fff;background:rgba(30,140,70,.85);border:0;border-radius:4px;padding:4px 8px';
+      mb.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (window.SS.running) window.SS.debugMedTest(); }); document.body.appendChild(mb); }
     [['LEG', 'legL', 92], ['ARM', 'armL', 120], ['TORSO', 'torso', 148]].forEach(([label, zone, top]) => { const hb = document.createElement('button'); hb.id = 'dbg-hit-' + zone; hb.textContent = label;
       hb.style.cssText = 'position:fixed;right:8px;top:' + top + 'px;z-index:30;font:600 11px monospace;color:#fff;background:rgba(150,110,20,.85);border:0;border-radius:4px;padding:4px 8px';
       hb.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (window.SS.running) window.SS.debugHitNearest(zone); }); document.body.appendChild(hb); }); }
