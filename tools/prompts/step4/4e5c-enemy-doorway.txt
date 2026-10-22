@@ -1,0 +1,16 @@
+STEP 4e5c (OPTIONAL, after 4e5b; behind ?bld=4, not Ultra-low, off with ?rooms=0; without bld=4 NOTHING may change incl.
+rng() order). Edit ONLY src/enemies.js. Do not explore: rg -n "function coverPool|const FAR =|function farHide|function
+edgePeek|moveKind = 'walk'|function pickAnchor|anchor = " src/enemies.js and read ~15 lines around each. Then edit in one go;
+node --check src/enemies.js. No tests, browsers, builds; do NOT git commit.
+Goal: at most ONE fighter per wave uses another room's doorway as cover, moving like a person.
+1) When choosing a ground anchor for a new or relocating fighter (not elevated, not truck crew), with probability 0.35
+   and if no other live fighter has kind 'door': coverPool(['room'], [10, 40]) filtered to points with p.door, whose
+   door.z differs from SS.doorStop.room[1] by > 2 m (never the player's door), not occupied (occupiedBy). Use it.
+2) Movement for a 'room' anchor: a 2-waypoint route: W1 = (door.x - side*1.5, door.z) on the street, then W2 =
+   (door.x + side*0.6, door.z + 0.45) inside beside the +z jamb. moveKind 'walk' for the last 3 m (no run, no pop), the
+   body turns to face the street at W2. Hide = W2; peek = (door.x + side*0.15, door.z + 0.2) (steps to the opening edge).
+   FAR.room / EDGE.room are not used; add the case to farHide/edgePeek with these points.
+3) Never spawn inside a room: if the spawn point would be within 1 m of W2, spawn at W1 + 4 m down the street instead.
+4) Publish SS.doorEnemy = { count, last: { id, room:[x,z], reachedSim, peeks } } per run (reset in reset()).
+Accept: node --check; at most one doorway fighter alive; it is visible walking in (not teleported), stops at W2 facing out,
+peeks from the opening; its kills/hits use the normal paths.

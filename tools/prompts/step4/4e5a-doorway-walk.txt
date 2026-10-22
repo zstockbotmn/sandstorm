@@ -1,0 +1,45 @@
+STEP 4e5a (behind ?bld=4 only, never Ultra-low, off with ?rooms=0; without bld=4 NOTHING may change, including rng() order).
+Edit ONLY src/world.js, src/enemies.js, src/main.js and a NEW src/doorstop.js. Do not explore: read
+- world.js: rg -n "function addRoom|type: 'room'" src/world.js and ~15 lines around each (the jamb boxes are the two
+  addBox(seg, matPlaster, X(0.15), ...) lines);
+- enemies.js: rg -n "let breatherTo|breatherTo = window.SS.distance|SS.walking = window.SS.forceWalk|^  return api|const api" src/enemies.js (~5 lines each);
+- main.js: rg -n "if \(window.SS.walking && !frozen\)|const cover = createCover|import \{ createCover" src/main.js (~5 lines each).
+Then write everything in one go; node --check each edited file. No tests, browsers, builds; do NOT git commit.
+Goal: once per run the walk curves smoothly into a room doorway and halts there for the next wave.
+1) world.js addRoom: on the {type:'room'} cover point add door: { x: facadeX, z: zc, side, w: 1.2, jamb: new THREE.Box3(
+   new THREE.Vector3(Math.min(X(0), X(0.3)), 0, zc - W/2), new THREE.Vector3(Math.max(X(0), X(0.3)), RH, zc - 0.6)) }
+   (the -z jamb; use the same numbers the jamb addBox uses). No rng() calls, nothing else changes.
+2) enemies.js: add api.deferWaveTo(d) { if (!waveActive) breatherTo = Math.max(breatherTo, d); } and api.waveNow() {
+   if (!waveActive) { breatherTo = window.SS.distance; calmUntil = -1e9; if (window.SS) window.SS.calmUntil = null; } }.
+   Walk gate: (!hold && !window.SS.roomHold && !window.SS.doorHold).
+3) NEW src/doorstop.js: export function createDoorStop(camera, world, input, enemies, cover). ON = BLD4 (/[?&]bld=4/) &&
+   SS.quality !== 'ultra-low' && !/[?&]rooms=0\b/. rec = SS.doorStop = { count:0, state:'idle', inWalkS:0, outWalkS:0 }.
+   update(dt, walking): if !ON or !SS.running return.
+   - idle: if rec.count === 0 && (SS.waveClears|0) >= 1 && walking: find the room cover point with p.door whose door.z is
+     16-40 m ahead (camera.z - door.z); skip a door if any world.colliders box (Box3.setFromObject, cache per door) lies
+     within 0.6 m of 12 samples of the path. Found: rec.count = 1, state 'veer', build path, enemies.deferWaveTo(
+     SS.distance + pathLen + 1), rec.room = [x, z], rec.side, rec.veerSim = SS.simTime.
+   - path IN: cubic Bezier (x,z): P0 = camera (x,z); P1 = (camera.x, camera.z - 0.45*(camera.z - door.z)); P2 = (door.x -
+     side*2.5, door.z + 0.3); P3 = stand spot S = (door.x + side*0.45, door.z - 0.6 + 0.45). Precompute 64 samples with
+     cumulative length. Each frame while state 'veer' and NOT held by enemies (SS.walking true): s += SPEED(3)*dt, set
+     camera x/z from the sample at s, SS.distance += (z decrease), rec.inWalkS += dt. main.js must skip its own z step
+     while SS.doorStop.state is 'veer' or 'out' (return true from update = "I moved the camera").
+   - yaw: while veer/out and (performance.now() - (input.aimMovedT||0)) > 400: ease input.yaw toward atan2(tx, -tz) of
+     the path tangent with k = 1 - exp(-3*dt); during the last 20% of IN ease toward down-the-street-and-out
+     (atan2(-side*0.5, 1)... i.e. facing -z, turned 25 deg to the street). Never set yaw directly.
+   - arrival (s >= len): state 'held', SS.doorHold = true, rec.arriveSim, clears0 = SS.waveClears, enemies.waveNow(),
+     cover.takeDoor && cover.takeDoor(door) (4e5b adds it; guard).
+   - held: when (SS.waveClears|0) > clears0 or 90 s after arrival: SS.doorHold = false, state 'out', path OUT: P0 = S,
+     P1 = (door.x - side*2.5, door.z - 0.3), P2 = (0, door.z - 9), P3 = (0, door.z - 16); advance like IN, add to
+     rec.outWalkS; end -> state 'done', camera.x = 0 exactly only if |x| < 0.02 (else leave it; cover drift finishes).
+   - If enemies hold the walk mid-curve (SS.walking false while veer/out): do not move; cover.update runs as usual;
+     resume the curve when walking again (if cover moved the camera, rebuild the remaining path from the camera).
+   - resetRun hook: export reset() -> rec fresh, SS.doorHold = false (call it next to cover.reset() in main.js).
+   Tune P1/P3 distance so inWalkS + outWalkS ~ 11 s (+-1.5): each path ~16-17 m; publish rec.inLen / rec.outLen.
+4) main.js: import createDoorStop, create after cover; in simStep: const moved = doorStop.update(dt, SS.walking &&
+   SS.running && !frozen); then `if (window.SS.walking && !frozen && !moved) { ...z step... }`. While state is 'veer' or
+   'out', pass walking=false to cover.update's x-drift? NO: call cover.update(dt, walking) as before but cover.js must not
+   drift x while SS.doorStop.state is veer/out (one-line guard in cover.update's walking branch:
+   if (!(SS.doorStop && /veer|out/.test(SS.doorStop.state))) the drift line).
+Accept: node --check passes on all four files; without bld=4 no code path calls rng() differently (doorstop does nothing);
+with rooms=0 or Ultra-low SS.doorStop.count stays 0; the curve is C1 (Bezier, no snap) and enters through the opening.

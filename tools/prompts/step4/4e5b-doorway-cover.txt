@@ -1,0 +1,21 @@
+STEP 4e5b (after 4e5a; behind ?bld=4 only; without bld=4 NOTHING may change). Edit ONLY src/cover.js, src/hud.js,
+src/enemies.js. Do not explore: read cover.js lines 20-100 (pick, update, relocate); rg -n "IN COVER|function setStance"
+src/hud.js (~8 lines); rg -n "function coverFacing|function inFrontArc|const duckedA8|player.damage\(|\.damage\(" src/enemies.js
+(~4 lines each). Then edit in one go; node --check each file. No tests, browsers, builds; do NOT git commit.
+Goal: the door frame is real cover with the normal ducked rules.
+1) cover.js: c.takeDoor(door): clearSpawned(); c.surface = door.jamb.clone(); c.kind = 'door'; c.door = door;
+   c.target = new THREE.Vector3(door.x + door.side*0.45, 0, door.jamb.max.z + PLAYER_R*0.8); c.state = 'moving'.
+   In update(): when c.kind === 'door' never call pick() (if !c.target and c.door, re-take the door). relocate() while
+   kind 'door' returns false (SWITCH COVER does nothing at the door; a grenade at the door: allowed to relocate out to the
+   street with the existing pick(cur, dir) - then kind changes and the door stop's 'held' still waits for the clear).
+   The "never enter the cover" clamp is z-based: for kind 'door' skip it (the stand spot is beside the jamb, not behind).
+   Pop-out: while kind 'door' and input.scope, offset camera.x by -side*0.35 toward the street (ease 8/s), back when
+   ducked. On walking (state reset) clear c.door.
+2) enemies.js: no rule changes needed - coverFacing uses SS.cover.surface (now the jamb), so shooters down the street are
+   front arc. Add counters only: where the player takes rifle damage, if SS.cover.kind === 'door' && input.cover:
+   SS.doorStop.duck[inFrontArc(enemy.group.position) ? 'front' : 'flank']++ (guard SS.doorStop; init duck {front:0,flank:0}).
+   Also count ducked front-arc SHOTS at the door (SS.doorStop.duck.frontShots) so a 0-hit result is not just "no shots".
+3) hud.js: where the IN COVER tag text is set, show 'IN COVER · DOORWAY' when SS.cover && SS.cover.kind === 'door'
+   (no numbers; same styling).
+Accept: node --check; with the player held at the door and ducked, duck.front stays 0 while duck.frontShots > 0;
+flankers still need the FLANKED tell; cover tag text changes only at the door.

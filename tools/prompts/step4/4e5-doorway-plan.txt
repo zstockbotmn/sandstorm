@@ -1,0 +1,52 @@
+4e5 DOORWAY COVER STOP — plan (PM approved 8:46 PM as part of 4e; run AFTER 4e1-4e4, which also edit addRoom)
+
+Spec: once per run, bld=4 on Low/High, the walk curves (smooth, no snap) into a room doorway; auto cover takes the door
+frame with the lit room behind the player, who fights out to the street from it. Normal ducked protection at the frame
+(front arc blocked, same flank rules). Optional: an enemy uses ANOTHER room's doorway as cover, walking in like a person.
+Off with ?rooms=0 (doorway stop and enemy doorway use off; rooms still drawn - flag this to PM if they meant "no rooms").
+Ultra-low unchanged (no rooms there). Detour walk (curve in + curve out, walking time only, fight excluded) ~11 s.
+
+What the code does today (read 8:50 PM):
+- Walk: main.js simStep: `if (SS.walking && !frozen) { camera.position.z -= SPEED*dt; SS.distance += SPEED*dt }`, SPEED 3.
+  cover.update(dt, walking): while walking, x drifts back to 0 (rate 1.5) and cover state resets; when the walk halts,
+  pick() takes the nearest barrel/car ahead (<= 7 m, |x| <= 4.4) or drops sandbags, moves there at 4.5 m/s, ducks.
+- Walk halts: enemies.js ~3169 `SS.walking = forceWalk ?? (!hold && !SS.roomHold)`; hold = engaged fighters / waveActive.
+  Waves start when distance >= breatherTo (set to distance + 10-15 m after each clear) and calm has elapsed.
+- Protection: enemies.js coverFacing() = direction from the camera to the nearest point of SS.cover.surface (a Box3);
+  inFrontArc (60 deg) -> ducked = misses only; outside the arc = flank (1.5 s FLANKED tell, then hits) needing a clear
+  line (clearToEye).
+- Rooms (world.js addRoom, 4c2): facade at facadeX, side = +-1, door centred zc, opening 1.2 m wide x 2.2 m, jambs are
+  0.3 m plaster boxes at X(0.15) (X(a) = facadeX + side*a, so +a goes INTO the room), room 3.8 m deep, lit interior.
+  It pushes one cover point {type:'room', pos: X(1.0), 1.2, zc+0.9} that nothing uses. Max 1 room per segment, 35%,
+  segments with originZ < -30, never Ultra-low. Enemy anchors come from coverPool(types) over seg.coverPoints.
+- Debug A13: SS.debugToRoom (G / &room=1) jumps + holds via SS.roomHold.
+
+Design:
+1. world.js addRoom adds door data to the room cover point (no rng() calls, nothing else changes):
+   p.door = { x: facadeX, z: zc, side, w: 1.2, jamb: Box3 of the jamb on the -z side (the one facing down the street) }.
+2. New src/doorstop.js (createDoorStop(camera, world, enemies, cover, input)), update(dt) called from simStep BEFORE the
+   walk line. Once per run (SS.doorStop.count <= 1), after wave 1 has cleared (SS.waveClears >= 1), when not held and a
+   room door is 16-40 m ahead: lock it, set state 'veer', ask enemies to defer the next wave until arrival
+   (enemies.deferWaveTo(dist)). Path = cubic Bezier in x/z from (x0, zd + L) to the threshold spot T inside the door:
+   P1 straight ahead, P2 on the street 2.5 m out from the facade level with the door, so the last part is perpendicular
+   to the facade (enters through the opening, never through the wall). Advance along it by arc length at SPEED, so the
+   path speed matches the normal walk; SS.distance still advances by the z progress. Yaw eases (k = 1-exp(-3 dt)) toward
+   the path tangent only while the player is not dragging (input.aimMovedT older than 400 ms), no snap.
+   Arrival: state 'held', SS.doorHold = true (walk gate like roomHold), enemies.waveNow(), cover.takeDoor(door).
+   Leave when the wave clears (waveClears increases) or 90 s safety: state 'out', mirror Bezier back to x=0 ~L ahead,
+   then 'done'. L chosen so in + out walking ~ 11 s (~16-17 m each way at 3 m/s; verify with the measured inWalkS/outWalkS).
+3. cover.js: c.takeDoor(door): target = stand spot just inside, pressed to the -z jamb (x = X(0.45), z = jamb.max.z +
+   PLAYER_R*0.8), c.surface = jamb box, c.kind = 'door', state moving->in (existing code). While held by the door stop,
+   pick() is never called. Pop-out (scope) leans 0.35 m toward the street (x) so the street ahead is visible.
+   Protection then comes for free: coverFacing points at the jamb (down the street, slightly out), so shooters ahead
+   are front arc; shooters across / behind are flankers with the normal tell.
+4. HUD: the cover tag reads "IN COVER · DOORWAY" (no numbers). Doorway lit room stays behind the player.
+5. Optional enemy (4e5c): one fighter per wave may take a DIFFERENT room's doorway (door 10-40 m ahead of the player,
+   not the player's door) as its anchor: it walks (moveKind 'walk', no run-pop) along the street to 1.5 m out from the
+   door, turns, walks in to X(0.6) beside the +z jamb, and peeks out from there. It never spawns inside.
+6. Flags: active only if BLD4 && quality !== 'ultra-low' && !/[?&]rooms=0\b/. Records: SS.doorStop = { count, state, room:
+   [x,z], side, inWalkS, outWalkS, veerSim, arriveSim, leaveSim, coverKind, duck: { front, flank } } where duck counts
+   damage events while ducked at the door, split by inFrontArc.
+Risks: a wave can start during the veer if defer fails -> walk halts mid-curve: then cover.pick() as normal and the door
+stop resumes the curve after the clear. Path must not cross colliders (cars/barrels near the door): if pick of the path
+finds a collider within 0.6 m of a sample, skip that door. Personal-space push (2.4 m) could shove fighters near the door.

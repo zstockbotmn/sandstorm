@@ -140,3 +140,16 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - Debug: ?debug&bld=4 then G (R is reload) jumps to 2.5 m short of the nearest room doorway ahead, facing it, holds the
   walk (G again or 25 s resumes; enemies reset). &room=1 does it at start.
 - Notes: RPG hitting IN COVER -> A13 item 1 (shielded ~45%, '(RPG, cover)'). Natural wave-3 truck without truck=1 = intended.
+
+## 4e5 — doorway cover stop (PM approved 8:46 PM, part of 4e) — DRAFTED, NOT RUN
+- Plan: tools/prompts/step4/4e5-doorway-plan.txt. Grok chunks: 4e5a-doorway-walk (world door data, enemies
+  deferWaveTo/waveNow + doorHold gate, new src/doorstop.js Bezier veer in/out, main hook), 4e5b-doorway-cover (cover.takeDoor,
+  jamb = cover surface so the normal front arc/flank rules apply, door duck counters, HUD 'IN COVER · DOORWAY'),
+  4e5c-enemy-doorway (optional: one fighter per wave walks into another room's doorway).
+- Test draft: test/doorway-stop.js (once only, IN COVER kind 'door' ducked, front hits 0 with front shots > 0, detour
+  walk 11 +- 1.5 s, absent with rooms=0 and Ultra-low, frame screenshot). syntax-checked only.
+- Interpretations to confirm with PM: "walk ~11 s" = the detour's walking time (in + out, fight excluded);
+  ?rooms=0 turns off the doorway stop + enemy doorway use (rooms are still drawn).
+- Order (after the tester finishes A13; one heavy job at a time): 4e1 -> 4e2 -> 4e3 -> 4e4 -> 4e5a -> 4e5b -> build +
+  test/doorway-stop.js -> 4e5c -> step4 shots/perf regressions (tools/step4-runs.sh) -> rpg-forced/a11 quick reruns -> preview.
+  Not merged with 4e1: 4e1-4e4 all edit addRoom; 4e5a only adds door data on top.
