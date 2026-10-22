@@ -2336,7 +2336,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function squadCall(text) {
     const hud = window.SS && window.SS.hud;
-    if (hud && typeof hud.callout === 'function') hud.callout(text, /Moving|moving up|Flanking|Grenade|rushing/.test(text));
+    if (hud && typeof hud.callout === 'function') hud.callout(text, /Moving|moving up|Flanking|Grenade|rushing|charging|running|gone/.test(text));
     if (window.SS && /Flanking/.test(text)) { const L = window.SS.flankCallLog || (window.SS.flankCallLog = []); L.push(+(window.SS.simTime || 0).toFixed(2)); if (L.length > 80) L.shift(); } // A17: test hook
   }
 
@@ -2729,7 +2729,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (LOCO2 && e.phase !== 'relocate') { parkCoverStep(e); startReposition(e, c); }
     else { e._relocAt = sim; e.anchor = c; e.home = standPos(c); e.path = pathOnto(e, c); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.exposed = true; e.goal = e.path[0]; }
     e.moveKind = 'run'; e._reposWhy = 'stall-' + kind; e.advanced = (e.advanced | 0) + 1;
-    if (!/^fallback/.test(kind) && !(kind === 'assault' && cxPhase === 'active')) try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {} // A21: the climax / fallback have their own radio line
+    if (!/^(fallback|flees|last rush)/.test(kind) && !(kind === 'assault' && cxPhase === 'active')) try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {} // A21: the climax / fallback have their own radio line
     SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', /retreat/.test(kind) ? 'fallback (retreat)' : kind + ' ' + Math.round(from) + 'm');
     const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0))), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 120) L.shift(); // A21: was 40 - fallback sends filled it and dropped wave 2
     if (e._stallRec && e._stallRec.arrived == null) e._stallRec.cancelled = 'stall'; e._stallRec = rec; } // A16b: arrival (or why not) is filled in on the rec
@@ -2942,6 +2942,36 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (c) { const az = camera.position.z - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0)); stallSend(e, c, 'fallback', az); nFb++; }
       else { stallSend(e, retreatSpot(e), 'fallback (retreat)', camera.position.z - e.group.position.z); nRet++; } }
     SSx.fallbackLog = (SSx.fallbackLog || []).concat([{ sim: +sim.toFixed(1), wave: cxWave, n: nFb + nRet, retreat: nRet }]).slice(-20);
+  }
+  // A22 (tester A21 W4: the last fighter camped behind the green jeep wreck at 13-17 m for ~250 s): after 25-30 s alone the
+  // last survivor BREAKS, ~50/50: a desperate rush to 5-9 m in the open (radio 'He's charging!'; killable), or he runs out
+  // of the fight (radio 'He's running!'; despawned 40+ m out or after 9 s -> 'last enemy fled', the wave clears).
+  // A rusher still alive 20 s after the rush flees. SS.lastStandForce = 'rush' | 'flee' pins the pick (tests).
+  let lsWave = -1, lsId = null, lsSince = 0, lsDue = 0, lsMode = null, lsAt = 0, lsDone = false;
+  function lastStand() {
+    const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
+    if (!waveActive) { lsWave = -1; lsId = null; lsMode = null; lsDone = false; return; }
+    const wv = Math.max(burstIndex, waveClears + 1); if (wv !== lsWave) { lsWave = wv; lsId = null; lsMode = null; lsDone = false; }
+    const alive = list.filter((e) => e.alive && !e.dying);
+    if (alive.length !== 1 || waveSpawned < burstCap || truckPending > 0 || cxPhase === 'tell' || cxPhase === 'active') { if (!lsMode) lsId = null; return; }
+    const e = alive[0];
+    if (lsId !== e.id) { lsId = e.id; lsSince = sim; lsDue = sim + 25 + Math.random() * 5; lsMode = null; }
+    const cam = camera.position, dz = cam.z - e.group.position.z, d = Math.hypot(e.group.position.x - cam.x, dz);
+    const rec = (mode, extra) => { const L = SSx.lastStandLog || (SSx.lastStandLog = []); const o = Object.assign({ wave: wv, id: e.id, mode, sim: +sim.toFixed(1), alone: +(sim - lsSince).toFixed(1), dist: +d.toFixed(1) }, extra || {}); L.push(o); if (L.length > 30) L.shift(); return o; };
+    const flee = (why) => { lsMode = 'flee'; lsAt = sim; e.pinned = false; e._flankMove = false; e._flankArr = null; e._lastRush = false;
+      const sx = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : 1; stallSend(e, { pos: new THREE.Vector3(sx * 4.5, 0, cam.z - 55), type: 'wall', open: true }, 'flees', d); e.noFireUntilSim = sim + 30; // a runner doesn't shoot back (after stallSend: relocation resets the clock)
+      slog('enemy', 'last enemy breaks: flee from ' + Math.round(d) + 'm' + (why || '')); try { squadCall("He's running!"); } catch (_) {} rec('flee'); };
+    if (!lsMode) { if (sim < lsDue || lsDone) return;
+      const f = SSx.lastStandForce; let mode = f === 'rush' || f === 'flee' ? f : (Math.random() < 0.5 ? 'rush' : 'flee');
+      if (mode === 'rush' && (e.group.position.y > 0.5 || (e.anchor && isElevated(e.anchor.type)))) mode = 'flee'; // a roof shooter can't charge the street
+      if (mode === 'rush') { const side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1); let spot = null;
+        for (const az of [5 + Math.random() * 4, 7, 6, 8.5]) { for (const sx of [side, -side]) for (const ax of [2.2, 3.6]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az); if (occupiedBy(pos, e) || !clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue; spot = { pos, type: 'wall', open: true, near: true }; break; } if (spot) break; }
+        if (!spot) mode = 'flee';
+        else { e.pinned = false; e.staggerT = 0; e._flankMove = false; e._flankArr = null; stallSend(e, spot, 'last rush', d); e._suppressOnArrive = 0; e._suppressUntilSim = -1; e._lastRush = true; lsMode = 'rush'; lsAt = sim;
+          slog('enemy', 'last enemy breaks: rush ' + Math.round(d) + 'm -> ' + Math.round(cam.z - spot.pos.z) + 'm'); try { squadCall("He's charging!"); } catch (_) {} rec('rush', { to: +(cam.z - spot.pos.z).toFixed(1) }); return; } }
+      flee(); return; }
+    if (lsMode === 'rush' && sim - lsAt > 20) { flee(' (after the rush)'); return; } // survived the charge: he runs
+    if (lsMode === 'flee' && (d > 40 || sim - lsAt > 9)) { slog('wave', 'last enemy fled'); try { squadCall('He\'s gone. Clear!'); } catch (_) {} rec('fled'); lsMode = 'gone'; lsDone = true; despawn(e); SSx.lastFled = (SSx.lastFled | 0) + 1; }
   }
   function waveClimax() {
     const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
@@ -3398,7 +3428,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function update(dt) {
     if (window.SS) window.SS.pressureP = +pressureP().toFixed(2);
     if (HITS2) { try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {} }
-    updateGrenades(dt); updateTruck(dt); if (REPOS) stallPush(); midWaveBeat(); waveClimax();
+    updateGrenades(dt); updateTruck(dt); if (REPOS) stallPush(); midWaveBeat(); waveClimax(); try { lastStand(); } catch (err) { reportErr('lastStand', err); }
     const diff = difficulty();
     phaseT -= dt;
     const alive = aliveCount();
@@ -3699,7 +3729,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; }
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; }
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
