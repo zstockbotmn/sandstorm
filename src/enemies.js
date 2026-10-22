@@ -2519,7 +2519,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function enterCover(enemy, hold) {
-    if (enemy._stallRec) { const r = enemy._stallRec; enemy._stallRec = null; r.arrived = Math.round(camera.position.z - enemy.group.position.z); r.arriveSim = +((window.SS && window.SS.simTime) || 0).toFixed(1); r.atTarget = enemy.anchor && r.to != null ? Math.abs(Math.round(camera.position.z - enemy.anchor.pos.z) - r.to) <= 1 : null; }
+    if (enemy._suppressOnArrive) { const sNow = (window.SS && window.SS.simTime) || 0; enemy._suppressUntilSim = sNow + enemy._suppressOnArrive; enemy._suppressOnArrive = 0; hold = Math.min(hold != null ? hold : 0.3, 0.3); try { squadCall('Suppressing!'); } catch (_) {} } // A19: pushed fighters open up from their new spot
+    if (enemy._stallRec) { const r = enemy._stallRec; { const cp = camera.position, gp = enemy.group.position, dP = Math.hypot(gp.x - cp.x, gp.z - cp.z); r.arrivedPlayer = +dP.toFixed(1); slog('enemy', (r.kind || 'push') + ' arrived ' + (dP < 10 ? dP.toFixed(1) : Math.round(dP)) + 'm from player'); } // A19 (tester A18: 'advances (open) 10m' ended 2-3 m from the car): the start line gives the START distance; this is where it ended
+      enemy._stallRec = null; r.arrived = Math.round(camera.position.z - enemy.group.position.z); r.arriveSim = +((window.SS && window.SS.simTime) || 0).toFixed(1); r.atTarget = enemy.anchor && r.to != null ? Math.abs(Math.round(camera.position.z - enemy.anchor.pos.z) - r.to) <= 1 : null; }
     enemy._repositioning = false;
     if (enemy._flankMove) { enemy._flankMove = false; enemy._flankArr = enemy.group.position.clone(); /* A14: the only fighter whose rounds can be flank hits */ const SSx = window.SS; if (SSx && flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(enemy, 'cap'); /* A16: no tell once the wave's flank budget is spent */ else if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
     enemy.phase = 'takeCover';
@@ -2658,7 +2660,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // the street - another free cover >= 4 m from its own at about the same range (a visible reposition); (3) once a wave, a
   // fresh fighter runs in at far cover (26-40 m; the next push moves it up). Sound log: 'enemy advances Nm' / 'enemy repositions Nm' /
   // 'enemy runs in Nm' or 'stall push none (reason)'. SS.stallPushLog [{ sim, kind, from, to, wave }].
-  let waveProgSim = 0, stallPushAt = 14, stallWasActive = false, stallFreshWave = -1;
+  let waveProgSim = 0, stallPushAt = 14, stallWasActive = false, stallFreshWave = -1, stallWaveStart = 0;
   const STALL_TYPES = ['wall', 'barrel', 'car', 'door', 'alley'];
   let mwWave = -1, mwContactSim = null, mwShots0 = 0, mwAt = 0, mwDone = false, mwPush = []; // A18: mid-wave second beat
   function stallCoverFor(e, aMin, aMax, minMove) { const pz = camera.position.z, here = e.group.position; let best = null, bd = 1e9;
@@ -2691,7 +2693,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     return null; }
   function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0;
     if (!waveActive) { waveProgSim = sim; stallWasActive = false; return; }
-    if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3; } // re-arm at each wave start
+    if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallWaveStart = sim; stallPushAt = 12 + Math.random() * 3; } // re-arm at each wave start
     if (sim - waveProgSim < stallPushAt) return; waveProgSim = sim; stallPushAt = 12 + Math.random() * 3;
     const pz = camera.position.z, alive = list.filter((e) => e.alive && !e.dying);
     // A17 (tester A16: from ~30 s every push was 'none (no free cover for 1 fighter)' / 'no free ground fighter (2 moving, 1
@@ -2701,12 +2703,20 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const moving = (e) => e.phase === 'relocate' && !(e._relocAt != null && sim - e._relocAt > 10);
     const cand = alive.filter((e) => !e.pinned && !moving(e) && e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove && pz - e.group.position.z > 7.6)
       .sort((a, b) => a.group.position.z - b.group.position.z); // farthest first
-    for (const e of cand) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = stallCoverFor(e, 6, a - 5.5, 2); if (c) return stallSend(e, c, 'advances', a); } // A16b: >= 5 m nearer
-    for (const e of cand) { const a = pz - e.group.position.z, spot = openBound(e, a); if (spot) return stallSend(e, spot, 'advances (open)', a); }
-    for (const e of cand) { const a = pz - e.group.position.z, spot = openBoundNear(e, a); if (spot) return stallSend(e, spot, 'advances (open)', a); }
+    // A19 (tester A18 W4: 5-6 fighters camped ~25 m for 60+ s; one 5-7 m hop per 12-15 s never closed the gap): once the wave
+    // is >= 28 s old a push sends a PAIR (one bounds while the other covers) and goes for the free cover slot nearest the
+    // player first; pushed fighters suppress from where they land (e._suppressUntilSim).
+    const late = sim - stallWaveStart >= 28, want = late ? 2 : 1, used = new Set(); let sent = 0;
+    const send = (e, c, kind, a) => { stallSend(e, c, kind, a); used.add(e); e._suppressUntilSim = -1; e._suppressOnArrive = late ? 3.5 : 2.5; sent++; return sent >= want; };
+    const free = () => cand.filter((e) => !used.has(e));
+    if (late) for (const e of free()) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = nearCover(e, a); if (c && send(e, c, 'advances', a)) return; }
+    for (const e of free()) { const a = pz - e.group.position.z; if (a <= 9) continue; const c = stallCoverFor(e, 6, a - 5.5, 2); if (c && send(e, c, 'advances', a)) return; } // A16b: >= 5 m nearer
+    for (const e of free()) { const a = pz - e.group.position.z, spot = openBound(e, a); if (spot && send(e, spot, 'advances (open)', a)) return; }
+    for (const e of free()) { const a = pz - e.group.position.z, spot = openBoundNear(e, a); if (spot && send(e, spot, 'advances (open)', a)) return; }
+    if (sent) return;
     for (const e of cand) { const a = pz - e.group.position.z, c = stallCoverFor(e, 6, a + 2, 4); if (c) return stallSend(e, c, 'repositions', a); }
     const wv = Math.max(burstIndex, waveClears + 1);
-    if (stallFreshWave !== wv && alive.length < 6) { const keep = poolRange; forcePoolRange = [26, 40]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
+    if (stallFreshWave !== wv && alive.length < 4) { // A19: no extra far camper when 4+ are already up const keep = poolRange; forcePoolRange = [26, 40]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
       if (ne) { stallFreshWave = wv; ne.engaged = true; const a = pz - ne.group.position.z; // spawns at far cover with its normal entry; the next push moves it up (farthest first)
         SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', 'runs in ' + Math.round(a) + 'm'); const L = SSx.stallPushLog || (SSx.stallPushLog = []); L.push({ sim: +sim.toFixed(1), kind: 'runs in', from: Math.round(a), to: Math.round(a), wave: wv }); return; } }
     const why = !alive.length ? 'none alive' : !cand.length ? 'no free ground fighter (' + alive.length + ' alive: ' + alive.filter((e) => e.phase === 'relocate').length + ' moving, ' + alive.filter((e) => e._flankArr || e._flankMove).length + ' flanking, ' + alive.filter((e) => e.anchor && isElevated(e.anchor.type)).length + ' elevated, ' + alive.filter((e) => pz - e.group.position.z <= 9).length + ' within 9 m)' : 'no free cover for ' + cand.length + ' fighter(s)';
@@ -2720,7 +2730,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (mwWave === -1) { mwWave = Math.max(burstIndex, waveClears + 1); mwContactSim = null; mwDone = false; mwShots0 = SSx.enemyShots|0; mwPush = []; }
     if (mwContactSim == null) { if ((SSx.enemyShots|0) > mwShots0) { mwContactSim = sim; mwAt = 20 + Math.random()*5; const L = SSx.waveContactLog || (SSx.waveContactLog = []); L.push({ wave: mwWave, sim: +sim.toFixed(1) }); if (L.length > 30) L.shift(); } else return; }
     for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue;
-      if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) stallSend(rec.e, c, c.open ? 'advances (open)' : 'advances', a); }
+      if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) { stallSend(rec.e, c, c.open ? 'advances (open)' : 'advances', a); rec.e._suppressOnArrive = 5; } }
       rec.sent = true; }
     const wv = mwWave; if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return; mwDone = true;
     const sp = SSx.spPick, quiet = !!(sp && sp.wave === wv && sp.pick === 'quiet');
@@ -2735,14 +2745,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     if (!kind) {
       kind = 'push';
-      for (let i = 0; i < 2; i++) { const keep = poolRange; forcePoolRange = [16, 26]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
+      const aliveN = list.filter((e) => e.alive && !e.dying).length; // A19: with 4+ up, the push uses fighters already there (no extra campers)
+      for (let i = 0; i < (aliveN >= 4 ? 0 : aliveN >= 3 ? 1 : 2); i++) { const keep = poolRange; forcePoolRange = [16, 26]; let ne = null; try { ne = spawnOne('shifter'); } catch (_) {} forcePoolRange = null; poolRange = keep;
         if (ne) { ne.engaged = true; ne._midPush = sim; mwPush.push({ e: ne, at: sim + 1.6 + i * 1.2, sent: false }); } }
       squadCall('Cover me - moving up!');
-      if (!mwPush.length) {
+      if (mwPush.length < 2) {
         const pz = camera.position.z;
         const exist = list.filter((e) => e.alive && !e.dying && !e.pinned && !e._flankArr && !e._flankMove && e.group.position.y < 0.5 && pz - e.group.position.z > 7.6)
           .sort((a, b) => a.group.position.z - b.group.position.z);
-        for (let i = 0; i < exist.length && i < 2; i++) mwPush.push({ e: exist[i], at: sim + 1.6 + i * 1.2, sent: false });
+        for (let i = 0; i < exist.length && mwPush.length < 2; i++) if (!mwPush.some((r) => r.e === exist[i])) mwPush.push({ e: exist[i], at: sim + 1.6 + mwPush.length * 1.2, sent: false });
       }
     }
     slog('enemy', 'mid-wave beat: ' + kind + ' at ' + (sim - mwContactSim).toFixed(1) + 's');
@@ -2938,12 +2949,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
         enemyShoot(enemy);
         if (LOCO2) enemy._peekFired = true;
         let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff) * 1.2; // fix 7: ~20% slower fire
+        const supp = (enemy._suppressUntilSim || -1) > (window.SS.simTime || 0); if (supp) cd *= 0.6; // A19: suppressing after a push (same per-hit damage and cover rules)
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
         if (!(window.SS && window.SS.input && window.SS.input.cover)) cd *= 1 - 0.25 * pressureP(); // 5e: more rounds at an EXPOSED player later in the run (same damage per hit)
         enemy.shootCd = cd;
       }
     }
+    if (enemy.phaseT <= 0 && (enemy._suppressUntilSim || -1) > (window.SS.simTime || 0)) enemy.phaseT = 0.25; // A19: keeps the fire window open while suppressing
     if (enemy.phaseT <= 0) startHide(enemy);
   }
 
