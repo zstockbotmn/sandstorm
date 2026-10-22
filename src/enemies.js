@@ -2758,7 +2758,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       let nadeE = null, nadeD = 1e9;
       for (const e of list) { if (!e.alive || e.dying || e.group.position.y >= 0.5) continue; const d = Math.hypot(e.group.position.x - camera.position.x, e.group.position.z - camera.position.z); if (d <= 36 && d < nadeD) { nadeD = d; nadeE = e; } }
       if (!prevNade && !thisWave.includes('grenade') && (forceSP ? wv % 2 === 1 || !(SSx.setpieces && SSx.setpieces.debugRpg) : Math.random() < 0.5) && nadeE) { throwGrenade(nadeE); spLog('grenade', wv, { pick: 'mid-wave' }); kind = 'grenade'; }
-      else if (SSx.setpieces && SSx.setpieces.debugRpg && !thisWave.includes('rpg')) { SSx.setpieces.debugRpg(); kind = 'rpg'; }
+      else if (SSx.setpieces && SSx.setpieces.debugRpg && !thisWave.includes('rpg') && !(SSx.spLog || []).some((x) => x.kind === 'rpg' && x.wave === wv - 1)) { // A19: no RPG right after an RPG wave (director variety) SSx.setpieces.debugRpg(); kind = 'rpg'; }
     }
     if (!kind) {
       kind = 'push';
