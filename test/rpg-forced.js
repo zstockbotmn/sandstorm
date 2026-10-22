@@ -39,7 +39,7 @@ const SS_gap = (w) => +(w.launchSim - w.bailSim).toFixed(1); // launch - bail-ou
       if (errs.length) fail.push(cfg + ': page errors'); await ctx.close(); continue; }
     for (const w of r.waves || []) if (w.rpg && w.shielded) { if (w.dmg > 15) fail.push(cfg + ' w' + w.w + ' shielded dmg ' + w.dmg); if (w.dmg > 0 && !(w.hurtLog || []).some((x) => /\(RPG, cover\)/.test(x))) fail.push(cfg + ' w' + w.w + ' no (RPG, cover) log'); }
     for (const w of r.waves || []) { if (!w.rpg) fail.push(cfg + ': no RPG in wave ' + w.w);
-      else { if (w.dmg > 30 || (w.dmg > 0 && w.dmg < 10 && w.hpBefore - w.dmg > 5)) fail.push(cfg + ' w' + w.w + ' dmg ' + w.dmg); if (w.thump != null && w.whoosh != null && !(w.whoosh - w.thump >= 0.2)) fail.push(cfg + ' w' + w.w + ' thump/whoosh gap ' + (w.whoosh - w.thump).toFixed(2));
+      else { if (w.dmg > 30 || (!w.shielded && w.dmg > 0 && w.dmg < 10 && w.hpBefore - w.dmg > 5)) /* A13: shielded hits are x0.40-0.50 (4-15), checked above */ fail.push(cfg + ' w' + w.w + ' dmg ' + w.dmg); if (w.thump != null && w.whoosh != null && !(w.whoosh - w.thump >= 0.2)) fail.push(cfg + ' w' + w.w + ' thump/whoosh gap ' + (w.whoosh - w.thump).toFixed(2));
         if (w.bailSim != null) { const gap = SS_gap(w); if (gap < 12) fail.push(cfg + ' w' + w.w + ' RPG ' + gap + ' s after the bail-out (< 12)'); }
         if (/truck=1/.test(cfg) && w.bailSim == null) res.note = (res.note || '') + ' w' + w.w + ': no bail-out recorded;'; } }
     await ctx.close(); } } catch (e) { fail.push('exception ' + String(e).slice(0, 200)); } finally { await b.close(); srv.close(); }
