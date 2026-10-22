@@ -153,3 +153,19 @@ Then the step 4 run list (window-table.mjs, bld=4p/bld=4 screenshots, skyline, p
 - Order (after the tester finishes A13; one heavy job at a time): 4e1 -> 4e2 -> 4e3 -> 4e4 -> 4e5a -> 4e5b -> build +
   test/doorway-stop.js -> 4e5c -> step4 shots/perf regressions (tools/step4-runs.sh) -> rpg-forced/a11 quick reruns -> preview.
   Not merged with 4e1: 4e1-4e4 all edit addRoom; 4e5a only adds door data on top.
+
+## A14 (tester pA13 parts 1+2)
+1 Flank fairness: only the fighter that made the flank move (still at its arrival spot) can land flank hits; others
+  outside the arc = front (misses). Line = muzzle -> head or torso clear of the cover box + buildings. 5 s lull after a
+  flank hit, an RPG hit or an RPG launch. Cause: any fighter outside the 60 deg arc counted (drifted / passed fighters),
+  flank shots got the exposed hit ramp, and only the 0.9 s global spacing applied.
+2 RPG waits 6 s after a flank hit in every mode (was random-only 4.5 s).
+3 Grenade: gate now uses max(burstIndex, waveClears+1) (WAVE CLEARED can fire mid-burst, e.g. after K kills, leaving
+  burstIndex behind - the likely part-1 miss); 'gren: <why>' every 5 s; 'grenade thrown Dm'. test/nade-normal.js.
+4 Calm: first ambient 2-3 s after each clear, logged 'ambient <kind> (calm +Ns)', SS.calmLog; radio logs.
+5 Sound log: 'kill (head|torso|limb)', 'wave N clear'.
+6 Label: window.__SS_LABEL from preview-step1.sh -> corner tag '<label> · build ss-…' (menu + play, no debug needed).
++ Director (random sp=5): wave 1 quiet, then rpg/grenade/truck/quiet, never twice in a row (SS.spPick). Forced unchanged.
++ Room jump: G always jumps (next room), W walks on, 40 game-s hold. + CC0 textures: room wood/rug, bldg4 end caps.
++ HUD: streak below the IN COVER tag.
+Then: window-table tuning, 4e1-4e4, 4e5.
