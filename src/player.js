@@ -30,6 +30,7 @@ export function createPlayer(camera, input, hud) {
         hud.damageDirection(Math.atan2(right, forward));
       }
     }
+    if (window.SS && (source === 'rpg' || source === 'rpg-cover')) window.SS.lastRpgHitSim = window.SS.simTime || 0; // A14: flank hits keep a lull after an RPG hit too
     regenDelay = 5; lastHitT = performance.now(); lastHitSim = window.SS ? (window.SS.simTime || 0) : 0; // regen restarts after the delay
     // A6: every HP drop has a visible + audible cue: edge pulse + red flash (damageVignette), arc toward the shooter
     // (damageDirection), camera flinch, hit sound event. SS.hitLog records them so tests can check nothing drops silently.

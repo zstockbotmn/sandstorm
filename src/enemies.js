@@ -2104,7 +2104,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (!(enemy._flankTellSim > -1e8) || fS - (enemy._flankLastSim == null ? -99 : enemy._flankLastSim) > FLANK_RESET_S) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); }
       enemy._flankLastSim = fS; flankReady = fS - enemy._flankTellSim >= FLANK_TELL_S && fR - enemy._flankTellR >= FLANK_TELL_S; }
     if (flankShot && !flankLine(_muzzle)) { flankReady = false; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; }
-    if (flankShot && flankReady && window.SS && (window.SS.simTime || 0) - (window.SS.lastFlankHitSim != null ? window.SS.lastFlankHitSim : -99) < FLANK_LULL_S) { flankReady = false; window.SS.flankLullBlocked = (window.SS.flankLullBlocked | 0) + 1; }
+    if (flankShot && flankReady && window.SS && (window.SS.simTime || 0) - Math.max(window.SS.lastFlankHitSim != null ? window.SS.lastFlankHitSim : -99, window.SS.lastRpgHitSim != null ? window.SS.lastRpgHitSim : -99) < FLANK_LULL_S) { flankReady = false; window.SS.flankLullBlocked = (window.SS.flankLullBlocked | 0) + 1; }
     const flankHit = flankShot && flankReady;
     // Fix 7 (tester: slightly easier): ~20% lower base accuracy; each enemy's first 3 shots at first contact are mostly
     // misses (sighting-in), so the player gets a beat to react. Damage per hit is unchanged (~5 hits to kill).
@@ -2198,7 +2198,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!flankHit && !playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       if (flankHit && enemy._flankRec && enemy._flankRec.firstHitSim == null) enemy._flankRec.firstHitSim = +(simS).toFixed(2);
-      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; } }
+      if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); } }
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, flankHit ? 'flank' : 'gun'); // cover also softens hits (x0.6, in dmgAmt)
     } else if (window.SS && window.SS.fx) {
       if (coverImpact && window.SS.fx.impact) { window.SS.fx.impact(coverImpact.point, coverImpact.normal, coverImpact.object); window.SS.coverImpacts = (window.SS.coverImpacts | 0) + 1; }
@@ -3269,7 +3269,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     phase = 'quiet';
     phaseT = 0;
-    calmUntil = -1e9; if (window.SS) window.SS.calmUntil = null;
+    calmUntil = -1e9; if (window.SS) window.SS.calmUntil = null; if (window.SS) { window.SS.lastRpgHitSim = null; window.SS.lastFlankHitSim = null; window.SS.flankHitSims = []; }
     breatherTo = FIRST_WAVE_AT; // first wave at the same distance every run (tester: 6/8/12 m)
     quietCap = 0;
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;

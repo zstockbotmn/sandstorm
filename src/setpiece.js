@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createTruckMoment } from './setpiece-truck.js';
 import { createAmbient } from './setpiece-ambient.js';
+const RPG_FLANK_LULL_S = 6; // A14: game-s after a rifle flank hit before any RPG launch (forced too)
 
 const FLIGHT_S = 1.1, FLIGHT_MS = 900, PUFF_N = 72, PUFF_LIFE = 2.6, PUFF_STEP = 0.35; // A9: thicker, longer trail (reads at 24-38 m on Low)
 
@@ -238,8 +239,9 @@ export function createSetPieces({ scene, camera, player, hud }) {
     // wave's truck is still pending
     if (SS.truckPendingWave) return;
     if (SS.truckBailAt != null && SS.truckBailAt >= waveT - 0.5 && sim >= SS.truckBailAt && sim - SS.truckBailAt < 12) return;
-    // A13 (random mode only): a lull of 4.5 s after a rifle flank hit before an RPG may launch; forced mode unchanged
-    if (!forced && SS.lastFlankHitSim != null && sim - SS.lastFlankHitSim >= 0 && sim - SS.lastFlankHitSim < 4.5) return;
+    // A14 (tester: flank hit -> RPG 5.7 s later -> flank hit): no launch within RPG_FLANK_LULL_S game-s after a rifle flank
+    // hit, forced mode too (replaces the A13 random-only 4.5 s rule). The launch waits; it is not cancelled.
+    if (SS.lastFlankHitSim != null && sim - SS.lastFlankHitSim >= 0 && sim - SS.lastFlankHitSim < RPG_FLANK_LULL_S) { SS.rpgFlankWaits = (SS.rpgFlankWaits | 0) + 1; return; }
     if (SS.setPieceAt != null && sim - SS.setPieceAt < 8) return; // A10: one shared set-piece gap (RPG / truck / grenade)
     // A11: a starved camping grenade goes first (the forced RPG used to keep starving it). A12: but only for 6 s - with no
     // thrower in range the grenade can stay 'starved' for the rest of the wave, which cancelled the RPG (wave 3, rpg=1).
