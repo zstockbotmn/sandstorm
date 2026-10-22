@@ -36,7 +36,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
           // wave 3: emulate the tester - stay ducked, kill the nearest two (leaving far / roof shooters)
           await waitFor(() => !SS.bursting, 30); await waitFor(() => !!SS.input.cover, 15); SS.debugKillNearest(); await sleep(600); SS.debugKillNearest();
           const g0 = gw, s0 = SS.simTime, nm0 = SS.nearMisses | 0, nk0 = SS.nearMissSkipped | 0; let ring = false, hint = '', gate = null;
-          const t0 = performance.now(); while ((SS.grenades | 0) === g0 && SS.simTime - s0 < 50 /* A15a: forced flags = non-grenade wave: 22 s long camp + 15 s spacing */ && performance.now() - t0 < 500000 && live() > 0) { top(); gate = SS.nadeGate; await sleep(120); }
+          const t0 = performance.now(); while ((SS.grenades | 0) === g0 && SS.simTime - s0 < 62 /* A15a: forced flags = non-grenade wave with RPG/truck: 40 s long camp + spacing */ && performance.now() - t0 < 500000 && live() > 0) { top(); gate = SS.nadeGate; await sleep(120); }
           out.nearMiss = { shown: (SS.nearMisses | 0) - nm0, skipped: (SS.nearMissSkipped | 0) - nk0, gameS: +(SS.simTime - s0).toFixed(1) };
           out.nade = { thrown: (SS.grenades | 0) > g0, after: +(SS.simTime - s0).toFixed(1), live: live(), gate, throw: SS.lastNadeThrow, ducked: !!SS.input.cover };
           const t1 = performance.now(); while (performance.now() - t1 < 8000 && out.nade.thrown) { const h = (SS.hud && SS.hud.hintText) || ''; if (/GRENADE!/.test(h)) hint = h; if (SS.nadeRingAt >= s0) ring = true; top(); await sleep(100); }

@@ -30,9 +30,10 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug' + (mode === 'forced' ? '&rpg=1&truck=1' : '') + '&q=' + tier);
     await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.tap('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
-    Object.assign(res, await p.evaluate(async ([NW, KILL_AFTER]) => { SS.testAccuracy = 3; const R = { waves: [] }; let waveAt = null, lastKill = 0; const t0 = performance.now();
+    Object.assign(res, await p.evaluate(async ([NW, KILL_AFTER]) => { SS.testAccuracy = 3; const R = { waves: [], advLines: [] }; let waveAt = null, lastKill = 0; const t0 = performance.now();
       while (performance.now() - t0 < 2400000 && (SS.waveClears | 0) < NW) { const sim = SS.simTime || 0; SS.input.scope = false; if (SS.player.health < 40) SS.player.health = 90;
         if (SS.waveActive) { if (waveAt == null) { waveAt = sim; R.waves.push({ start: +sim.toFixed(1), n: (SS.waveClears | 0) + 1 }); } if (sim - waveAt > KILL_AFTER && sim - lastKill > 2) { SS.debugKillNearest(); lastKill = sim; } } else waveAt = null;
+        for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /advances/.test(x.detail) && !R.advLines.includes(x.t)) R.advLines.push(x.t);
         if (!SS.player.alive) { R.died = +sim.toFixed(1); break; } await new Promise((r) => setTimeout(r, 250)); }
       R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.picks = (SS.spPick && SS.spPick.hist) || [];
       R.counters = { flankTells: SS.flankTells | 0, flankCapBlocked: SS.flankCapBlocked | 0, flankRetired: SS.flankRetired | 0, stallPushes: SS.stallPushes | 0, stallPushNone: SS.stallPushNone | 0, frontArcDuckHits: SS.frontArcDuckHits | 0 };
@@ -49,7 +50,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     // 3
     if (!res.push.length) fail.push('no stall push in ' + res.waves.length + ' waves (none-found ' + res.counters.stallPushNone + ')');
     for (const q of res.push) if (!(q.to < q.from)) fail.push('stall push ' + q.sim + ' not nearer (' + q.from + ' -> ' + q.to + ')');
-    if (res.push.length && !res.log.some((x) => x.kind === 'enemy' && /advances/.test(x.d))) fail.push('no "advances" line in the sound log');
+    if (res.push.length && !res.advLines.length) fail.push('no "advances" line in the sound log');
     // 4
     // A15a: a quick camp grenade (and a 2nd) only on a director 'grenade' wave; elsewhere <= 1 after a 22 s camp (30 s after a grenade wave)
     const nadesBy = {}; for (const s of res.spLog) if (s.kind === 'grenade') (nadesBy[s.wave] = nadesBy[s.wave] || []).push(s);
@@ -57,7 +58,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     if (mode === 'random') { if (!pickWaves.length) warn.push('no director grenade wave this run (2nd-grenade re-arm unchecked)');
       else if (!pickWaves.some((w) => nadesBy[w].length >= 2)) fail.push('no 2nd grenade in a grenade wave ' + JSON.stringify(nadesBy)); }
     for (const w in nadesBy) { const a = nadesBy[w], quick = a.some((x) => x.pick === 'grenade'); if (a.length > (quick ? 2 : 1)) fail.push('wave ' + w + ': ' + a.length + ' grenades');
-      for (const x of a) if (x.pick !== 'grenade') { const need = nadesBy[w - 1] ? 30 : 22; if (!(x.camp >= need - 0.5)) fail.push('wave ' + w + ' long-camp grenade after ' + x.camp + ' s (want >= ' + need + ')'); } }
+      for (const x of a) if (x.pick !== 'grenade') { const need = (res.spLog.some((y) => (y.kind === 'rpg' || y.kind === 'truck') && y.wave === x.wave && y.sim < x.sim) ? 40 : 25) + (nadesBy[w - 1] ? 10 : 0); if (!(x.camp >= need - 0.5)) fail.push('wave ' + w + ' long-camp grenade after ' + x.camp + ' s (want >= ' + need + ')'); } }
     // A15a variety (random): the same set-piece kind never opens two waves in a row unless it is a long-camp grenade
     if (mode === 'random') { const kinds = {}; for (const s of res.spLog) (kinds[s.wave] = kinds[s.wave] || new Set()).add(s.kind + (s.kind === 'grenade' && s.pick !== 'grenade' ? '-long' : ''));
       for (const w in kinds) { const prev = kinds[w - 1]; if (!prev) continue; for (const k of kinds[w]) if (!/-long$/.test(k) && (prev.has(k) || (k === 'grenade' && prev.has('grenade-long')))) fail.push('wave ' + w + ' repeats ' + k + ' from wave ' + (w - 1)); }

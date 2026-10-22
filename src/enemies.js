@@ -2965,7 +2965,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // a director 'grenade' wave gets the quick camp grenade (3/7 s, re-arm 12 s, cap 2). Any other wave (rpg / truck / quiet /
     // forced flags) gets at most ONE, and only for a LONG camp: 22 s, or 30 s when the previous wave already had a grenade.
     const spL = (window.SS && window.SS.spLog) || [], prevNade = spL.some((x) => x.kind === 'grenade' && x.wave === waveNo - 1);
-    const longCamp = nadeWave ? 0 : (prevNade ? 30 : 22), capN = nadeWave ? NADE_CAP : 1;
+    // A15 run 2 (a15 random: a 30 s long-camp grenade in every wave 3-6 = 'grenade every wave' again): long camp is 25 s on a
+    // quiet wave, 40 s once this wave already had its RPG / truck, +10 s when the previous wave had a grenade.
+    const otherPiece = spL.some((x) => (x.kind === 'rpg' || x.kind === 'truck') && x.wave === waveNo);
+    const longCamp = nadeWave ? 0 : (otherPiece ? 40 : 25) + (prevNade ? 10 : 0), capN = nadeWave ? NADE_CAP : 1;
     const capped = nadesWave >= capN, certainAt = nadeWave ? (!nadesWave ? 7 : 12 - 3 * pN) : longCamp, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
     const gapOk = spGap >= SP_GAP_S; // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
@@ -2974,7 +2977,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
         if (e.group.position.y < 0.5) { if (dd < bd) { bd = dd; th = e; } } else if (dd < rd) { rd = dd; roof = e; } }
       th = th || roof;
-      if (th) { const camp0 = campT; nadeThisWave = true; nadesWave++; campT = 0; spLog('grenade', waveNo, { camp: +camp0.toFixed(1), pick: nadeWave ? 'grenade' : 'long-camp' }); if (window.SS) window.SS.nadeStarved = false; slog('grenade', 'thrown ' + Math.round(th.group.position.distanceTo(camera.position)) + 'm' + (th.group.position.y >= 0.5 ? ' (roof)' : '')); throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
+      if (th) { const camp0 = campT; nadeThisWave = true; nadesWave++; campT = 0; spLog('grenade', waveNo, { camp: +camp0.toFixed(1), pick: nadeWave ? 'grenade' : 'long-camp', need: longCamp }); if (window.SS) window.SS.nadeStarved = false; slog('grenade', 'thrown ' + Math.round(th.group.position.distanceTo(camera.position)) + 'm' + (th.group.position.y >= 0.5 ? ' (roof)' : '')); throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
     }
     // A14 (tester: no grenade in > 70 game-s camping wave 3 with 4 alive): while a wave is on and no grenade has come yet,
     // say WHY every ~5 game-s ('gren: ...' in the sound log, SS.nadeWhy). First failing gate in trigger order.
