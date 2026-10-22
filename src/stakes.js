@@ -106,7 +106,9 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
       const dx = it.g.position.x - camera.position.x, dz = it.g.position.z - pz;
       // auto-collect (Zack): after ~0.6 s on the ground the drop flies to the player and applies on arrival
       // Every drop is collected wherever it fell (a drop > 40 m away used to sit there forever, looking like a prop).
-      if (it.t > 0.6 && AUTO_PICK) {
+      // A20 (tester A19: 'pickup medkit +0 (hp 100 -> 100)'): a medkit at full health stays on the ground until it is needed
+      const keep = it.kind === 'health' && !it.fly && player && player.health >= 99.5;
+      if (it.t > 0.6 && AUTO_PICK && !keep) {
         if (!it.fly) it.g.children[0].visible = false; // A16: the box stays out of the flight (no floating crate over the cover)
         it.fly = (it.fly || 0) + dt;
         _tgt.set(camera.position.x, camera.position.y - 0.5, camera.position.z);
