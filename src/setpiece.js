@@ -109,6 +109,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   // A10 variety: 40% of the time (ducked behind real cover) the rocket hits the cover top on the enemy side - debris shower,
   // 25-30 dmg; otherwise the ground 1.2-4.2 m from the player toward the shooter (30 -> 10 dmg with distance).
   let aimCover = false;
+  const _head = new THREE.Vector3(), _dir = new THREE.Vector3(), _hp = new THREE.Vector3(), _fwdN = new THREE.Vector3(0, 0.3, -1).normalize(), _ray = new THREE.Ray(), _box = new THREE.Box3();
   function pickTarget() { const cv = window.SS && window.SS.cover, sf = cv && cv.state === 'in' && cv.surface;
     if (sf && aimCover) { target.set(Math.max(sf.min.x + 0.2, Math.min(sf.max.x - 0.2, camera.position.x + (Math.random() - 0.5) * 0.8)), sf.max.y - 0.05, sf.min.z + 0.15); return; }
     const dx = launch.x - camera.position.x, dz = launch.z - camera.position.z, h = Math.hypot(dx, dz) || 1, sway = (Math.random() - 0.5) * 1.6, ix = dx / h, iz = dz / h, r = 1.2 + Math.random() * 3.0;
@@ -165,14 +166,26 @@ export function createSetPieces({ scene, camera, player, hud }) {
     let raw = d > 4.4 ? 0 : 27 - 17 * Math.max(0, Math.min(1, (d - 1.0) / 3.4)) + (Math.random() * 6 - 3);
     if (aimCover) raw = 18 + Math.random() * 12;
     if (raw > 0) raw = Math.max(10, Math.min(30, raw));
+    // A13 (PM: RPG vs cover): IN COVER with the cover box between the blast and the head, the sandbags take most of it -
+    // ~45% (40-50%) of the roll, a dust burst + debris off the cover top and front, log '(RPG, cover)'. Out of cover or
+    // from a flank (the head ray misses the box) it stays full. Cap 30 and the 5 HP floor still apply after the scale.
+    let shielded = false; { const cv = window.SS && window.SS.cover, sf = cv && cv.state === 'in' && cv.surface;
+      if (sf && raw > 0) { _head.copy(camera.position); _box.copy(sf).expandByScalar(0.05); _dir.subVectors(_head, target); const len = _dir.length();
+        if (len > 1e-3) { _ray.set(target, _dir.multiplyScalar(1 / len)); const hit = _box.containsPoint(target) || _ray.intersectBox(_box, _hp); shielded = !!hit && (_box.containsPoint(target) || target.distanceTo(_hp) < len); }
+        // or by facing: ducked behind it and the blast on its enemy side (z <= the near face) within its width + 1.5 m
+        if (!shielded && window.SS.input && window.SS.input.cover && target.z <= sf.max.z + 0.1 && target.x > sf.min.x - 1.5 && target.x < sf.max.x + 1.5) shielded = true;
+        if (shielded) { raw *= 0.4 + Math.random() * 0.1;
+          if (f && f.dust) { tmp.set(Math.max(sf.min.x, Math.min(sf.max.x, target.x)), sf.max.y + 0.05, Math.max(sf.min.z, Math.min(sf.max.z, target.z))); f.dust(tmp.clone(), up, 10, 0x8a7a62);
+            tmp.z = sf.min.z - 0.05; tmp.y = (sf.min.y + sf.max.y) * 0.5; f.dust(tmp.clone(), _fwdN, 8, 0x8a7a62); }
+          if (f && f.debris) { tmp.set(Math.max(sf.min.x, Math.min(sf.max.x, target.x)), sf.max.y, (sf.min.z + sf.max.z) * 0.5); f.debris(tmp.clone(), up, 8); tmp.z = sf.min.z - 0.05; f.debris(tmp.clone(), _fwdN, 5); } } } }
     const dmg = raw > 0 ? Math.max(0, Math.min(raw, 30, hpBefore - 5)) : 0;
-    if (rec) rec.aim = aimCover ? 'cover' : 'ground';
+    if (rec) { rec.aim = aimCover ? 'cover' : 'ground'; rec.shielded = shielded; }
     if (aimCover && f && f.impact) for (let i = 0; i < 5; i++) { tmp.copy(target); tmp.x += (Math.random() - 0.5) * 1.4; tmp.y += Math.random() * 0.2; f.impact(tmp.clone(), up, null); } // cover hit: debris shower
     if (window.SS) window.SS.setPieceAt = sim; shooterUntilR = performance.now() + 1200;
     if (rec) { rec.impactSim = sim; rec.impactR = performance.now(); rec.dmg = dmg; rec.hpBefore = hpBefore; rec.dist = d; }
     publish();
     // Duck does not cancel a warned blast; the cap leaves at least 5 hp.
-    if (dmg > 0 && player.damage) player.damage(dmg, target.clone(), 'rpg');
+    if (dmg > 0 && player.damage) player.damage(dmg, target.clone(), shielded ? 'rpg-cover' : 'rpg');
   }
   function stepFlight(sim) {
     const simElapsed = sim - launchSim, realElapsedMs = performance.now() - launchR;
