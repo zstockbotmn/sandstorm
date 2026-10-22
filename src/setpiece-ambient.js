@@ -17,7 +17,7 @@ function roundTex() {
 
 export function createAmbient({ scene, camera, hud }) {
   const tex = roundTex(), geo = new THREE.PlaneGeometry(1, 1);
-  const counts = { fire: 0, radio: 0, dog: 0, door: 0, heli: 0 }, pub = { counts, last: null };
+  const counts = { fire: 0, radio: 0, dog: 0, door: 0, heli: 0, gunfire: 0 }, pub = { counts, last: null };
   const state = { phase: 'idle', kind: null, t: 0, dur: 0 };
   let ev = null, wait = 7 + Math.random() * 7, lastBurst = -1e9, lastLive = -1e9, prev = '', seenRun = null, eligible = false;
   const rnd = (a, b) => a + Math.random() * (b - a), side = () => (Math.random() < 0.5 ? -1 : 1);
@@ -74,6 +74,12 @@ export function createAmbient({ scene, camera, hud }) {
     const dur = rnd(8, 12), pos = { x: fromX, y, z }; say('heli', pos, dur);
     return { kind: 'heli', t: 0, dur, root, rotor, fromX, toX, y, lead, pos };
   }
+  // A17 (tester A16: 'far-off gunfire' never came - the 'fire' beat is a burning building): a far firefight - 3-5 distant reports
+  // from 120-200 m ahead to one side, 0.25-0.6 s apart ('gunfire far-off Nm' in the sound log).
+  function startGunfire() { const pos = { x: side() * rnd(30, 60), y: 2, z: camera.position.z - rnd(120, 200) }, n = 3 + ((Math.random() * 3) | 0), a = clip();
+    if (a && a.log) a.log('gunfire', 'far-off ' + Math.round(dist(pos)) + 'm');
+    let t = 0; for (let i = 0; i < n; i++) { t += rnd(250, 600); setTimeout(() => { const b = clip(); if (b && b.distantShot && window.SS && window.SS.running) b.distantShot(-1); }, t); }
+    return { kind: 'gunfire', t: 0, dur: 3, pos }; }
   function startRadio() {
     if (hud && hud.radio) hud.radio(LINES[(Math.random() * LINES.length) | 0], 3200);
     { const a = clip(); if (a && a.log) a.log('radio', 'chatter'); } // A14: the radio had no sound-log line
@@ -85,7 +91,7 @@ export function createAmbient({ scene, camera, hud }) {
   }
   function begin(kind, sim) {
     if (ev) endEv();
-    ev = kind === 'fire' ? startFire() : kind === 'dog' ? startDog() : kind === 'heli' ? startHeli() : kind === 'door' ? startDoor() : startRadio();
+    ev = kind === 'gunfire' ? startGunfire() : kind === 'fire' ? startFire() : kind === 'dog' ? startDog() : kind === 'heli' ? startHeli() : kind === 'door' ? startDoor() : startRadio();
     publish(kind, sim, ev.pos); wait = rnd(5, 8); return pub.last; // A11: 5-8 s apart so a 15-25 s calm gets 2-3 events
   }
   function step(dt) {
@@ -115,13 +121,13 @@ export function createAmbient({ scene, camera, hud }) {
   }
   const liveEnemy = () => { const list = (window.SS && window.SS.enemies && window.SS.enemies.list) || []; return !list.every((e) => !e || !e.alive); };
   let firstPending = false, lastBeat = '';
-  const BEAT_KINDS = ['radio', 'dog', 'fire'];
+  const BEAT_KINDS = ['radio', 'dog', 'gunfire']; let beatBag = [];
   function resetRun() {
     const id = (window.SS && window.SS.runs) || 0;
     if (seenRun == null) { seenRun = id; return; }
     if (id === seenRun) return;
-    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; firstPending = false; if (window.SS) window.SS.calmLog = []; prev = ''; lastBeat = ''; wait = rnd(7, 14);
-    counts.fire = counts.radio = counts.dog = counts.door = counts.heli = 0; pub.last = null;
+    seenRun = id; lastBurst = -1e9; lastLive = -1e9; eligible = false; firstPending = false; if (window.SS) window.SS.calmLog = []; prev = ''; lastBeat = ''; beatBag = []; wait = rnd(7, 14);
+    counts.fire = counts.radio = counts.dog = counts.door = counts.heli = counts.gunfire = 0; pub.last = null;
     if (window.SS) window.SS.ambient = pub; endEv();
   }
   function pick() { let i = (Math.random() * 5) | 0; if (KINDS[i] === prev) i = (i + 1 + ((Math.random() * 4) | 0)) % 5; return KINDS[i]; }
@@ -144,7 +150,9 @@ export function createAmbient({ scene, camera, hud }) {
     // A16 (PM): every calm gets EXACTLY ONE ambient beat - distant radio chatter, a barking dog or far-off gunfire, never the
     // same kind as the previous calm's beat - and nothing else (the old 5-8 s follow-ups are gone). SS.calmLog[i].beats counts it.
     if (firstPending) { wait -= dt; if (wait > 0) return; firstPending = false;
-      const opts = BEAT_KINDS.filter((x) => x !== lastBeat), k = opts[(Math.random() * opts.length) | 0]; lastBeat = k;
+      // A17 (tester A16: beats only alternated radio / dog): a shuffled bag of all three, refilled without repeating the last
+      if (!beatBag.length) { beatBag = BEAT_KINDS.slice().sort(() => Math.random() - 0.5); if (beatBag[0] === lastBeat) beatBag.push(beatBag.shift()); }
+      const k = beatBag.shift(); lastBeat = k;
       const r = begin(k, sim), L = SS.calmLog; if (L && L.length) { const c = L[L.length - 1]; c.firstSim = +sim.toFixed(1); c.kind = k; c.beats = (c.beats | 0) + 1; }
       { const a = clip(); if (a && a.log) a.log('ambient', k + (lastLive > -1e8 ? ' (calm +' + (sim - lastLive).toFixed(1) + 's)' : ' (opening)')); } return r; }
   }

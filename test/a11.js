@@ -53,7 +53,8 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
     const r = res.run; if (r.err) fail.push(r.err);
     // A16: calmLog - one beat per calm, kinds radio / dog / fire, no back-to-back repeat
     { const cl = (r.calmLog || []).filter((c) => c.kind); r.beats = cl.map((c) => c.kind + ':' + (c.beats | 0));
-      for (const c of cl) { if ((c.beats | 0) !== 1) fail.push('calm at ' + c.clearSim + ': ' + c.beats + ' beats'); if (!/^(radio|dog|fire)$/.test(c.kind)) fail.push('calm beat kind ' + c.kind); }
+      for (const c of cl) { if ((c.beats | 0) !== 1) fail.push('calm at ' + c.clearSim + ': ' + c.beats + ' beats'); if (!/^(radio|dog|gunfire)$/.test(c.kind)) fail.push('calm beat kind ' + c.kind); }
+      if (cl.length >= 3 && new Set(cl.slice(0, 3).map((c) => c.kind)).size < 3) fail.push('not all 3 beat kinds by the 3rd calm: ' + cl.slice(0, 3).map((c) => c.kind).join(','));
       for (let i = 1; i < cl.length; i++) if (cl[i].kind === cl[i - 1].kind) fail.push('calm beat repeated ' + cl[i].kind); }
     for (const c of r.calms || []) { if (c.calm < 9.8) fail.push('calm ' + c.calm + ' s (want >= 10)'); if (c.ambient !== 1) fail.push(c.ambient + ' ambient beats in calm after wave ' + c.after + ' (want exactly 1)'); if (c.shots > 0) fail.push(c.shots + ' enemy shots in calm'); }
     if (r.nade && !r.nade.thrown) fail.push('no wave-3 grenade ' + JSON.stringify(r.nade.gate)); else if (r.nade && (!r.nade.ring || !r.nade.hint)) fail.push('grenade ring/callout missing');

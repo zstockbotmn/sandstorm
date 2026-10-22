@@ -749,5 +749,5 @@ export function createAudio() {
     }
   }
 
-  return { log: alog, go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, engine, boom, thump, door, bark, heli, crackle, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
+  return { distantShot, log: alog, go, hush, isLive: () => live, unlock, update, gunfire, enemyShot, crack, whoosh, engine, boom, thump, door, bark, heli, crackle, hit, kill, headshot, reload, radio, pickup, muffle, muffleLevel, fx3State, log: alog, hurt };
 }
