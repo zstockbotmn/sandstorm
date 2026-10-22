@@ -2915,11 +2915,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // forever; (b) forced RPG + truck kept re-stamping the shared 8 s gap. Now any live fighter within 40 m can throw
     // (ground preferred; a roof shooter lobs from its roof), and a STARVED grenade (camping past the 'certain' time) takes
     // priority: it only waits 3 s after a set piece, and while starved the RPG / truck hold off (SS.nadeStarved).
-    const certainAt = 12 - 3 * pN, starved = waveActive && !nadeThisWave && burstIndex >= 3 && campT > certainAt - 3;
+    // A14 (tester A13 part 1: no grenade in 70 s 'wave 3' without flags): the gate used burstIndex (spawn bursts), which can
+    // lag the wave the player sees (WAVE CLEARED also fires when every engaged fighter is down mid-burst, e.g. after K kills)
+    // -> use the higher of the two. A director 'grenade' wave (random sp=5) allows it from wave 2 and sooner (3 s / 7 s).
+    const nadeWave = window.SS && window.SS.spPick && window.SS.spPick.pick === 'grenade' && waveActive;
+    const waveNo = Math.max(burstIndex, waveClears + 1), waveOk = waveNo >= 3 || (nadeWave && waveNo >= 2);
+    const certainAt = nadeWave ? 7 : 12 - 3 * pN, starved = waveActive && !nadeThisWave && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
     const gapOk = spGap >= 8 || (campT > certainAt && spGap >= 3);
-    if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, nadeThisWave, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
-    if (waveActive && !nadeThisWave && campT > 5 - 1.5 * pN && burstIndex >= 3 && gapOk && (campT > certainAt || Math.random() < dt * 0.35)) {
+    if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, waveNo, nadeWave: !!nadeWave, nadeThisWave, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
+    if (waveActive && !nadeThisWave && campT > (nadeWave ? 3 : 5 - 1.5 * pN) && waveOk && gapOk && (campT > certainAt || Math.random() < dt * 0.35)) {
       let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
         if (e.group.position.y < 0.5) { if (dd < bd) { bd = dd; th = e; } } else if (dd < rd) { rd = dd; roof = e; } }
       th = th || roof;
@@ -2930,8 +2935,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (waveActive && !nadeThisWave) { nadeWhyT += dt; if (nadeWhyT >= 5) { nadeWhyT = 0;
       let why; const minCamp = 5 - 1.5 * pN;
       if (!(cov && cov.state === 'in')) why = 'not in cover (' + (cov ? cov.state : 'none') + ')';
-      else if (burstIndex < 3) why = 'wave ' + burstIndex + ' < 3';
-      else if (campT <= minCamp) why = 'camp ' + campT.toFixed(1) + 's < ' + minCamp.toFixed(1);
+      else if (!waveOk) why = 'wave ' + waveNo + ' < 3';
+      else if (campT <= (nadeWave ? 3 : minCamp)) why = 'camp ' + campT.toFixed(1) + 's < ' + minCamp.toFixed(1);
       else if (!gapOk) why = 'set-piece gap ' + Math.min(spGap, 999).toFixed(1) + 's';
       else { let nd = 1e9, n = 0; for (const e of list) { if (!e.alive || e.dying) continue; n++; nd = Math.min(nd, e.group.position.distanceTo(camera.position)); }
         why = nd >= 40 ? 'no thrower <40m (' + n + ' alive, nearest ' + (n ? Math.round(nd) + 'm' : '-') + ')' : 'roll: camp ' + campT.toFixed(1) + '/' + certainAt.toFixed(1) + 's'; }

@@ -153,7 +153,8 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (bursting && !wasBurst) {
       state.wave += 1;
       if (forced) { waveT = sim; delay = 2; firedWave = false; armed = true; }
-      else if (!armed && state.count === 0 && state.wave >= 3) { waveT = sim; delay = 2 + Math.random() * 2; firedWave = false; armed = true; }
+      else if (SS.spPick && SS.spPick.pick === 'truck' && Math.abs(sim - (SS.spPick.sim || 0)) < 0.5) { waveT = sim; delay = 2 + Math.random() * 6; firedWave = false; armed = true; } // A14: the wave director picks truck waves (random mode)
+      else { armed = false; }
     }
     wasBurst = bursting;
     if (run && run.phase === 'drive') stepDrive(sim);

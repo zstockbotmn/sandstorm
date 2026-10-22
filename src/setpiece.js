@@ -58,6 +58,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
   const up = new THREE.Vector3(0, 1, 0), yAxis = new THREE.Vector3(0, 1, 0);
   const state = { wave: 0, rpgs: 0, flying: false };
   const forced = /[?&]rpg=1\b/.test(location.search);
+  const FORCED_ANY = forced || /[?&]truck=1\b/.test(location.search); // A14: the director is random mode only
   let wasBurst = false, waveT = 0, firedWave = false, lastAt = -1e9, fireAt = -1;
   let flying = false, launchSim = 0, launchR = 0, smokeAcc = 0, warned = false, rec = null;
   const clip = () => (window.SS && window.SS.audio) || null;
@@ -222,7 +223,16 @@ export function createSetPieces({ scene, camera, player, hud }) {
   function update(dt) {
     const SS = window.SS || {}, sim = SS.simTime || 0, bursting = !!SS.bursting;
     if (bursting && !wasBurst) { state.wave += 1; waveT = sim; firedWave = false; // A10: a random moment in the wave (4-18 s), ~65% of waves from wave 2; ?rpg=1 keeps 6 s every wave
-      fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 10 + Math.random() * 16 : -1; } // A13: random mode 10-26 s (middle / late wave; it may fire after the spawn window now)
+      // A14 (tester: truck -> RPG every wave, predictable): random mode has a per-wave DIRECTOR - wave 1 quiet, then each
+      // wave picks one of rpg / grenade (an earlier camping grenade) / truck / quiet, never the same as the last wave, at a
+      // varied moment. Forced flags (rpg=1 / truck=1) bypass it and behave as before. SS.spPick = { wave, pick, hist }.
+      if (!FORCED_ANY) { const hist = state.wave <= 1 ? [] : ((SS.spPick && SS.spPick.hist) || []), last = hist[hist.length - 1];
+        let pick = 'quiet';
+        if (state.wave >= 2) { const W = { rpg: 0.3, grenade: 0.3, truck: 0.25, quiet: 0.15 }; if (last) delete W[last];
+          let tot = 0; for (const k in W) tot += W[k]; let r = Math.random() * tot; for (const k in W) { r -= W[k]; if (r <= 0) { pick = k; break; } } }
+        hist.push(pick); if (hist.length > 12) hist.shift(); SS.spPick = { wave: state.wave, pick, hist, sim };
+        fireAt = pick === 'rpg' ? 8 + Math.random() * 18 : -1; }
+      else fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 10 + Math.random() * 16 : -1; } // A13: random mode 10-26 s (middle / late wave; it may fire after the spawn window now)
     wasBurst = bursting;
     if (flying) stepFlight(sim);
     stepVfx(dt || 0);
