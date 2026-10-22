@@ -12,9 +12,16 @@ export function createStakes(scene, camera, hud, player, weapon, score, audio) {
     // A16 (tester A15: 'a flat green box floats over the burnt car during kills'): the ammo drop was a plain olive box, and
     // the auto-collect flight carried it through the air at the player (at 1-2 fps it hung mid-air over the cover). Now it
     // is a stencilled ammo can on the ground, and only its small icon flies in (the box hides when the flight starts).
-    ammo: new THREE.MeshStandardMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
-      g.fillStyle = '#4f5a2c'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#2e3418'; g.fillRect(0, 0, 64, 6); g.fillRect(0, 58, 64, 6); g.fillStyle = '#e2c13a'; g.fillRect(0, 40, 64, 5);
-      g.font = 'bold 15px monospace'; g.textAlign = 'center'; g.fillText('AMMO', 32, 30); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })(), emissive: 0x1a1600, emissiveIntensity: 0.4, roughness: 0.75 }) };
+    // A17 (tester A16: 'AMMO' unreadable at phone size): 128 px texture, a near-black plate across the middle with a heavy
+    // bright-yellow stencil filling ~85% of the face width, outlined; olive can + rims kept.
+    ammo: new THREE.MeshStandardMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+      g.fillStyle = '#4f5a2c'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#2e3418'; g.fillRect(0, 0, 128, 10); g.fillRect(0, 118, 128, 10);
+      g.fillStyle = '#141408'; g.fillRect(4, 36, 120, 56);
+      g.font = '900 44px Impact, "Arial Black", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const w = g.measureText('AMMO').width || 100, sx = Math.min(1.25, 108 / w); g.save(); g.translate(64, 65); g.scale(sx, 1.05);
+      g.lineWidth = 5; g.strokeStyle = '#000'; g.strokeText('AMMO', 0, 0); g.fillStyle = '#ffd81a'; g.fillText('AMMO', 0, 0); g.restore();
+      g.fillStyle = '#ffd81a'; g.fillRect(4, 98, 120, 8);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; })(), emissive: 0x1a1600, emissiveIntensity: 0.4, roughness: 0.75 }) };
   const cross = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
     g.fillStyle = '#e3261b'; g.fillRect(24, 8, 16, 48); g.fillRect(8, 24, 48, 16); const t = new THREE.CanvasTexture(c);
     return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, sizeAttenuation: false }); })();
