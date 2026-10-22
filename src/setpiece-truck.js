@@ -160,7 +160,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (run && run.phase === 'drive') stepDrive(sim);
     else if (run && run.phase === 'crash' && sim - run.crashSim >= 0.6) bail();
     else if (run && run.phase === 'wreck' && camera.position.z < run.cz - 25) { scene.remove(run.g); run = null; state.phase = 'idle'; }
-    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt < 8) && !SS.nadeStarved) start(sim); // A11: a starved grenade goes first // A10: shared set-piece gap
+    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt >= 0 && sim - SS.setPieceAt < 15) /* A15: 15 s set-piece spacing */ && !SS.nadeStarved) start(sim); // A11: a starved grenade goes first // A10: shared set-piece gap
     // A13: a truck wave in waiting (armed, not started, < 20 s into the wave) holds the RPG until the bail-out + 12 s
     if (window.SS) window.SS.truckPendingWave = !!(armed && !firedWave && sim - waveT < 20);
   }

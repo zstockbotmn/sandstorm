@@ -252,7 +252,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     // A14 (tester: flank hit -> RPG 5.7 s later -> flank hit): no launch within RPG_FLANK_LULL_S game-s after a rifle flank
     // hit, forced mode too (replaces the A13 random-only 4.5 s rule). The launch waits; it is not cancelled.
     if (SS.lastFlankHitSim != null && sim - SS.lastFlankHitSim >= 0 && sim - SS.lastFlankHitSim < RPG_FLANK_LULL_S) { SS.rpgFlankWaits = (SS.rpgFlankWaits | 0) + 1; return; }
-    if (SS.setPieceAt != null && sim - SS.setPieceAt < 8) return; // A10: one shared set-piece gap (RPG / truck / grenade)
+    if (SS.setPieceAt != null && sim - SS.setPieceAt >= 0 && sim - SS.setPieceAt < 15) return; // A15: >= 15 s between any two set pieces (RPG / truck / grenade; was 8)
     // A11: a starved camping grenade goes first (the forced RPG used to keep starving it). A12: but only for 6 s - with no
     // thrower in range the grenade can stay 'starved' for the rest of the wave, which cancelled the RPG (wave 3, rpg=1).
     if (SS.nadeStarved) { if (starvedAt == null) starvedAt = sim; if (sim - starvedAt < 6) return; } else starvedAt = null;

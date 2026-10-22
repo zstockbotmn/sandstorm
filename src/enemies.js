@@ -2927,7 +2927,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const nadeMat = visMat(0x2f3324); const nadeGeo = new THREE.SphereGeometry(0.12, 10, 8);
   // Visible grenade (tester: the camera turned with no visible grenade): red blinking warning ring where it lands.
   const nadeRingMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }); const nadeRingGeo = new THREE.RingGeometry(0.35, 0.55, 24), nadeZoneGeo = new THREE.RingGeometry(2.75, 3.0, 48); // A10: + the 3 m blast zone ring (tester: the small ring hid behind RELOAD/SCOPE)
-  const nades = []; let nadeThisWave = false, campT = 0;
+  const nades = []; let nadeThisWave = false, campT = 0, nadesWave = 0; const NADE_CAP = 2, SP_GAP_S = 15;
   let nadeWhyT = 0; const slog = (k, d) => { try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log(k, d); } catch (_) {} };
   function throwGrenade(e, stay) {
     const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
@@ -2939,7 +2939,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function updateGrenades(dt) {
     const cov = window.SS && window.SS.cover;
-    if (waveActive && cov && cov.state === 'in') campT += dt; else if (!waveActive) { campT = 0; nadeThisWave = false; flankHitsWave = 0; }
+    if (waveActive && cov && cov.state === 'in') campT += dt; else if (!waveActive) { campT = 0; nadeThisWave = false; nadesWave = 0; flankHitsWave = 0; }
     // A10 (tester: no grenade in ~60 s ducked in wave 3): the thrower had to be engaged, on the ground AND < 26 m - wave-3
     // fighters usually hold 26-34 m or a roof, so nobody qualified. Now: the nearest live ground fighter within 36 m (engaged
     // or not); after 12 s camping it is certain. Shared set-piece spacing: none within 8 game-s of an RPG / truck (SS.setPieceAt).
@@ -2955,21 +2955,24 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // -> use the higher of the two. A director 'grenade' wave (random sp=5) allows it from wave 2 and sooner (3 s / 7 s).
     const nadeWave = window.SS && window.SS.spPick && window.SS.spPick.pick === 'grenade' && waveActive;
     const waveNo = Math.max(burstIndex, waveClears + 1), waveOk = waveNo >= 3 || (nadeWave && waveNo >= 2);
-    const certainAt = nadeWave ? 7 : 12 - 3 * pN, starved = waveActive && !nadeThisWave && waveOk && campT > certainAt - 3;
+    // A15 re-arm: up to NADE_CAP grenades a wave - after a throw campT restarts, and the next one needs the full 'certain'
+    // camp time again (no early roll) plus the set-piece spacing.
+    const capped = nadesWave >= NADE_CAP, certainAt = nadeWave && !nadesWave ? 7 : 12 - 3 * pN, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
-    const gapOk = spGap >= 8 || (campT > certainAt && spGap >= 3);
-    if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, waveNo, nadeWave: !!nadeWave, nadeThisWave, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
-    if (waveActive && !nadeThisWave && campT > (nadeWave ? 3 : 5 - 1.5 * pN) && waveOk && gapOk && (campT > certainAt || Math.random() < dt * 0.35)) {
+    const gapOk = spGap >= SP_GAP_S; // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
+    if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, waveNo, nadeWave: !!nadeWave, nadeThisWave, nadesWave, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
+    if (waveActive && !capped && campT > (nadeWave && !nadesWave ? 3 : 5 - 1.5 * pN) && waveOk && gapOk && (campT > certainAt || (!nadesWave && Math.random() < dt * 0.35))) {
       let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
         if (e.group.position.y < 0.5) { if (dd < bd) { bd = dd; th = e; } } else if (dd < rd) { rd = dd; roof = e; } }
       th = th || roof;
-      if (th) { nadeThisWave = true; campT = 0; if (window.SS) window.SS.nadeStarved = false; slog('grenade', 'thrown ' + Math.round(th.group.position.distanceTo(camera.position)) + 'm' + (th.group.position.y >= 0.5 ? ' (roof)' : '')); throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
+      if (th) { nadeThisWave = true; nadesWave++; campT = 0; if (window.SS) window.SS.nadeStarved = false; slog('grenade', 'thrown ' + Math.round(th.group.position.distanceTo(camera.position)) + 'm' + (th.group.position.y >= 0.5 ? ' (roof)' : '')); throwGrenade(th); } else if (window.SS) window.SS.nadeNoThrower = (window.SS.nadeNoThrower | 0) + 1;
     }
     // A14 (tester: no grenade in > 70 game-s camping wave 3 with 4 alive): while a wave is on and no grenade has come yet,
     // say WHY every ~5 game-s ('gren: ...' in the sound log, SS.nadeWhy). First failing gate in trigger order.
-    if (waveActive && !nadeThisWave) { nadeWhyT += dt; if (nadeWhyT >= 5) { nadeWhyT = 0;
+    if (waveActive) { nadeWhyT += dt; if (nadeWhyT >= 5) { nadeWhyT = 0; // A15: keeps going after a throw
       let why; const minCamp = 5 - 1.5 * pN;
-      if (!(cov && cov.state === 'in')) why = 'not in cover (' + (cov ? cov.state : 'none') + ')';
+      if (capped) why = 'cap ' + NADE_CAP + '/wave';
+      else if (!(cov && cov.state === 'in')) why = 'not in cover (' + (cov ? cov.state : 'none') + ')';
       else if (!waveOk) why = 'wave ' + waveNo + ' < 3';
       else if (campT <= (nadeWave ? 3 : minCamp)) why = 'camp ' + campT.toFixed(1) + 's < ' + minCamp.toFixed(1);
       else if (!gapOk) why = 'set-piece gap ' + Math.min(spGap, 999).toFixed(1) + 's';
@@ -3311,7 +3314,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function reset() {
     if (truck) { scene.remove(truck.g); truck = null; } truckPending = 0;
-    for (const n of nades) { scene.remove(n.m); if (n.ring) scene.remove(n.ring); } nades.length = 0; nadeThisWave = false; campT = 0; flankHitsWave = 0;
+    for (const n of nades) { scene.remove(n.m); if (n.ring) scene.remove(n.ring); } nades.length = 0; nadeThisWave = false; nadesWave = 0; campT = 0; flankHitsWave = 0;
     for (let i = list.length - 1; i >= 0; i--) despawn(list[i]);
     list.length = 0;
     while (fallers.length) { const f = fallers.pop(); if (f.group.parent) f.group.parent.remove(f.group); }
