@@ -2672,7 +2672,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const STALL_TYPES = ['wall', 'barrel', 'car', 'door', 'alley'];
   let mwWave = -1, mwContactSim = null, mwShots0 = 0, mwAt = 0, mwDone = false, mwPush = [], mwWaitWhy = ''; // A18: mid-wave second beat
   function stallCoverFor(e, aMin, aMax, minMove) { const pz = camera.position.z, here = e.group.position; let best = null, bd = 1e9;
-    for (const c of coverPool(STALL_TYPES, [Math.max(0, aMin - 1), aMax + 1])) { const a = pz - c.pos.z; if (a < aMin || a > aMax || Math.abs(c.pos.x) > 11) continue;
+    for (const c of coverPool(STALL_TYPES, [Math.max(0, aMin - 1), aMax + 1])) { const a = pz - c.pos.z + (FAR[c.type] || 0); /* A19: where the fighter actually crouches (cars / barrels: on the far side) */ if (a < aMin || a > aMax || Math.abs(c.pos.x) > 11) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(here); if (d < minMove * minMove) continue; if (d < bd) { bd = d; best = c; } }
     return best; }
   function stallSend(e, c, kind, from) { const SSx = window.SS, sim = SSx.simTime || 0, pz = camera.position.z;
@@ -2681,7 +2681,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     e.moveKind = 'run'; e._reposWhy = 'stall-' + kind; e.advanced = (e.advanced | 0) + 1;
     try { squadCall(kind === 'repositions' ? 'Moving!' : 'He\'s moving up!'); } catch (_) {}
     SSx.stallPushes = (SSx.stallPushes | 0) + 1; slog('enemy', kind + ' ' + Math.round(from) + 'm');
-    const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 40) L.shift();
+    const L = SSx.stallPushLog || (SSx.stallPushLog = []); const rec = { sim: +sim.toFixed(1), kind, id: e.id, from: Math.round(from), to: Math.round(pz - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0))), wave: Math.max(burstIndex, waveClears + 1) }; L.push(rec); if (L.length > 40) L.shift();
     if (e._stallRec && e._stallRec.arrived == null) e._stallRec.cancelled = 'stall'; e._stallRec = rec; } // A16b: arrival (or why not) is filled in on the rec
   function openBound(e, a) { const cam = camera.position, p = e.group.position; const step = Math.min(7, a - 3); if (step < 5) return null;
     const side = Math.abs(p.x) > 0.8 ? Math.sign(p.x) : (cam.x <= 0 ? 1 : -1);
@@ -2690,7 +2690,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       return { pos, type: 'wall', open: true }; }
     return null; }
   function nearCover(e, a) { const cam = camera.position, aMax = Math.min(13, a - 3); let best = null, bd = 1e9;
-    for (const c of coverPool(STALL_TYPES, [5, 14])) { const az = cam.z - c.pos.z; if (az < 6 || az > aMax || Math.abs(c.pos.x) > 11) continue;
+    for (const c of coverPool(STALL_TYPES, [5, 14])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < 6 || az > aMax || Math.abs(c.pos.x) > 11) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(cam); if (d < bd) { bd = d; best = c; } }
     return best; }
   function openBoundNear(e, a) { const cam = camera.position, p = e.group.position; const step = Math.min(6, a - 3.4); if (step < 2.5) return null;
