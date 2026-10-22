@@ -2021,6 +2021,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function flankTick() {
     const SSx = window.SS; if (!SSx || !SSx.running) return;
     const t = SSx.simTime || 0, ducked = !!(SSx.input && SSx.input.cover);
+    for (const f of list) if (f.alive && f._flankTellSim > -1e8 && t - f._flankTellSim > FLANK_TELL_MAX_S + 0.5) retireFlanker(f, f._flankBlock || (ducked ? 'no shot' : 'player left cover')); // A16: an unused tell ends the attempt
     if (!ducked) { duckSinceSim = null; return; }
     if (duckSinceSim == null) duckSinceSim = t;
     if (t - duckSinceSim < FLANK_AFTER_S() || t - lastFlankSim < FLANK_GAP_S()) return;
@@ -2058,10 +2059,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // moves back to cover in the player's front arc (a new flank needs a new flank move + tell)
   function flankAfterHit(e) { const sim = window.SS.simTime || 0; e._lastTellAge = +(sim - (e._flankTellSim || 0)).toFixed(2); e._flankTellSim = null;
     flankHitsWave++; e._flankHitsN = (e._flankHitsN | 0) + 1;
-    if (e._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE) { e._flankArr = null; e._flankHitsN = 0;
-      let best = null, bd = 1e9; for (const c of coverPool(['wall', 'barrel', 'car', 'door'], [8, 32])) { if (!c.pos || !inFrontArc(c.pos) || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
-      if (best && !e.pinned && !e.dying) { parkCoverStep(e); startReposition(e, best); e._reposWhy = 'flank-done'; e.moveKind = 'run'; }
-      if (window.SS) window.SS.flankRetired = (window.SS.flankRetired | 0) + 1; } }
+    if (e._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(e, null);
+    if (flankHitsWave >= FLANK_CAP_WAVE) for (const f of list) if (f !== e && f.alive && (f._flankArr || f._flankMove)) retireFlanker(f, 'cap'); }
+  // A16: a flanker leaves its flank spot for front-arc cover (visible reposition); why != null logs 'flank aborted (why)'
+  function retireFlanker(e, why) { e._flankArr = null; e._flankMove = false; e._flankHitsN = 0; e._flankTellSim = null; e._flankBlock = null;
+    let best = null, bd = 1e9; for (const c of coverPool(['wall', 'barrel', 'car', 'door'], [8, 32])) { if (!c.pos || !inFrontArc(c.pos) || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
+    if (best && !e.pinned && !e.dying && e.alive) { parkCoverStep(e); startReposition(e, best); e._reposWhy = why ? 'flank-abort' : 'flank-done'; e.moveKind = 'run'; }
+    const SSx = window.SS; if (!SSx) return; SSx.flankRetired = (SSx.flankRetired | 0) + 1;
+    if (why) { SSx.flankAborts = (SSx.flankAborts | 0) + 1; slog('enemy', 'flank aborted (' + why + ')'); const L = SSx.flankAbortLog || (SSx.flankAbortLog = []); L.push({ sim: +((SSx.simTime || 0)).toFixed(2), why }); if (L.length > 40) L.shift(); } }
   api.debugFlank = () => { lastFlankSim = -1e9; duckSinceSim = -1e9; flankTick(); return window.SS && window.SS.lastFlank; };
   function coverFacing(out) { const SSx = window.SS, c = camera.position, sb = SSx && SSx.cover && SSx.cover.surface; out.x = 0; out.z = -1;
     if (sb) { const qx = Math.max(sb.min.x, Math.min(sb.max.x, c.x)), qz = Math.max(sb.min.z, Math.min(sb.max.z, c.z)), l = Math.hypot(qx - c.x, qz - c.z); if (l > 0.05) { out.x = (qx - c.x) / l; out.z = (qz - c.z) / l; } }
@@ -2114,6 +2119,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // arc are treated as front (ducked = misses). Its hits need the tell, a muzzle -> head or torso line clear of the
     // cover box and buildings, and FLANK_LULL_S since the last flank hit.
     const outArc = duckedA8 && !inFrontArc(enemy.group.position);
+    if (outArc && enemy._flankArr && flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(enemy, 'cap'); // A16: no tell / hit past the wave cap
     const isFlanker = !!(enemy._flankArr && enemy.group.position.distanceTo(enemy._flankArr) < 1.5);
     if (outArc && !isFlanker && window.SS) window.SS.flankNotMover = (window.SS.flankNotMover | 0) + 1;
     if (outArc && isFlanker) { flankShot = true;
@@ -2123,13 +2129,16 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // covered every later hit. Now a tell is good for ONE hit, 1.5-5 s after it shows (game and real time): a hit consumes
       // it, and a tell older than FLANK_TELL_MAX_S is shown again (new attempt) before any hit.
       const tAge = fS - (enemy._flankTellSim > -1e8 ? enemy._flankTellSim : -1e9);
-      if (!(enemy._flankTellSim > -1e8) || tAge > FLANK_TELL_MAX_S) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
+      // A16 (tester A15: 3-4 FLANKED per wave, 2 hits): a tell that ran out (> 5 s) with no hit no longer re-shows - the attempt
+      // is aborted ('flank aborted (why)') and the flanker moves back to the front arc; a fresh tell only for a fresh attempt.
+      if (enemy._flankTellSim > -1e8 && tAge > FLANK_TELL_MAX_S) { retireFlanker(enemy, enemy._flankBlock || 'no shot'); flankShot = false; }
+      else if (!(enemy._flankTellSim > -1e8)) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
       enemy._flankLastSim = fS; const tS = fS - enemy._flankTellSim, tR = fR - enemy._flankTellR;
       flankReady = tS >= FLANK_TELL_S && tR >= FLANK_TELL_S && tS <= FLANK_TELL_MAX_S;
       // A15 cap: at most FLANK_CAP_WAVE flank hits per wave on a player who stays in cover
       if (flankReady && flankHitsWave >= FLANK_CAP_WAVE) { flankReady = false; if (window.SS) window.SS.flankCapBlocked = (window.SS.flankCapBlocked | 0) + 1; } }
-    if (flankShot && !flankLine(_muzzle)) { flankReady = false; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; }
-    if (flankShot && flankReady && window.SS && flankLullLeft() > 0) { flankReady = false; window.SS.flankLullBlocked = (window.SS.flankLullBlocked | 0) + 1; }
+    if (flankShot && !flankLine(_muzzle)) { flankReady = false; enemy._flankBlock = 'no line'; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; }
+    if (flankShot && flankReady && window.SS && flankLullLeft() > 0) { flankReady = false; enemy._flankBlock = 'lull'; window.SS.flankLullBlocked = (window.SS.flankLullBlocked | 0) + 1; }
     const flankHit = flankShot && flankReady;
     // Fix 7 (tester: slightly easier): ~20% lower base accuracy; each enemy's first 3 shots at first contact are mostly
     // misses (sighting-in), so the player gets a beat to react. Damage per hit is unchanged (~5 hits to kill).
@@ -2175,6 +2184,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const slope = 0.05 + 0.02 * pEx, exposedCap = 0.5 + 0.12 * pEx;
     if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : exposedCap, 0.10 + slope * (dryS - 3))); // A8: ducking now blocks the front arc outright, so the exposed ramp is a bit steeper (0.10 + slope/s, cap 0.5+0.12p) // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
     if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3), ducked, flankShot, flankReady };
+    if (flankHit) chance = 1; // A16: a told flank shot in its window lands (each tell leads to a hit or an abort + reposition)
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap && simS - (lastPlayerHitSim || -99) >= gap; // spacing holds in BOTH real and game time
@@ -2190,6 +2200,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (hit && !flankHit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
     const dmgAmt = dmgAmt0, dmgCost = lowHp ? Math.min(dmgAmt, Math.max(1, player.health)) : dmgAmt;
     if (dmgBudget(nowS, simS) < dmgCost - 1e-6 && hit) { hit = false; if (window.SS) window.SS.dmgCapBlocked = (window.SS.dmgCapBlocked | 0) + 1; } // m1w: incoming damage-per-second cap
+    if (flankHit && !hit) enemy._flankBlock = 'blocked (spacing / damage cap)';
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
     if (!hit) {
@@ -2488,7 +2499,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function enterCover(enemy, hold) {
     enemy._repositioning = false;
-    if (enemy._flankMove) { enemy._flankMove = false; enemy._flankArr = enemy.group.position.clone(); /* A14: the only fighter whose rounds can be flank hits */ const SSx = window.SS; if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
+    if (enemy._flankMove) { enemy._flankMove = false; enemy._flankArr = enemy.group.position.clone(); /* A14: the only fighter whose rounds can be flank hits */ const SSx = window.SS; if (SSx && flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(enemy, 'cap'); /* A16: no tell once the wave's flank budget is spent */ else if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
     enemy.phase = 'takeCover';
     enemy.phaseT = hold != null ? hold : 0.22 + Math.random() * 0.2;
     enemy.posture = 'crouch';
