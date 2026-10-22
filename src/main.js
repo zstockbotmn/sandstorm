@@ -407,14 +407,17 @@ function startRunLive() {
 
 showBest();
 
-// ?debug: show the build (service worker cache version) in a corner.
-if (/[?&]debug\b/.test(location.search)) {
+// ?debug (or an internal preview label): show the build (service worker cache version) in a corner.
+if (/[?&]debug\b/.test(location.search) || window.__SS_LABEL) {
   const tag = document.createElement('div');
   tag.id = 'build-tag';
   tag.style.cssText = 'position:fixed;left:4px;bottom:2px;z-index:99;font:10px monospace;color:#fff;background:rgba(0,0,0,.45);padding:1px 4px;pointer-events:none';
-  tag.textContent = 'build …';
+  // A14 (tester: 'internal preview A13' was only a comment in index.html): the preview script sets window.__SS_LABEL;
+  // it leads the corner tag on the menu and in play, debug or not.
+  const LBL = typeof window.__SS_LABEL === 'string' && window.__SS_LABEL ? window.__SS_LABEL + ' · ' : '';
+  tag.textContent = LBL + 'build …';
   document.body.appendChild(tag);
-  fetch('sw.js', { cache: 'no-store' }).then(r => r.text()).then(t => { const m = t.match(/ss-[0-9a-f]{10}/); tag.textContent = 'build ' + (m ? m[0] : 'dev'); }).catch(() => { tag.textContent = 'build ?'; });
+  fetch('sw.js', { cache: 'no-store' }).then(r => r.text()).then(t => { const m = t.match(/ss-[0-9a-f]{10}/); tag.textContent = LBL + 'build ' + (m ? m[0] : 'dev'); }).catch(() => { tag.textContent = LBL + 'build ?'; });
 }
 
 // Swap the code-built box rifle for the CC0 rifle model once art is loaded (box rifle stays if it fails / low tier).
