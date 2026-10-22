@@ -36,8 +36,9 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
         for (const x of (SS.audioLog || [])) if (x.kind === 'gren' && !R.grenT.includes(x.t)) R.grenT.push(x.t);
         if (R._wa && !SS.waveActive) R.waveEnds.push(+sim.toFixed(1)); R._wa = !!SS.waveActive;
         for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /advances/.test(x.detail) && !R.advLines.includes(x.t)) R.advLines.push(x.t);
+        R.noneLines = R.noneLines || []; for (const x of (SS.audioLog || [])) if (x.kind === 'enemy' && /stall push none/.test(x.detail) && !R.noneLines.some((y) => y.t === x.t)) R.noneLines.push({ t: x.t, d: x.detail });
         if (!SS.player.alive) { R.died = +sim.toFixed(1); break; } await new Promise((r) => setTimeout(r, 250)); }
-      R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.aborts = SS.flankAbortLog || []; R.flankCalls = SS.flankCallLog || []; R.tells2 = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.noneWhy = SS.stallNoneWhy || null; R.picks = (SS.spPick && SS.spPick.hist) || [];
+      R.sim = +(SS.simTime || 0).toFixed(1); R.recs = SS.flankHitRecs || []; R.spLog = SS.spLog || []; R.push = SS.stallPushLog || []; R.tells = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.aborts = SS.flankAbortLog || []; R.flankCalls = SS.flankCallLog || []; R.tells2 = (SS.flankLog || []).map((t) => ({ id: t.id, tellSim: t.tellSim })); R.mid = SS.midBeatLog || []; R.contacts = SS.waveContactLog || []; R.held = SS.stallPushHeld | 0; R.noneWhy = SS.stallNoneWhy || null; R.picks = (SS.spPick && SS.spPick.hist) || [];
       R.counters = { flankTells: SS.flankTells | 0, flankCapBlocked: SS.flankCapBlocked | 0, flankRetired: SS.flankRetired | 0, stallPushes: SS.stallPushes | 0, stallPushNone: SS.stallPushNone | 0, frontArcDuckHits: SS.frontArcDuckHits | 0 };
       R.log = (SS.audioLog || []).filter((x) => /grenade|gren|enemy|wave|rpg|truck/.test(x.kind)).map((x) => ({ t: x.t, kind: x.kind, d: x.detail })); return R; }, mode === 'random' ? [6, 40] : [4, 45]));
     // 1 + 2
@@ -71,6 +72,14 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       if (n === 0 && t.tellSim < res.sim - 5.5) fail.push('tell ' + t.tellSim + ' (id ' + t.id + ') had no outcome (no hit, no abort by 5 s)');
       for (const a of abs) if (a.sim - a.tell > 5.15) fail.push('tell ' + t.tellSim + ' aborted late at ' + a.sim + ' (+' + (a.sim - a.tell).toFixed(2) + ' s, want <= 5)'); }
     for (const c of res.flankCalls || []) if (!res.tells.some((t) => Math.abs(t.tellSim - c) < 0.25)) fail.push("'Flanking!' radio at " + c + ' with no FLANKED tell');
+    // A18: from wave 2 on, one mid-wave beat 18-28 s after contact (waves that last that long); no 'stall push none'
+    for (const c of res.contacts || []) { if (c.wave < 2) continue; const w = res.waves.find((x) => x.n === c.wave), nx = res.waves.find((x) => x.n === c.wave + 1);
+      const end = (res.waveEnds || []).find((t) => t > c.sim) || (nx && nx.start) || res.sim; const mb = (res.mid || []).filter((m) => m.wave === c.wave);
+      if (end - c.sim < 28.5) { if (mb.length > 1) fail.push('wave ' + c.wave + ': ' + mb.length + ' mid-wave beats'); continue; }
+      if (mb.length !== 1) fail.push('wave ' + c.wave + ': ' + mb.length + ' mid-wave beats (want 1; contact ' + c.sim + ', end ' + end + ')');
+      for (const m of mb) if (!(m.afterContact >= 18 && m.afterContact <= 28)) fail.push('wave ' + c.wave + ': mid-wave ' + m.kind + ' at +' + m.afterContact + ' s after contact (want 18-28)'); void w; }
+    if ((res.mid || []).some((m) => m.wave < 2)) fail.push('mid-wave beat in wave 1');
+    for (const n of res.noneLines || []) fail.push('stall push none at ' + n.t + ': ' + n.d);
     // A16b: 'flank aborted' once per attempt (no repeats within 1 s)
     for (let i = 1; i < (res.aborts || []).length; i++) if (res.aborts[i].sim - res.aborts[i - 1].sim < 1) { fail.push('flank aborted repeats (' + res.aborts[i - 1].sim + ', ' + res.aborts[i].sim + ')'); break; }
     if (res.push.length && !res.advLines.length) fail.push('no "advances" line in the sound log');
