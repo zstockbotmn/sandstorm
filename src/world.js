@@ -845,6 +845,14 @@ export function createWorld(scene, seed) {
       const x0 = facadeX - side * 0.08, x1 = facadeX + side * 3.85;
       ROOMS.set(seg.id, { min: new THREE.Vector3(Math.min(x0, x1), -0.1, zc - W / 2 + 0.01), max: new THREE.Vector3(Math.max(x0, x1), RH - 0.01, zc + W / 2 - 0.01) });
       syncRoomClip();
+      let removed = 0;
+      if (seg._wins) for (let i = seg._wins.length - 1; i >= 0; i--) {
+        const e = seg._wins[i];
+        if (Math.abs(e.pos.x - facadeX) < 1.0 && e.pos.y - e.h / 2 < RH + 0.3 && Math.abs(e.pos.z - zc) < W / 2 + e.w / 2 + 0.3) {
+          seg._wins.splice(i, 1); seg._artWinN--; removed++;
+        }
+      }
+      if (typeof window !== 'undefined' && window.SS) window.SS.bld4roomWinCut = (window.SS.bld4roomWinCut | 0) + removed;
     }
     return true;
   }
