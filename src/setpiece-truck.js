@@ -14,7 +14,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
   const state = { wave: 0, count: 0, phase: 'idle' };
   const forced = /[?&]truck=1\b/.test(location.search);
   const up = new THREE.Vector3(0, 1, 0), tmp = new THREE.Vector3();
-  let wasBurst = false, waveT = 0, delay = 2, firedWave = false, armed = false, seenRun = null, run = null, tex = null;
+  let wasBurst = false, waveT = 0, delay = 2, firedWave = false, armed = false, seenRun = null, run = null, tex = null, armLatch = -1;
 
   const chunkGeo = new THREE.BoxGeometry(1, 1, 1), chunkMats = [new THREE.MeshBasicMaterial({ color: 0x3a3a2c, fog: false }), new THREE.MeshBasicMaterial({ color: 0x23211d, fog: false })], chunks = [];
   function stepChunks(dt) { if (!chunks.length) return; const rdt = Math.min(dt, 0.05) || 0.016;
@@ -110,15 +110,28 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     run.rec.crashSim = sim; run.rec.crashR = performance.now(); run.rec.dmg = dmg; run.rec.hpBefore = hpBefore; run.rec.dist = d;
     publish();
     if (dmg > 0 && player.damage) player.damage(dmg, p.clone(), 'truck');
-    // A31: short calm after truck crash
-    if (window.SS) {
-      const until = sim + 7 + Math.random() * 3; // A32: 7–10 s calm so fight-regen (FIGHT_DELAY_S=6) can tick
-      window.SS.bigBeatCalmUntil = until;
-      if (window.SS.calmUntil == null || until > window.SS.calmUntil) window.SS.calmUntil = until;
-      const L = window.SS.bigBeatCalmLog || (window.SS.bigBeatCalmLog = []);
-      L.push({ sim: +sim.toFixed(1), until: +until.toFixed(1), kind: 'truck' }); if (L.length > 20) L.shift();
-      try { if (window.SS.audio && window.SS.audio.log) window.SS.audio.log('setpiece', 'big-beat calm'); } catch (_) {}
+    stampBigBeatCalm(sim, 'truck');
+  }
+  // A33: calm starts from a readable deficit when the bar was near full (never below 5, never a kill).
+  function stampBigBeatCalm(sim, kind) {
+    const SS = window.SS; if (!SS) return;
+    if (player && player.alive && player.health >= 85 && player.damage) {
+      const drop = 25 + Math.random() * 10;
+      const hurt = Math.max(0, Math.min(drop, player.health - 5));
+      if (hurt > 0) player.damage(hurt, null, 'bigbeat-setup');
     }
+    const until = sim + 8 + Math.random() * 4; // A33: 8–12 s so FIGHT_DELAY_S(6) + fight regen can climb
+    SS.bigBeatCalmUntil = until;
+    if (SS.calmUntil == null || until > SS.calmUntil) SS.calmUntil = until;
+    const L = SS.bigBeatCalmLog || (SS.bigBeatCalmLog = []);
+    L.push({ sim: +sim.toFixed(1), until: +until.toFixed(1), kind, hp: player ? +player.health.toFixed(0) : null });
+    if (L.length > 20) L.shift();
+    try { if (SS.audio && SS.audio.log) SS.audio.log('setpiece', 'big-beat calm'); } catch (_) {}
+  }
+  function doorFastTruck() {
+    const SS = window.SS || {};
+    let url = false; try { url = /[?&](?:door|doorstop)=1\b/.test(location.search); } catch (_) {}
+    return !!(url || SS.forceDoor || SS.doorHold || (SS.doorStop && SS.doorStop.state === 'held') || (SS.cover && SS.cover.kind === 'door' && SS.cover.state === 'in'));
   }
   function stepDrive(sim) {
     const simElapsed = sim - run.startSim, realMs = performance.now() - run.startR;
@@ -152,7 +165,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (seenRun == null) { seenRun = id; return; }
     if (id === seenRun) return;
     seenRun = id; state.wave = 0; state.count = 0; state.phase = 'idle';
-    wasBurst = false; firedWave = false; armed = false; waveT = (window.SS && window.SS.simTime) || 0;
+    wasBurst = false; firedWave = false; armed = false; armLatch = -1; waveT = (window.SS && window.SS.simTime) || 0;
     if (run && run.g) scene.remove(run.g);
     run = null;
     if (window.SS) { window.SS.truckMoment = { count: 0, last: null }; window.SS.truckBailAt = null; window.SS.truckPendingWave = false; window.SS.lastFlankHitSim = null; }
@@ -163,16 +176,27 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (bursting && !wasBurst) {
       state.wave += 1;
       if (forced) { waveT = sim; delay = 2; firedWave = false; armed = true; }
-      else if (SS.spPick && SS.spPick.pick === 'truck' && Math.abs(sim - (SS.spPick.sim || 0)) < 0.5) { waveT = sim; delay = 2 + Math.random() * 6; firedWave = false; armed = true; } // A14: the wave director picks truck waves (random mode)
+      else if (SS.spPick && SS.spPick.pick === 'truck' && Math.abs(sim - (SS.spPick.sim || 0)) < 0.5) { waveT = sim; delay = doorFastTruck() ? 2 + Math.random() * 2 : 2 + Math.random() * 6; firedWave = false; armed = true; armLatch = SS.spPick.sim; } // A14 director; A33 doorway 2–4 s
       else { armed = false; }
     }
     wasBurst = bursting;
+    // A33: if the burst edge and the director pick land a frame apart, still arm the truck (doorway camp included).
+    if (!armed && !firedWave && !forced && SS.spPick && SS.spPick.pick === 'truck' && SS.spPick.wave === state.wave && armLatch !== SS.spPick.sim && sim - (SS.spPick.sim || 0) >= 0 && sim - (SS.spPick.sim || 0) < 2) {
+      armLatch = SS.spPick.sim; waveT = SS.spPick.sim || sim; delay = doorFastTruck() ? 2 + Math.random() * 2 : 2 + Math.random() * 6; firedWave = false; armed = true;
+    }
     if (run && run.phase === 'drive') stepDrive(sim);
     else if (run && run.phase === 'crash' && sim - run.crashSim >= 0.6) bail();
     else if (run && run.phase === 'wreck' && camera.position.z < run.cz - 25) { scene.remove(run.g); run = null; state.phase = 'idle'; }
-    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt >= 0 && sim - SS.setPieceAt < 15) /* A15: 15 s set-piece spacing */ && !(SS.bigBeatCalmUntil != null && sim < SS.bigBeatCalmUntil) /* A31 */ && !(SS.climaxState && (SS.climaxState.phase === 'tell' || SS.climaxState.phase === 'active')) /* A32: wait out a live climax */ && !(SS.climaxAt != null && sim - SS.climaxAt >= 0 && sim - SS.climaxAt < 15) /* A32: ≥15 s after climax tell */ && !SS.nadeStarved && !(SS.midBeatAt != null && sim - SS.midBeatAt >= 0 && sim - SS.midBeatAt < 8) /* A19 (PM 8) */) start(sim); // A11: a starved grenade goes first // A10: shared set-piece gap
-    // A13: a truck wave in waiting (armed, not started, < 20 s into the wave) holds the RPG until the bail-out + 12 s
-    if (window.SS) window.SS.truckPendingWave = !!(armed && !firedWave && sim - waveT < 20);
+    // A33: IN COVER · DOORWAY (walking false / doorHold) does not block the tell. A starved flush must not swallow it there either.
+    // Spacing gates (15 s set piece, climax wait, calm, mid-beat) stay — no A31 ~2 s truck→grenade stack.
+    const doorCamp = doorFastTruck();
+    const gap15 = (t) => t != null && sim - t >= 0 && sim - t < 15;
+    const climaxLive = !!(SS.climaxState && (SS.climaxState.phase === 'tell' || SS.climaxState.phase === 'active'));
+    const starvedBlock = !!SS.nadeStarved && !doorCamp;
+    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !gap15(SS.setPieceAt) && !(SS.bigBeatCalmUntil != null && sim < SS.bigBeatCalmUntil) && !climaxLive && !gap15(SS.climaxAt) && !starvedBlock && !(SS.midBeatAt != null && sim - SS.midBeatAt >= 0 && sim - SS.midBeatAt < 8)) start(sim);
+    // A13: a truck wave in waiting holds the RPG / climax. A33: doorway keeps the hold a little longer so the tell still wins the slot.
+    const pendFor = doorCamp ? 24 : 20;
+    if (window.SS) window.SS.truckPendingWave = !!(armed && !firedWave && sim - waveT < pendFor);
   }
   function debugTruck() { return start((window.SS && window.SS.simTime) || 0); }
   function probe() { if (!run) return null; const v = run.g.position.clone(), w = new THREE.Vector3(); run.g.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(run.g); v.project(camera); let vis = true; for (let q = run.g; q; q = q.parent) if (!q.visible) vis = false;

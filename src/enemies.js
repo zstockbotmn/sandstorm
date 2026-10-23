@@ -2130,13 +2130,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const FRONT_ARC_DEG = 60, FRONT_ARC_COS = Math.cos(FRONT_ARC_DEG * Math.PI / 180), FLANK_TELL_S = 1.5, FLANK_RESET_S = 5, FLANK_TELL_MAX_S = 5, FLANK_ABORT_S = 4.6 /* A17: abort before 5.0 s even at ~0.4 s frames */, FLANK_CAP_WAVE = 2, FLANK_HITS_PER_FLANKER = 2;
   let flankHitsWave = 0; // A15: reset when the wave ends (updateGrenades)
   let duckSinceSim = null, lastFlankSim = -1e9;
+  let doorPressArmAt = 0, doorPressId = null, doorPressN = 0; // A33 doorway pressure flank
   function FLANK_AFTER_S() { return 9 - 3 * pressureP(); }
   function FLANK_GAP_S() { return 18 - 6 * pressureP(); }
   function flankTick() {
     const SSx = window.SS; if (!SSx || !SSx.running) return;
     if (lullOn(SSx.simTime || 0)) return; // A21: no new flanks in the post-climax lull
     const t = SSx.simTime || 0, ducked = !!(SSx.input && SSx.input.cover);
-    for (const f of list) if (f.alive && typeof f._flankTellSim === 'number' && t - f._flankTellSim >= FLANK_ABORT_S) retireFlanker(f, f._flankBlock || (ducked ? 'no shot' : 'player left cover')); // A16: an unused tell ends the attempt
+    for (const f of list) if (f.alive && !f._doorPressure && typeof f._flankTellSim === 'number' && t - f._flankTellSim >= FLANK_ABORT_S) retireFlanker(f, f._flankBlock || (ducked ? 'no shot' : 'player left cover')); // A16: an unused tell ends the attempt; A33 door pressure stays put
     if (!ducked) { duckSinceSim = null; return; }
     if (duckSinceSim == null) duckSinceSim = t;
     if (t - duckSinceSim < FLANK_AFTER_S() || t - lastFlankSim < FLANK_GAP_S()) return;
@@ -2145,7 +2146,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (list.some((f) => f.alive && f._flankMove && f.phase === 'relocate')) return;
     let e = null, bd = 1e9; const cam = camera.position;
     for (const f of list) {
-      if (!f.alive || f.dying || f.pinned || f.group.position.y > 0.05 || f.phase === 'relocate' || !f.anchor || isElevated(f.anchor.type)) continue;
+      if (!f.alive || f.dying || f.pinned || f._doorPressure || f.group.position.y > 0.05 || f.phase === 'relocate' || !f.anchor || isElevated(f.anchor.type)) continue;
       const d = Math.hypot(f.group.position.x - cam.x, f.group.position.z - cam.z); if (d < bd) { bd = d; e = f; }
     }
     if (!e) return;
@@ -2169,12 +2170,61 @@ export function createEnemies(scene, camera, world, weapon, player) {
     SSx.flankMoves = (SSx.flankMoves | 0) + 1;
     SSx.lastFlank = { id: e.id, to: [+spot.pos.x.toFixed(1), +spot.pos.z.toFixed(1)], t: +t.toFixed(1) };
   }
+  // A33: doorway camp is not an idle wait. One shootable street-side flanker, FLANKED tell, no cover yank.
+  function doorHeldNow() {
+    const S = window.SS; if (!S) return false;
+    if (S.doorHold || (S.doorStop && S.doorStop.state === 'held')) return true;
+    return !!(S.cover && S.cover.kind === 'door' && S.input && S.input.cover);
+  }
+  function doorPressureTick() {
+    const SSx = window.SS; if (!SSx || !SSx.running) return;
+    const sim = SSx.simTime || 0;
+    if (!doorHeldNow()) { doorPressArmAt = 0; return; }
+    if (Math.max(burstIndex, waveClears + 1) <= 1) return;
+    if (doorPressId != null) {
+      const live = list.some((e) => e.id === doorPressId && e.alive && !e.dying);
+      if (live) return;
+      if (doorPressN >= 2) return;
+      doorPressId = null;
+    }
+    const alive = list.filter((e) => e.alive && !e.dying && !e.pinned && e.group.position.y < 0.8 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankMove && !e._doorPressure);
+    if (!alive.length) return;
+    // Climax owns the thrower. Pressure may already be in place; do not pull a new one during the tell or the grenade.
+    if (cxPhase === 'tell' || cxPhase === 'active') return;
+    if (!doorPressArmAt) { doorPressArmAt = sim + 3 + Math.random() * 3; return; }
+    if (sim < doorPressArmAt) return;
+    const cam = camera.position;
+    const door = SSx.cover && SSx.cover.door;
+    const side = (door && door.side) || (cam.x >= 0 ? 1 : -1);
+    const street = -side; // free street side, opposite the facade — the parked leaf is the -z interior wall
+    let spot = null, loose = null;
+    hunt: for (const dz of [2.8, 3.8, 1.8, -4.2, -5.4, -3.2]) for (const ax of [4.4, 5.4, 3.6, 6.2]) {
+      const pos = new THREE.Vector3(cam.x + street * ax, 0, cam.z + dz);
+      const anchor = { pos, type: 'wall', open: true };
+      let at = pos; try { at = tuckOf(standPos(anchor), anchor); } catch (_) {}
+      if (Math.hypot(at.x - cam.x, at.z - cam.z) < 3.3) continue;
+      if (inFrontArc(at)) continue;
+      if (!loose) loose = anchor;
+      if (clearToEye(_losP.set(at.x, 1.25, at.z))) { spot = anchor; break hunt; }
+    }
+    if (!spot) spot = loose || { pos: new THREE.Vector3(street * 5.2, 0, cam.z + 3.2), type: 'wall', open: true };
+    let e = null, bd = 1e9;
+    for (const f of alive) { const d = Math.hypot(f.group.position.x - cam.x, f.group.position.z - cam.z); if (d < bd) { bd = d; e = f; } }
+    if (!e) { doorPressArmAt = sim + 2; return; }
+    e.pinned = false; e.staggerT = 0; e._doorPressure = true;
+    try { parkCoverStep(e); } catch (_) {}
+    startReposition(e, spot);
+    e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run';
+    doorPressId = e.id; doorPressN += 1; doorPressArmAt = 0;
+    SSx.doorPressure = { sim: +sim.toFixed(2), id: e.id, side: street > 0 ? 1 : -1, armed: true };
+    slog('door', 'doorway pressure flank');
+  }
   // A15: a flank hit consumes its tell; after FLANK_HITS_PER_FLANKER hits (or the wave cap) the flanker stops being one and
   // moves back to cover in the player's front arc (a new flank needs a new flank move + tell)
   function flankAfterHit(e) { const sim = window.SS.simTime || 0; e._lastTellAge = +(sim - (e._flankTellSim || 0)).toFixed(2); e._flankTellSim = null; if (e._flankRec && !e._flankRec.outcome) { e._flankRec.outcome = 'hit'; e._flankRec.outSim = +sim.toFixed(2); }
     flankHitsWave++; e._flankHitsN = (e._flankHitsN | 0) + 1;
-    if (e._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(e, null);
-    if (flankHitsWave >= FLANK_CAP_WAVE) for (const f of list) if (f !== e && f.alive && (f._flankArr || f._flankMove)) retireFlanker(f, 'cap'); }
+    if (!e._doorPressure && (e._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE)) retireFlanker(e, null);
+    if (flankHitsWave >= FLANK_CAP_WAVE) for (const f of list) if (f !== e && f.alive && !f._doorPressure && (f._flankArr || f._flankMove)) retireFlanker(f, 'cap'); }
   // A16: a flanker leaves its flank spot for front-arc cover (visible reposition); why != null logs 'flank aborted (why)'
   function retireFlanker(e, why) { const hadTell = typeof e._flankTellSim === 'number' ? +e._flankTellSim.toFixed(2) : null; if (hadTell != null && e._flankRec && !e._flankRec.outcome) { e._flankRec.outcome = why ? 'abort' : 'hit'; e._flankRec.outSim = +((window.SS && window.SS.simTime) || 0).toFixed(2); } e._flankArr = null; e._flankMove = false; e._flankHitsN = 0; e._flankTellSim = null; e._flankBlock = null;
     let best = null, bd = 1e9; for (const c of coverPool(['wall', 'barrel', 'car', 'door'], [8, 32])) { if (!c.pos || !inFrontArc(c.pos) || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
@@ -2253,7 +2303,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // arc are treated as front (ducked = misses). Its hits need the tell, a muzzle -> head or torso line clear of the
     // cover box and buildings, and FLANK_LULL_S since the last flank hit.
     const outArc = duckedA8 && !inFrontArc(enemy.group.position);
-    if (outArc && enemy._flankArr && flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(enemy, 'cap'); // A16: no tell / hit past the wave cap
+    if (outArc && enemy._flankArr && flankHitsWave >= FLANK_CAP_WAVE && !enemy._doorPressure) retireFlanker(enemy, 'cap'); // A16: no tell / hit past the wave cap; A33 doorway pressure stays put
     const isFlanker = !!(enemy._flankArr && enemy.group.position.distanceTo(enemy._flankArr) < 1.5);
     if (outArc && !isFlanker && window.SS) window.SS.flankNotMover = (window.SS.flankNotMover | 0) + 1;
     if (outArc && isFlanker) { flankShot = true;
@@ -2265,10 +2315,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const tAge = fS - (typeof enemy._flankTellSim === 'number' ? enemy._flankTellSim : -1e9);
       // A16 (tester A15: 3-4 FLANKED per wave, 2 hits): a tell that ran out (> 5 s) with no hit no longer re-shows - the attempt
       // is aborted ('flank aborted (why)') and the flanker moves back to the front arc; a fresh tell only for a fresh attempt.
-      if (typeof enemy._flankTellSim === 'number' && tAge >= FLANK_ABORT_S) { retireFlanker(enemy, enemy._flankBlock || 'no shot'); flankShot = false; }
-      else if (!(typeof enemy._flankTellSim === 'number')) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
-      enemy._flankLastSim = fS; const tS = fS - enemy._flankTellSim, tR = fR - enemy._flankTellR;
-      flankReady = tS >= FLANK_TELL_S && tR >= FLANK_TELL_S && tS < FLANK_ABORT_S; // A17: 1.5 s minimum (game AND real time), outcome before 5 s
+      if (typeof enemy._flankTellSim === 'number' && tAge >= FLANK_ABORT_S && !enemy._doorPressure) { retireFlanker(enemy, enemy._flankBlock || 'no shot'); flankShot = false; }
+      else if (!(typeof enemy._flankTellSim === 'number')) {
+        if (!(enemy._doorPressure && flankHitsWave >= FLANK_CAP_WAVE)) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
+      }
+      enemy._flankLastSim = fS;
+      if (typeof enemy._flankTellSim === 'number') { const tS = fS - enemy._flankTellSim, tR = fR - (enemy._flankTellR || fR);
+        flankReady = tS >= FLANK_TELL_S && tR >= FLANK_TELL_S && tS < FLANK_ABORT_S; } // A17: 1.5 s minimum (game AND real time), outcome before 5 s; A33: a capped doorway flanker with no tell does not count as ready
       // A15 cap: at most FLANK_CAP_WAVE flank hits per wave on a player who stays in cover
       if (flankReady && flankHitsWave >= FLANK_CAP_WAVE) { flankReady = false; if (window.SS) window.SS.flankCapBlocked = (window.SS.flankCapBlocked | 0) + 1; } }
     if (flankShot && !flankLine(_muzzle)) { flankReady = false; enemy._flankBlock = 'no line'; if (window.SS) window.SS.flankNoLine = (window.SS.flankNoLine | 0) + 1; }
@@ -2299,7 +2352,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // the low early hit chance. Once one hit would be lethal and the player is exposed (not ducked), a seen shooter's hit
     // chance is at least LOW_HP_CHANCE and the lethal hit only needs the HP that is left in the bucket: low HP resolves
     // within a few seconds of real fire (death, or survive by ducking into cover / killing the shooter).
-    const dmgAmt0 = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1) * (duckedA8 && !flankShot ? 0.6 : 1);
+    let dmgAmt0 = Math.max(18, Math.min(22, 20 + (diff - 0.5) * 4)) * (waveClears === 0 && (window.SS.simTime || 0) < WAVE1_SOFT_S ? WAVE1_DAMAGE : 1) * (duckedA8 && !flankShot ? 0.6 : 1);
+    // A33: a doorway flank round that lands is cover-softened. Street flanks stay full. Never a Moving-cover yank.
+    if (flankShot && duckedA8 && window.SS && (window.SS.doorHold || (window.SS.cover && window.SS.cover.kind === 'door'))) dmgAmt0 = Math.max(1, Math.round(dmgAmt0 * 0.5));
     const lowHp = !!(player && player.alive && player.health <= dmgAmt0 && (!duckedA8 || flankHit));
     if (lowHp) chance = Math.max(chance, LOW_HP_CHANCE);
     // m1y: at a sliver (< LOW_HP_SLIVER hp) a seen, exposed player's next hit lands with >= 0.6 chance; in game time the
@@ -2401,6 +2456,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); const wasMover = !!enemy._flankArr; flankAfterHit(enemy); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: enemy._lastTellAge, wave: waveClears + 1, mover: wasMover, retired: !enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
       const own = !flankHit && pendTells && pendTells.includes(enemy); // the flanker's own ordinary hit after 1.5 s = its flank outcome
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, (flankHit || own) ? 'flank' : 'gun');
+      if (enemy._doorPressure && window.SS && window.SS.cover && window.SS.cover.kind === 'door' && window.SS.cover.state === 'moving') {
+        window.SS.cover.state = 'in';
+        if (window.SS.input && !window.SS.input.scope) window.SS.input.cover = true;
+      }
       // 4e5b: door-frame duck counters (front should stay 0; flankers need the FLANKED tell)
       if (window.SS && window.SS.cover && window.SS.cover.kind === 'door' && window.SS.input && window.SS.input.cover) {
         const ds = window.SS.doorStop || (window.SS.doorStop = {}); const duck = ds.duck || (ds.duck = { front: 0, flank: 0, frontShots: 0 });
@@ -2715,7 +2774,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (enemy._stallRec) { const r = enemy._stallRec; { const cp = camera.position, gp = enemy.group.position, dP = Math.hypot(gp.x - cp.x, gp.z - cp.z); r.arrivedPlayer = +dP.toFixed(1); slog('enemy', (r.kind || 'push') + ' arrived ' + (dP < 10 ? dP.toFixed(1) : Math.round(dP)) + 'm from player'); } // A19 (tester A18: 'advances (open) 10m' ended 2-3 m from the car): the start line gives the START distance; this is where it ended
       enemy._stallRec = null; r.arrived = Math.round(camera.position.z - enemy.group.position.z); r.arriveSim = +((window.SS && window.SS.simTime) || 0).toFixed(1); r.atTarget = enemy.anchor && r.to != null ? Math.abs(Math.round(camera.position.z - enemy.anchor.pos.z) - r.to) <= 1 : null; }
     enemy._repositioning = false;
-    if (enemy._flankMove) { enemy._flankMove = false; enemy._flankArr = enemy.group.position.clone(); /* A14: the only fighter whose rounds can be flank hits */ const SSx = window.SS; if (SSx && flankHitsWave >= FLANK_CAP_WAVE) retireFlanker(enemy, 'cap'); /* A16: no tell once the wave's flank budget is spent */ else if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
+    if (enemy._flankMove) { enemy._flankMove = false; enemy._flankArr = enemy.group.position.clone(); /* A14: the only fighter whose rounds can be flank hits */ const SSx = window.SS; if (SSx && flankHitsWave >= FLANK_CAP_WAVE && !enemy._doorPressure) retireFlanker(enemy, 'cap'); /* A16: no tell once the wave's flank budget is spent; A33 door pressure still cues */ else if (SSx && SSx.input && SSx.input.cover && !inFrontArc(enemy.group.position)) { flankCue(enemy); enemy._flankTellSim = SSx.simTime; enemy._flankTellR = performance.now() / 1000; enemy._flankLastSim = SSx.simTime; } }
     enemy.phase = 'takeCover';
     enemy.phaseT = hold != null ? hold : 0.22 + Math.random() * 0.2;
     enemy.posture = 'crouch';
@@ -3708,6 +3767,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     phaseT -= dt;
     const alive = aliveCount();
     try { flankTick(); } catch (err) { reportErr('flankTick', err); }
+    try { doorPressureTick(); } catch (err) { reportErr('doorPressure', err); }
     const dNow = window.SS ? window.SS.distance : 0;
     if (burstIndex === 0 && window.SS && window.SS.running) { // m1x: opening quiet walk (real time, capped per frame)
       const nr = performance.now(); quietRunT += quietRealAt ? Math.min(2.0, (nr - quietRealAt) / 1000) : 0; /* m1z: cap 2 s/frame (was 0.5: at 0.6 fps the then-24 s quiet walk took ~77 s of wall time) - a tab switch still cannot skip it */ quietRealAt = nr;
@@ -3999,7 +4059,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function reset() {
     if (truck) { scene.remove(truck.g); truck = null; } truckPending = 0;
-    for (const n of nades) { scene.remove(n.m); if (n.ring) scene.remove(n.ring); } nades.length = 0; nadeThisWave = false; nadesWave = 0; campT = 0; flankHitsWave = 0;
+    for (const n of nades) { scene.remove(n.m); if (n.ring) scene.remove(n.ring); } nades.length = 0; nadeThisWave = false; nadesWave = 0; campT = 0; flankHitsWave = 0; doorPressArmAt = 0; doorPressId = null; doorPressN = 0;
     for (let i = list.length - 1; i >= 0; i--) despawn(list[i]);
     list.length = 0;
     while (fallers.length) { const f = fallers.pop(); if (f.group.parent) f.group.parent.remove(f.group); }
@@ -4017,7 +4077,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; lsStandUntil = 0; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; window.SS.bigBeatCalmUntil = null; } w4endArmed = false;
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; lsStandUntil = 0; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; window.SS.bigBeatCalmUntil = null; window.SS.doorPressure = null; } w4endArmed = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;

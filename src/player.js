@@ -71,9 +71,11 @@ export function createPlayer(camera, input, hud) {
     if (!player.alive || player.health >= 100) return;
     const engaged = !!(window.SS && (window.SS.engaged | 0) > 0);
     const fighting = engaged || !!(window.SS && window.SS.cover && window.SS.cover.state !== 'none');
+    const calm = !!(window.SS && window.SS.bigBeatCalmUntil != null && sim < window.SS.bigBeatCalmUntil);
     if (now - lastHitT < REGEN_DELAY_MS) return;
     let add;
-    if (fighting) { if (sim - lastHitSim < FIGHT_DELAY_S) return; add = FIGHT_RATE * sdt; }
+    // A33: during big-beat calm only, fight regen is 1.5× so a Low frame still shows the bar climb. Reverts outside calm.
+    if (fighting) { if (sim - lastHitSim < FIGHT_DELAY_S) return; add = FIGHT_RATE * (calm ? 1.5 : 1) * sdt; }
     else add = REGEN_RATE * rdt;
     if (!(add > 0)) return;
     const h0 = player.health;
@@ -81,13 +83,22 @@ export function createPlayer(camera, input, hud) {
     if (window.SS && fighting) { window.SS.fightRegen = +((window.SS.fightRegen || 0) + (player.health - h0)).toFixed(2); }
     if (window.SS) window.SS.health = player.health;
     if (hud) hud.setHealth(player.health);
+    if (window.SS && calm && player.health > h0) {
+      window.SS.regenDuringCalm = true;
+      const L = window.SS.regenCalmLog || (window.SS.regenCalmLog = []);
+      const prev = L[L.length - 1];
+      if (!prev || player.health - prev.hpAfter >= 0.8 || sim - prev.sim >= 0.4) {
+        L.push({ sim: +sim.toFixed(2), hpBefore: +h0.toFixed(1), hpAfter: +player.health.toFixed(1), until: +window.SS.bigBeatCalmUntil.toFixed(2) });
+        if (L.length > 20) L.shift();
+      }
+    }
   };
 
   player.reset = function reset() {
     player.health = 100;
     player.alive = true;
     regenDelay = 0; lastHitT = -1e9; lastUpd = 0; lastHitSim = -1e9; lastSim = null;
-    if (window.SS) window.SS.health = 100;
+    if (window.SS) { window.SS.health = 100; window.SS.regenDuringCalm = false; window.SS.regenCalmLog = []; }
     if (hud) hud.setHealth(100);
   };
 

@@ -1,0 +1,67 @@
+A33 thin Fun pack (behind existing ?sp=5). Target Fun ≥4; keep Immersion ≥4. Protect A30 doorway open+lit+shafts, ducked soak/no-yank, ?cxnade=1 climax, A32 SP_GAP_CX ≥12–15s gaps. Edit ONLY as needed: src/setpiece.js, src/setpiece-truck.js, src/enemies.js, src/player.js (regen feel / calm hooks), src/world.js (optional stronger shafts+dust), src/doorstop.js (optional peek), src/cover.js only if doorway pressure needs it. Do NOT git commit. Run node --check on every edited file. No browser/build. No public publish / gh-pages.
+
+A32 PLAY CONTEXT (must raise Fun): on ?door=1&cxnade=1 Low, Tester saw only ONE RPG + ONE climax grenade; truck never without ?truck=1. Spacing PASS (RPG→climax 14.4s). Shafts subtle PASS. Calm after RPG logged but HP regen not clearly visible (bar near full). Doorway camping felt passive (wait out grenades). Soak N unverified this run (near-miss only).
+
+=== 1) BEAT DENSITY ON TYPICAL door+cxnade PATH (PRIORITY) ===
+On `?door=1&cxnade=1` (NO truck=1, NO rpg=1), a typical Low multi-wave run MUST land:
+  - truck AND rpg AND grenade (climax grenade counts) in spLog
+  - consecutive big-beat kinds {truck,rpg,grenade} gaps ≥ 12 s (keep SP_GAP_CX=12 under cxnade; SP_GAP_S=15 otherwise; A32 wait-spacing wins stay)
+More than one RPG+one climax so Fun isn't thin — aim for ≥3 distinct big-beat events across the run (e.g. truck + RPG + climax grenade, or truck + RPG + mid grenade + climax).
+
+Director (setpiece.js ~235-251):
+a) Under door force OR when SS.doorHold / doorStop held / FORCE_DOOR path is active, bias harder toward truck+rpg earlier:
+   - If hist missing truck by wave 2 (or wave 3 at latest), force pick='truck' (unless last was truck or did-set blocks — then pick next wave).
+   - If hist missing rpg by wave 3 (or wave 4), force pick='rpg'.
+   - Prefer: W2 truck (or rpg), W3 the other, W4+ fill remaining; quiet weight near 0 while either truck or rpg still missing.
+b) Keep ≥15 s mutual gaps and A32 climax-wait-spacing (do NOT reintroduce A31 ~2s truck→grenade stack).
+c) Truck arming: ensure createTruckMoment / truckPendingWave still fires when director picks truck even while player is IN COVER · DOORWAY (doorHold). If truck currently refuses while doorHold/walking false, fix that gate so doorway camp still gets the truck tell+crash.
+d) RPG: fireAt window may need to be earlier under door+cxnade (e.g. 6–16 s) so it lands mid-run before climax eats the slot; still respect bigBeatCalm / setPieceAt / climaxAt gaps.
+e) Do NOT require ?truck=1 / ?rpg=1 for harness PASS on door+cxnade. Those flags remain regression-only.
+
+=== 2) STRONGER POST–BIG-BEAT CALM + VISIBLE HP REGEN ===
+Tester: calm logged but bar near full — regen unreadable.
+
+a) When stamping bigBeatCalmUntil after truck crash / RPG impact: if player.health >= 85, apply a readable hurt first via player.damage (or debugHurt path) of ~25–35 HP (never below 5, never kill) with source 'bigbeat-setup' or reuse existing — so calm starts from visibly low HP. Only when health was high; if already ≤70 skip the drop.
+b) Calm window: keep ≥7–10 s (A32); optionally bump to 8–12 s so FIGHT_DELAY_S(6)+FIGHT_RATE can climb the bar.
+c) During calm: keep A31 suppress of camping grenades + damaging rifle shots so regen ticks.
+d) Publish harness hooks:
+   - SS.regenDuringCalm = true when health increases while sim < bigBeatCalmUntil
+   - SS.regenCalmLog = [{ sim, hpBefore, hpAfter, until }] (cap ~20)
+e) Optionally slightly raise FIGHT_RATE during calm only (e.g. x1.5) so Low fps still shows climb — revert outside calm.
+
+=== 3) DOORWAY NOT PASSIVE — SHOOTABLE PRESSURE / FLANK (slice of C) ===
+While IN COVER · DOORWAY (SS.doorHold || cover.kind==='door' && ducked): camping must NOT be idle wait-for-grenades.
+
+a) Spawn or promote 1 shootable flanker / pressure fighter that the player can SEE and SHOOT from doorway peek (side arc / street flank), without yanking out of doorHold (keep ducked soak / no Moving-cover yank — A29/A30 win).
+b) Prefer reuse of existing flank tell path (FLANKED) with a door-specific arm: when doorHold becomes true and wave has ≥1 alive enemy, after ~3–6 s arm a flanker on the free street side (not blocked by door leaf). Log: slog('door','doorway pressure flank') and SS.doorPressure = { sim, id, side }.
+c) Front-arc shots while ducked still miss/soak (cover guard); flank shots that land stay cover-softened and do NOT set cover state to Moving.
+d) Climax grenade under cxnade still works; doorway pressure should not starve climax (respect spacing).
+e) Harness must see: while doorHold, either rifleHitLog/flankHitRecs/doorPressure with a visible enemy, OR enemy fire + player can aim (SS.doorPressure armed).
+
+=== 4) OPTIONAL: STRONGER SHAFTS + DUST ===
+Tester immersion lift. In world.js doorway room: bump roomShaftBeam opacity/intensity, add subtle dust motes or brighter MeshBasic shaft wedges in peek FOV. Keep open aperture (not shut door face). doorstop peek yaw may bias slightly more into room if needed.
+
+=== 5) HARNESS — write test/a33-fun.js ===
+Playwright Low on PORT 8851 (copy a32-spacing / a30-force patterns). Results → logs/a33/ (argv path).
+
+Run A — door+cxnade density (PRIMARY, no truck=1/rpg=1):
+  /?seed=7&loco=2&hits=2&repos=1&fx=3&sp=5&door=1&cxnade=1&debug&q=low
+  Hold until ~3–5 wave clears OR ~240s sim / climax+truck+rpg seen.
+  Duck in cover; debugKillNearest like a32 to progress waves.
+  PASS:
+  - spLog kinds include truck AND rpg AND grenade (climax grenade OK)
+  - consecutive {truck,rpg,grenade} gaps ≥ 11.5 s
+  - bigBeatCalmLog.length ≥ 1 AND (regenDuringCalm OR regenCalmLog with hpAfter>hpBefore)
+  - doorway: leafOpen/roomLit if SS hooks exist; doorPressure armed OR flank/pressure evidence while doorHold
+  - climax grenade still fires under cxnade
+
+Run B — regression variety (optional shorter):
+  /?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug&q=low
+  Same gap rules; at least rpg+(truck|grenade).
+
+Also note: parent will re-run doorway-stop + a30-force if those paths touched.
+
+Exit 1 on fail. Write JSON summary to argv path.
+
+=== REPORT ===
+Files touched + what changed for (1) beat density (2) calm/regen (3) doorway pressure (4) shafts. node --check results. Do not commit. Do not run harness (parent will).

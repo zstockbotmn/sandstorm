@@ -60,6 +60,8 @@ export function createSetPieces({ scene, camera, player, hud }) {
   const forced = /[?&]rpg=1\b/.test(location.search);
   const SP_QUIET = /[?&]spquiet=1\b/.test(location.search);
   const FORCED_ANY = forced || /[?&]truck=1\b/.test(location.search); // A14: the director is random mode only
+  const DOOR_BIAS = /[?&](?:door|doorstop)=1\b/.test(location.search); // A33: ?door=1 biases truck+rpg from W2 (no ?truck=1 / ?rpg=1)
+  const CX_NADE = /[?&](?:cxnade|grenadecx)=1\b/.test(location.search);
   let wasBurst = false, waveT = 0, firedWave = false, lastAt = -1e9, fireAt = -1;
   let flying = false, launchSim = 0, launchR = 0, smokeAcc = 0, warned = false, rec = null;
   const clip = () => (window.SS && window.SS.audio) || null;
@@ -189,15 +191,23 @@ export function createSetPieces({ scene, camera, player, hud }) {
     publish();
     // Duck does not cancel a warned blast; the cap leaves at least 5 hp.
     if (dmg > 0 && player.damage) player.damage(dmg, target.clone(), shielded ? 'rpg-cover' : 'rpg');
-    // A31: short calm after big beat so HP can regen (quiet stretch in the rhythm)
-    if (window.SS) {
-      const until = sim + 7 + Math.random() * 3; // A32: 7–10 s calm so fight-regen (FIGHT_DELAY_S=6) can tick
-      window.SS.bigBeatCalmUntil = until;
-      if (window.SS.calmUntil == null || until > window.SS.calmUntil) window.SS.calmUntil = until;
-      const L = window.SS.bigBeatCalmLog || (window.SS.bigBeatCalmLog = []);
-      L.push({ sim: +sim.toFixed(1), until: +until.toFixed(1), kind: 'rpg' }); if (L.length > 20) L.shift();
-      try { if (window.SS.audio && window.SS.audio.log) window.SS.audio.log('setpiece', 'big-beat calm'); } catch (_) {}
+    stampBigBeatCalm(sim, 'rpg');
+  }
+  // A33: calm starts from a readable deficit when the bar was near full (never below 5, never a kill).
+  function stampBigBeatCalm(sim, kind) {
+    const SS = window.SS; if (!SS) return;
+    if (player && player.alive && player.health >= 85 && player.damage) {
+      const drop = 25 + Math.random() * 10;
+      const hurt = Math.max(0, Math.min(drop, player.health - 5));
+      if (hurt > 0) player.damage(hurt, null, 'bigbeat-setup');
     }
+    const until = sim + 8 + Math.random() * 4; // A33: 8–12 s so FIGHT_DELAY_S(6) + fight regen can climb
+    SS.bigBeatCalmUntil = until;
+    if (SS.calmUntil == null || until > SS.calmUntil) SS.calmUntil = until;
+    const L = SS.bigBeatCalmLog || (SS.bigBeatCalmLog = []);
+    L.push({ sim: +sim.toFixed(1), until: +until.toFixed(1), kind, hp: player ? +player.health.toFixed(0) : null });
+    if (L.length > 20) L.shift();
+    try { if (SS.audio && SS.audio.log) SS.audio.log('setpiece', 'big-beat calm'); } catch (_) {}
   }
   function stepFlight(sim) {
     const simElapsed = sim - launchSim, realElapsedMs = performance.now() - launchR;
@@ -241,14 +251,32 @@ export function createSetPieces({ scene, camera, player, hud }) {
         if (SP_QUIET) SS.spQuietForce = true; // A19 (PM 10) test hook: ?spquiet=1 = every wave director-quiet
         // A15a: no repeat of last wave's pick NOR of any set piece that actually happened last wave (a long-camp grenade counts).
         const did = new Set((SS.spLog || []).filter((x) => x.sim >= prevWaveT && x.sim < sim).map((x) => x.kind)); SS.spLastDid = [...did];
+        // A33: ?door=1 / an active doorway hold must land truck by W2 (W3 at latest) and rpg by W3 (W4 if that slot was blocked).
+        const doorOn = DOOR_BIAS || !!(SS.forceDoor || SS.doorHold || (SS.doorStop && SS.doorStop.state === 'held'));
         if (state.wave >= 2 && !SP_QUIET) { const W = { rpg: 0.34, truck: 0.30, grenade: 0.20, quiet: 0.16 }; if (last) delete W[last]; for (const k of did) delete W[k];
-          // A31: big beats earlier — truck x2.5 from W3, forced W4; RPG x2 from W4, forced W5 if still missing
-          if (W.truck && !hist.includes('truck')) { if (state.wave >= 4) { for (const k in W) if (k !== 'truck') delete W[k]; } else if (state.wave >= 3) W.truck *= 2.5; }
-          if (W.rpg && !hist.includes('rpg') && Object.keys(W).length > 1) { if (state.wave >= 5) { for (const k in W) if (k !== 'rpg') delete W[k]; } else if (state.wave >= 4) W.rpg *= 2.0; }
-          let tot = 0; for (const k in W) tot += W[k]; let r = Math.random() * tot; for (const k in W) { r -= W[k]; if (r <= 0) { pick = k; break; } } }
-        hist.push(pick); if (hist.length > 12) hist.shift(); SS.spPick = { wave: state.wave, pick, hist, sim };
+          if (doorOn) {
+            const missT = !hist.includes('truck'), missR = !hist.includes('rpg');
+            if (missT || missR) delete W.quiet; // quiet near 0 while either big beat is still missing
+            const canT = !!(W.truck && missT), canR = !!(W.rpg && missR);
+            let force = null;
+            // Blocked by last/did → that kind is absent from W, so the force waits until next wave.
+            if (canT && state.wave >= 2 && (state.wave <= 3 || !canR)) force = 'truck';
+            else if (canR && state.wave === 2 && !canT) force = 'rpg'; // W2 truck blocked → rpg now, truck next
+            else if (canR && state.wave >= 3 && state.wave <= 4) force = 'rpg';
+            else if (canT && state.wave >= 3) force = 'truck';
+            else if (canR && state.wave >= 4) force = 'rpg';
+            if (force) { for (const k in W) if (k !== force) delete W[k]; }
+            else if (missT || missR) { if (W.truck && missT) W.truck *= 4; if (W.rpg && missR) W.rpg *= 3; }
+          } else {
+            // A31: big beats earlier — truck x2.5 from W3, forced W4; RPG x2 from W4, forced W5 if still missing
+            if (W.truck && !hist.includes('truck')) { if (state.wave >= 4) { for (const k in W) if (k !== 'truck') delete W[k]; } else if (state.wave >= 3) W.truck *= 2.5; }
+            if (W.rpg && !hist.includes('rpg') && Object.keys(W).length > 1) { if (state.wave >= 5) { for (const k in W) if (k !== 'rpg') delete W[k]; } else if (state.wave >= 4) W.rpg *= 2.0; }
+          }
+          let tot = 0; for (const k in W) tot += W[k]; if (tot > 0) { let r = Math.random() * tot; for (const k in W) { r -= W[k]; if (r <= 0) { pick = k; break; } } } }
+        hist.push(pick); if (hist.length > 12) hist.shift(); SS.spPick = { wave: state.wave, pick, hist, sim, door: !!doorOn };
         SS.spVariety = { rpg: hist.includes('rpg'), truck: hist.includes('truck'), grenade: hist.includes('grenade'), quiet: hist.includes('quiet') };
-        fireAt = pick === 'rpg' ? 10 + Math.random() * 16 : -1; } // A13 window 10-26 s kept
+        // A33: door+cxnade fires the RPG mid-wave (6–16 s) so climax does not eat the only slot. Gaps still apply below.
+        fireAt = pick === 'rpg' ? ((doorOn && CX_NADE) ? 6 + Math.random() * 10 : 10 + Math.random() * 16) : -1; }
       else fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 10 + Math.random() * 16 : -1; } // A13: random mode 10-26 s (middle / late wave; it may fire after the spawn window now)
     wasBurst = bursting;
     SS.rpgDueAt = (!firedWave && fireAt >= 0 && !flying) ? waveT + fireAt : null; // A19: the mid-wave beat keeps 8 s from it

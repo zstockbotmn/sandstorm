@@ -905,13 +905,27 @@ export function createWorld(scene, seed) {
         winPeek.position.set(X(1.45), 1.7, zc);
         winPeek.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
         winPeek.name = 'roomWindow'; winPeek.castShadow = false; winPeek.receiveShadow = false; seg.group.add(winPeek);
-        const shaft = new THREE.PointLight(0xffefd0, FORCE_DOOR ? 1.8 : 0.75, 7, 2);
+        const shaft = new THREE.PointLight(0xffefd0, FORCE_DOOR ? 2.8 : 1.05, FORCE_DOOR ? 9 : 7, 2);
         shaft.position.set(X(1.55), 1.7, zc); shaft.name = 'roomShaft'; seg.group.add(shaft);
-        const beamMat = new THREE.MeshBasicMaterial({ color: 0xffefd0, transparent: true, opacity: FORCE_DOOR ? 0.38 : 0.28, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false });
+        const beamMat = new THREE.MeshBasicMaterial({ color: 0xffefd0, transparent: true, opacity: FORCE_DOOR ? 0.52 : 0.32, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false });
         const beam = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.45), beamMat);
         beam.position.set(X(1.9), 1.65, zc);
         beam.rotation.y = side > 0 ? -Math.PI / 2 + 0.4 : Math.PI / 2 - 0.4;
         beam.name = 'roomShaftBeam'; beam.castShadow = false; beam.receiveShadow = false; beam.frustumCulled = false; seg.group.add(beam);
+        // A33: a brighter wedge nearer the aperture, plus dust in the peek. Own geos so the box merge does not eat them. Leaf stays open.
+        const beamNearMat = beamMat.clone(); beamNearMat.opacity = FORCE_DOOR ? 0.7 : 0.4;
+        const beamNear = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.15), beamNearMat);
+        beamNear.position.set(X(1.35), 1.62, zc);
+        beamNear.rotation.y = side > 0 ? -Math.PI / 2 + 0.22 : Math.PI / 2 - 0.22;
+        beamNear.name = 'roomShaftBeam'; beamNear.castShadow = false; beamNear.receiveShadow = false; beamNear.frustumCulled = false; seg.group.add(beamNear);
+        const dustGeo = new THREE.SphereGeometry(0.045, 5, 4);
+        const nDust = FORCE_DOOR ? 6 : 3;
+        for (let di = 0; di < nDust; di++) {
+          const dm = new THREE.MeshBasicMaterial({ color: 0xfff1d4, transparent: true, opacity: FORCE_DOOR ? 0.5 : 0.3, depthWrite: false, fog: false, toneMapped: false });
+          const mote = new THREE.Mesh(dustGeo, dm);
+          mote.position.set(X(1.15 + di * 0.28), 1.42 + (di % 3) * 0.16, zc + (di % 2 ? 0.2 : -0.16));
+          mote.name = 'roomDust'; mote.castShadow = false; mote.receiveShadow = false; mote.frustumCulled = false; seg.group.add(mote);
+        }
       }
     }
     if (typeof window !== 'undefined' && window.SS) window.SS.bld4rooms = (window.SS.bld4rooms | 0) + 1;
