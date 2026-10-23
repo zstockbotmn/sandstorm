@@ -191,7 +191,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     if (dmg > 0 && player.damage) player.damage(dmg, target.clone(), shielded ? 'rpg-cover' : 'rpg');
     // A31: short calm after big beat so HP can regen (quiet stretch in the rhythm)
     if (window.SS) {
-      const until = sim + 6 + Math.random() * 3;
+      const until = sim + 7 + Math.random() * 3; // A32: 7–10 s calm so fight-regen (FIGHT_DELAY_S=6) can tick
       window.SS.bigBeatCalmUntil = until;
       if (window.SS.calmUntil == null || until > window.SS.calmUntil) window.SS.calmUntil = until;
       const L = window.SS.bigBeatCalmLog || (window.SS.bigBeatCalmLog = []);
@@ -273,7 +273,8 @@ export function createSetPieces({ scene, camera, player, hud }) {
     if (SS.midBeatAt != null && sim - SS.midBeatAt >= 0 && sim - SS.midBeatAt < 8) return; // A19 (PM 8): 8 s after a mid-wave push beat
     if (SS.lullUntil != null && sim < SS.lullUntil) return; // A22: no RPG / truck in the post-climax lull
     if (SS.bigBeatCalmUntil != null && sim < SS.bigBeatCalmUntil) return; // A31: calm after a big beat
-    if (SS.climaxAt != null && sim - SS.climaxAt >= 0 && sim - SS.climaxAt < 8) return; // A21: 8 s after a climax tell/start/fallback
+    if (SS.climaxState && (SS.climaxState.phase === 'tell' || SS.climaxState.phase === 'active')) return; // A32: wait out a live climax
+    if (SS.climaxAt != null && sim - SS.climaxAt >= 0 && sim - SS.climaxAt < 15) return; // A32: ≥15 s after a climax tell/start/fallback (was 8)
     if (SS.setPieceAt != null && sim - SS.setPieceAt >= 0 && sim - SS.setPieceAt < 15) return; // A15: >= 15 s between any two set pieces (RPG / truck / grenade; was 8)
     // A11: a starved camping grenade goes first (the forced RPG used to keep starving it). A12: but only for 6 s - with no
     // thrower in range the grenade can stay 'starved' for the rest of the wave, which cancelled the RPG (wave 3, rpg=1).

@@ -889,19 +889,29 @@ export function createWorld(scene, seed) {
         open: true,
       },
     });
-    // A30/A31: warmer fill + doorway rim + window shaft so the interior reads lit (not flat olive).
+    // A30/A31/A32: warmer fill + doorway rim + window shaft in the peek frustum (not only the back wall).
     {
-      const pl = new THREE.PointLight(0xffd6a0, FORCE_DOOR ? 2.8 : 1.9, 11, 2);
+      const pl = new THREE.PointLight(0xffd6a0, FORCE_DOOR ? 3.0 : 1.9, 11, 2);
       pl.position.set(X(2.0), 2.4, zc); pl.name = 'roomLit'; seg.group.add(pl);
-      const rim = new THREE.PointLight(0xffe2b0, FORCE_DOOR ? 1.5 : 1.0, 5.5, 2);
+      const rim = new THREE.PointLight(0xffe2b0, FORCE_DOOR ? 1.8 : 1.0, 5.5, 2);
       rim.position.set(X(0.55), 1.6, zc); rim.name = 'roomLitRim'; seg.group.add(rim);
       if (!ULTRA) {
-        const winMat = new THREE.MeshBasicMaterial({ color: 0xffe6c0, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false });
+        const winMat = new THREE.MeshBasicMaterial({ color: 0xffe6c0, transparent: true, opacity: FORCE_DOOR ? 0.72 : 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false });
         const win = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.9), winMat);
         win.position.set(X(3.76), 1.7, zc); win.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
         win.name = 'roomWindow'; win.castShadow = false; win.receiveShadow = false; seg.group.add(win);
-        const shaft = new THREE.PointLight(0xffefd0, FORCE_DOOR ? 1.2 : 0.75, 7, 2);
-        shaft.position.set(X(3.5), 1.7, zc); shaft.name = 'roomShaft'; seg.group.add(shaft);
+        // A32: bright patch closer to the aperture so IN COVER · DOORWAY looking in sees it (back wall sat outside peek FOV).
+        const winPeek = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.05), winMat);
+        winPeek.position.set(X(1.45), 1.7, zc);
+        winPeek.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        winPeek.name = 'roomWindow'; winPeek.castShadow = false; winPeek.receiveShadow = false; seg.group.add(winPeek);
+        const shaft = new THREE.PointLight(0xffefd0, FORCE_DOOR ? 1.8 : 0.75, 7, 2);
+        shaft.position.set(X(1.55), 1.7, zc); shaft.name = 'roomShaft'; seg.group.add(shaft);
+        const beamMat = new THREE.MeshBasicMaterial({ color: 0xffefd0, transparent: true, opacity: FORCE_DOOR ? 0.38 : 0.28, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false });
+        const beam = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.45), beamMat);
+        beam.position.set(X(1.9), 1.65, zc);
+        beam.rotation.y = side > 0 ? -Math.PI / 2 + 0.4 : Math.PI / 2 - 0.4;
+        beam.name = 'roomShaftBeam'; beam.castShadow = false; beam.receiveShadow = false; beam.frustumCulled = false; seg.group.add(beam);
       }
     }
     if (typeof window !== 'undefined' && window.SS) window.SS.bld4rooms = (window.SS.bld4rooms | 0) + 1;

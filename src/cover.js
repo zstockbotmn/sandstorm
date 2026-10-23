@@ -71,7 +71,8 @@ export function createCover(scene, camera, world, input) {
     const sim = (window.SS && window.SS.simTime) || 0;
     _unstickNudges += 1;
     if (window.SS) window.SS.unstickSpam = { nudges: _unstickNudges, logged: _unstickLogged };
-    if (sim - _unstickLogSim < 0.75) return; // still nudge; skip spam log
+    const doorHeld = !!(window.SS && (window.SS.doorHold || (window.SS.doorStop && window.SS.doorStop.state === 'held')));
+    if (sim - _unstickLogSim < (doorHeld ? 2.2 : 0.75)) return; // A32: quieter doorway-hold ticks; still nudge
     _unstickLogSim = sim; _unstickLogged += 1;
     if (window.SS) window.SS.unstickSpam = { nudges: _unstickNudges, logged: _unstickLogged };
     try { if (window.SS && window.SS.audio) window.SS.audio.log('player', 'camera unstick'); } catch (_) {}

@@ -232,8 +232,8 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if ((performance.now() - (input.aimMovedT || 0)) <= 400) return;
     const pose = poseAt(path, Math.min(s, path.len));
     const street = path.kind === 'in' && path.len > 0 && s >= path.len * 0.8;
-    // A30: late veer / hold peeks down-street WITH a bias into the room so the lit open interior is visible (was -side = away from room → shut-door face).
-    const target = street ? Math.atan2((door.side || 1) * 0.55, 1) : Math.atan2(pose.tx, -pose.tz);
+    // A30/A32: late veer / hold peeks into the open aperture so lit interior + shafts sit in FOV (keep leaf off-frame).
+    const target = street ? Math.atan2((door.side || 1) * 1.2, 0.55) : Math.atan2(pose.tx, -pose.tz);
     const d = Math.atan2(Math.sin(target - input.yaw), Math.cos(target - input.yaw));
     input.yaw += d * (1 - Math.exp(-3 * dt));
   }
@@ -263,10 +263,11 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if (!rec.duck) rec.duck = { front: 0, flank: 0, frontShots: 0 };
     if (enemies.waveNow) enemies.waveNow();
     if (cover && cover.takeDoor) cover.takeDoor(path.door);
-    // A30: snap peek yaw so the open lit room is in frame on arrive (tester A29: faced a shut door).
+    // A30/A32: snap peek yaw so shafts + room light sit in the open-aperture view (not the hinged leaf).
     if (path.door && (performance.now() - (input.aimMovedT || 0)) > 400) {
-      input.yaw = Math.atan2((path.door.side || 1) * 0.55, 1);
+      input.yaw = Math.atan2((path.door.side || 1) * 1.2, 0.55);
     }
+    if (path.door) S.doorPeek = { yaw: input.yaw, side: path.door.side || 1 };
     dlog('IN COVER · DOORWAY', 'sim ' + (S.simTime || 0).toFixed(1));
   }
 

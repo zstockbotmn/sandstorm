@@ -240,8 +240,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A24 (tester A23: W4 clear / last-enemy unreachable at box fps): ?w4end=1 or ?skip=w4end jumps straight to wave 4
   // with 1-2 enemies so the last-survivor break and AREA CLEAR payoff can be played/screenshotted. Debug/automation only.
   const W4END = (() => { try { return /[?&](?:w4end=1|skip=w4end)\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (_) { return false; } })();
-  // A28/A30: ?cxnade=1 / ?grenadecx=1 — force W2+ climax grenade soon (~3 s after contact; synth contact; skip set-piece defer) for ~1 fps soak checks.
+  // A28/A30: ?cxnade=1 / ?grenadecx=1 — force W2+ climax grenade soon (~3 s after contact; synth contact) for ~1 fps soak checks.
+  // A32: still wait for set-piece spacing / in-flight (do not skip the gap); SP_GAP_CX so Low/cxnade still reaches the throw.
   const FORCE_CX_NADE = (() => { try { return /[?&](?:cxnade|grenadecx)=1\b/.test(location.search); } catch (_) { return false; } })();
+  const SP_GAP_CX = 12;
   // A29: ?edoor=1 — force ≥1 enemy to use a room doorway as cover this run (Depth).
   const FORCE_EDOOR = (() => { try { return /[?&]edoor=1\b/.test(location.search); } catch (_) { return false; } })();
   const FIRST_CONTACT_S = (() => { try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) return +m[1]; } catch (_) {} return 11; })(); // App PM (bundle): the opening walk was 24 s, Zack found it long
@@ -2897,8 +2899,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       return { pos, type: 'wall', open: true, near: true }; }
     return null; }
   let assaultAt = -1e9, lastBeatSendSim = -1e9, lastStallSendSim = -1e9, assaultIv = 0, assaultIvs = [];
-  let cxNadeAt = 0, cxTier = 0, cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null, cxPrevHadNade = false; // A21 / A26
-  function resetClimax() { cxWave = -1; cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxLullUntil = 0; cxTellSim = cxStartSim = cxEndSim = 0; cxRec = null; cxPrevHadNade = false; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; }
+  let cxNadeAt = 0, cxTier = 0, cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null, cxPrevHadNade = false, cxSpacingWait = false; // A21 / A26 / A32
+  function resetClimax() { cxWave = -1; cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxLullUntil = 0; cxTellSim = cxStartSim = cxEndSim = 0; cxRec = null; cxPrevHadNade = false; cxSpacingWait = false; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; }
   function assaultSpot(e, range) { const cam = camera.position, tgt = range != null ? range : 10.5, lo = Math.max(6, tgt - 2), hi = Math.min(18, tgt + 2); let best = null, bd = 1e9; // A21: target range (was fixed 8-13)
     for (const c of coverPool(STALL_TYPES, [Math.max(5, lo - 1), hi + 1])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < lo || az > hi || Math.abs(c.pos.x) > 7) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
@@ -3028,7 +3030,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A21: one climax per wave from wave 2, then a fallback lull. Set pieces keep >= 8 s via SS.midBeatAt / SS.climaxAt.
   function spBeatBlock(SSx, sim, wv) {
     const sL = (SSx.spLog || []).filter((x) => x.wave === wv), nN = sL.filter((x) => x.kind === 'grenade').length, lastN = sL.filter((x) => x.kind === 'grenade').slice(-1)[0], sp = SSx.spPick;
-    const recent = SSx.setPieceAt != null && sim - SSx.setPieceAt >= 0 && sim - SSx.setPieceAt < 8;
+    const gapNeed = FORCE_CX_NADE ? SP_GAP_CX : 15; // A32: ≥12–15 s after truck/RPG/grenade (was 8; cxnade used to skip this)
+    const recent = SSx.setPieceAt != null && sim - SSx.setPieceAt >= 0 && sim - SSx.setPieceAt < gapNeed;
     const rpgDue = SSx.rpgDueAt != null && SSx.rpgDueAt - sim < 8;
     const nadeDue = !!(sp && sp.wave === wv && sp.pick === 'grenade' && nN < 2 && (!lastN || lastN.sim + 12 - sim < 8));
     return recent ? 'recent' : rpgDue ? 'rpg due' : SSx.truckPendingWave ? 'truck due' : nadeDue ? 'grenade due' : null;
@@ -3179,7 +3182,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function waveClimax() {
     const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
     if (!waveActive) { resetClimax(); if (SSx) { SSx.climaxAt = null; SSx.lullUntil = null; } return; }
-    if (cxWave === -1) { cxWave = Math.max(burstIndex, waveClears + 1); cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxRec = null; }
+    if (cxWave === -1) { cxWave = Math.max(burstIndex, waveClears + 1); cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxRec = null; cxSpacingWait = false; }
     // A30 ?cxnade=1: if W2+ has been live ~4 s with no shot contact (doorway duck / 1 fps), synthesize contact so climax is not stuck behind "cxnade wait climax".
     if (FORCE_CX_NADE && mwContactSim == null && cxWave >= 2 && waveActive) {
       const age = sim - (stallWaveStart || 0);
@@ -3201,12 +3204,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
         // A30 ?cxnade=1: if nobody in band, any living fighter (doorway hold often leaves only far/close units).
         if (!cand.length && FORCE_CX_NADE) cand = list.filter((e) => e.alive && !e.dying).map((e) => [e, e.group.position.distanceTo(camera.position)]).sort((a, b) => a[1] - b[1]);
         const th = cand[0];
-        if (th) { throwGrenade(th[0]); slog('enemy', 'climax grenade ' + Math.round(th[1]) + 'm'); if (cxRec) cxRec.nade = +sim.toFixed(1); } else { cxNadeAt = sim + 0.4; if (sim > cxEndSim - 1) { cxNadeAt = 0; slog('enemy', 'climax grenade: no thrower'); } } }
+        if (th) { throwGrenade(th[0]); spLog('grenade', cxWave, { pick: 'climax' }); slog('enemy', 'climax grenade ' + Math.round(th[1]) + 'm'); if (cxRec) cxRec.nade = +sim.toFixed(1); } else { cxNadeAt = sim + 0.4; if (sim > cxEndSim - 1) { cxNadeAt = 0; slog('enemy', 'climax grenade: no thrower'); } } }
       if (sim >= cxEndSim) endClimax(sim); return; }
     if (cxPhase !== 'idle' || !cxDue || sim < cxDue) return;
     if (spInFlight(SSx)) return; // wait out a live RPG / truck / grenade
-    // A30 ?cxnade=1: do not defer tell on set-piece spacing (RPG during doorway hold was starving climax); still wait for in-flight above.
-    if (!FORCE_CX_NADE) { const block = spBeatBlock(SSx, sim, cxWave); if (block && sim < cxDue + 15) return; }
+    // A32: ALWAYS defer the tell while a recent set piece blocks — including FORCE_CX_NADE (A31 play: truck ~108s then climax nade ~110s).
+    // Keep deferring until the gap clears; do not skip the climax. Pending truck/RPG win the slot if they are due / in-flight.
+    const block = spBeatBlock(SSx, sim, cxWave);
+    if (block === 'recent') {
+      if (!cxSpacingWait) { cxSpacingWait = true; slog('enemy', 'climax wait spacing'); }
+      return;
+    }
+    if (FORCE_CX_NADE) {
+      if (SSx.truckPendingWave) return;
+      if (SSx.rpgDueAt != null && sim < SSx.rpgDueAt + 6) return;
+    } else if (block && sim < cxDue + 15) return;
     const n = list.filter((e) => e.alive && !e.dying).length;
     if (n < (FORCE_CX_NADE ? 1 : 2)) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
     squadCall("They're rushing us!"); try { const hb = SSx.hud; if (hb && hb.rushBanner) hb.rushBanner("They're rushing us!", 2500); } catch (_) {} slog('enemy', 'climax tell'); cxPhase = 'tell'; cxTellSim = sim; cxStartSim = sim + (FORCE_CX_NADE ? 0.6 : 1.5); cxStamp(sim);

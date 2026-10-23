@@ -1,0 +1,65 @@
+A32 thin fix-only (behind existing ?sp=5). Raise Fun via beat spacing + RPG/calm in play + visible doorway shafts. Protect A30 doorway/soak/cxnade and A31 variety/calm. Edit ONLY as needed: src/enemies.js (climax/cxnade spacing vs truck/RPG; keep deterministic cxnade), src/setpiece.js / src/setpiece-truck.js (mutual ≥12–15 s gaps; ensure RPG+calm land in typical runs), src/world.js (window shafts in doorway FOV), src/doorstop.js (peek yaw so shafts/room light sit in cover view — keep open aperture, not shut door), src/cover.js (optional quieter unstick ticks). Do NOT git commit. Run node --check on every edited file. No browser/build.
+
+A31 PLAY BUG (must fix): under ?door=1&cxnade=1 truck ~108s then climax grenade ~110s (~2 s apart). Root: waveClimax() skips spBeatBlock when FORCE_CX_NADE (`if (!FORCE_CX_NADE) { const block = spBeatBlock...}`). Climax still must fire under cxnade — just wait for the gap.
+
+=== 1) SPACING ≥12–15 s (PRIORITY) ===
+Enforce ≥12–15 s between truck / RPG / grenade in play (absolute mid-wave floor ≥8 s already via midBeatAt/climaxAt — keep).
+
+a) In waveClimax() (enemies.js ~3208): ALWAYS defer climax tell while a recent set piece blocks — including under FORCE_CX_NADE. Use setPieceAt / spLog gap of ≥15 s (tolerate ≥12 if you need a named constant SP_GAP_CX = 12 for cxnade-only to still reach grenade at Low fps; prefer 15 to match SP_GAP_S). Still wait for spInFlight. Do NOT skip climax forever — keep deferring until gap clears, then fire (cxnade stays deterministic). Log once when deferring for spacing: slog('enemy','climax wait spacing') or audio.log.
+
+b) Mutual: truck start and RPG launch must also refuse to start within ≥15 s of a climax tell/grenade (climaxAt / setPieceAt already partially does this — verify truck→grenade and grenade→truck both hold). If climax is in tell/active, truck/RPG wait.
+
+c) Climax grenade throw itself stamps setPieceAt (throwGrenade already does) and spLog — keep. Ensure truck crash / RPG launch keep stamping setPieceAt + spLog.
+
+d) Do NOT weaken A16 grenade-wave 2nd re-arm ~12 s exception for grenade→grenade only.
+
+=== 2) RPG + POST–BIG-BEAT CALM + HP REGEN IN TYPICAL PLAY ===
+Harness saw RPG/calm; door+cxnade play did not (truck then instant climax ate the slot).
+
+a) Keep A31 director weights / early truck / RPG bias. After spacing fix, a typical ?sp=5 multi-wave run (and ?rpg=1 force) must still get an RPG; bigBeatCalmLog must stamp after RPG and truck.
+
+b) Ensure calm window is long enough for fight-regen: bigBeatCalmUntil ≈ sim+7..10 (was 6+rand*3). During calm, keep A31 suppress of camping grenades + damaging rifle shots so FIGHT_DELAY_S (6) + FIGHT_RATE can tick. Optionally publish SS.regenDuringCalm = true when health increases while sim < bigBeatCalmUntil (harness hook).
+
+c) Under ?door=1&cxnade=1: after W1 doorway, order should be able to show truck OR rpg with calm, THEN climax grenade ≥12–15 s later (not ~2 s). If truck and climax both want the same second, truck/RPG win if already in-flight; else climax waits.
+
+d) Optional force helpers already exist (?rpg=1, ?truck=1) — do not break them.
+
+=== 3) WINDOW SHAFTS VISIBLE IN DOORWAY COVER VIEW ===
+Tester: IN COVER · DOORWAY facing wall; shafts not clearly seen. Keep A30 open leaf/jamb/aperture.
+
+a) world.js addRoom: move or duplicate the emissive roomWindow + roomShaft so they sit in the peek frustum when the player is at the free-side jamb looking into the room. Practical approach (pick one that works):
+   - Bias shaft/window toward the doorway aperture (closer to facade, ~X(1.2–2.0) or on the +z interior side wall at z≈zc+0.9) so when peek yaw looks into the open aperture the bright patch is on-screen; OR
+   - Keep back-wall window but add a second MeshBasic "shaft beam" plane (name roomShaftBeam) from back window toward doorway at mid height, opacity ~0.25–0.4, fog false — readable as light shaft in FOV.
+b) Bump FORCE_DOOR shaft/rim intensities slightly if needed so Low/swiftshader still reads brighter than olive walls.
+c) doorstop.js: bias peek yaw MORE into the room (e.g. atan2(side*1.2, 0.55) or look toward room center X(2),z=zc) so lit interior + shafts are centered — must still show open aperture (not hinged leaf / shut door face). Keep easeYaw + arrive snap consistent.
+d) Publish SS.doorPeek = { yaw, side } on arrive for harness if easy.
+
+=== 4) OPTIONAL: quieter unstick in doorway ===
+A31 rate-limit 0.75s; still ticks ~1–2s while held. While SS.doorHold || doorStop.state==='held': raise log interval to ~2.0–2.5 s (still nudge). Do not disable geometric unstick.
+
+=== 5) HARNESS — write test/a32-spacing.js ===
+Playwright Low on PORT 8851 (copy a31-variety / a30-force patterns). Results → logs/a32/ (argv path).
+
+Run A — spacing+rpg+calm (default variety):
+  /?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug&q=low
+  ~5 clears, ducked in cover, debugKillNearest like a31.
+  PASS:
+  - spLog kinds include rpg AND (truck or grenade)
+  - For every consecutive pair in spLog where kinds are in {truck,rpg,grenade} (any wave): gap ≥ 11.5 s (12–15 rule with 0.5 tol). Grenade→grenade same-wave may use ≥11.5 (A16). Absolute floor: no pair of distinct big-beat kinds closer than 11.5 s.
+  - If any rpg or truck in spLog: bigBeatCalmLog.length ≥ 1
+  - Prefer: at least one calm entry with until-sim ≥ 6
+
+Run B — door+cxnade spacing regression (shorter):
+  /?seed=7&loco=2&hits=2&repos=1&fx=3&sp=5&door=1&cxnade=1&debug&q=low
+  Hold until climax grenade fires OR ~180s sim / 3 clears.
+  PASS:
+  - climax grenade still fires (log or spLog grenade with climax / enemy climax grenade)
+  - If both a truck|rpg and a climax/grenade appear: gap ≥ 11.5 s between them
+  - Doorway open+lit still: roomLit present / leafOpen if SS hooks exist (reuse a30 checks if cheap)
+
+Also keep parent running doorway-stop + a30-force separately — if you touch those paths, do not break leafOpen/aperture/soak.
+
+Exit 1 on fail. Write JSON summary.
+
+=== REPORT ===
+Files touched + what changed. node --check results. Do not commit. Do not run harness (parent will).
