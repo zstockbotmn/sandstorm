@@ -199,7 +199,8 @@ Then: window-table tuning, 4e1-4e4, 4e5.
 - Tester ranked: (1) climax always grenade|flank in-event (2) fairer last-stand shootable (3) w4end suppress mid-wave (4) bust SW on preview deploy (5) camera unstick debug hook.
 - WAITING App PM: thin A25 for 1–4 vs resume winDbg + step4-runs + Grok 4e1–4e5 / doorway-stop. Dev rec: A25 first (depth still needs interiors track later).
 
-## A25 (App PM Oct 23 ~1:09 AM ET — IN PROGRESS)
+## A25 (App PM Oct 23 ~1:09 AM ET — DONE Oct 23 ~3:25 AM ET)
+DONE: build ss-b63efd2aff, label 'internal preview A25', preview :8850. Tests PASS: a11; a15 random (a15-random2: 5/5 climaxes have in-event grenade; last-stand holds 4.1–5.9 s, kill-clear 3/5, flee-after-stand 2/5); a15 forced; a15 w4end (w4AliveMax 2, midPush 0). Code: 0788674, 2c77074, 6dd1154. Camera-unstick hook skipped.
 Thin polish, no new systems. After scores hold 4+ → winDbg → step-4 rooms / doorway stop (depth).
 1. Every climax always grenade OR flanking pair (in-event; no bound+suppress-only)
 2. Fairer last-stand hit target; keep ~5 s exposed window; kill-clear common
