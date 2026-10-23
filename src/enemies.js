@@ -3056,7 +3056,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         if (sim >= lsStandUntil) { flee(' (after stand)'); return; }
       } else if (sim - lsAt > 25) { flee(' (rush stuck)'); return; } // never arrived: bail
     }
-    if (lsMode === 'flee' && (d > 40 || sim - lsAt > 9)) { slog('wave', 'last enemy fled'); try { squadCall('He\'s gone. Clear!'); } catch (_) {} rec('fled'); lsMode = 'gone'; lsDone = true; despawn(e); SSx.lastFled = (SSx.lastFled | 0) + 1; }
+    if (lsMode === 'flee' && (d > 40 || sim - lsAt > 9)) { slog('wave', 'last enemy fled'); try { squadCall('He\'s gone. Clear!'); } catch (_) {} rec('fled'); lsMode = 'gone'; lsDone = true; SSx.lastFled = (SSx.lastFled | 0) + 1; SSx._fledWave = wv; despawn(e); }
   }
   function waveClimax() {
     const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
@@ -3747,13 +3747,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (waveDone) waveOpen = false;
     if (running && waveDone && window.SS.hud && window.SS.hud.banner) {
       waveClears += 1; window.SS.waveClears = waveClears; slog('wave', waveClears + ' clear'); /* A14 / A24: AREA CLEAR is the sole centre banner (WAVE CLEARED stacked with it on W3) */ if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing');
-      { // A23 wave-end payoff (tester A22): AREA CLEAR centre banner ~2 s, a varied squad radio line, the combat look eases out
-        // (red edge / hurt grade fade over ~1.5 s) and the squad holds 2.2 game-s before the walk resumes.
+      { // A23/A24 wave-end payoff: AREA CLEAR centre banner ~3.8 s (readable at 1-2 fps), bigger; always a clear radio
+        // line (also after flee-clears - important so the 4 s callout throttle cannot drop it); ~4 game-s hold before walk.
         const SSx = window.SS, sNow = SSx.simTime || 0, lines = ['Clear!', 'Contact down, moving on.', 'Good work, keep moving.', 'Area secure. Moving up.', 'That\'s the last of them. Move out.'];
         let li = Math.floor(Math.random() * lines.length); if (li === lastClearLine) li = (li + 1) % lines.length; lastClearLine = li;
-        payoffUntil = sNow + 2.2; SSx.walking = false; SSx.areaClearAt = sNow;
-        try { if (SSx.hud.areaClear) SSx.hud.areaClear('AREA CLEAR', 2000); } catch (_) {} try { squadCall(lines[li]); } catch (_) {}
-        const L = SSx.areaClearLog || (SSx.areaClearLog = []); L.push({ wave: waveClears, sim: +sNow.toFixed(1), line: lines[li] }); if (L.length > 30) L.shift(); } // tester m1q: clear cue when the walk resumes
+        const fleeClear = !!(SSx.lastFled && SSx._fledWave === waveClears);
+        payoffUntil = sNow + 4.0; SSx.walking = false; SSx.areaClearAt = sNow;
+        try { if (SSx.hud.areaClear) SSx.hud.areaClear('AREA CLEAR', 3800); } catch (_) {}
+        try { squadCall(lines[li]); } catch (_) {}
+        const L = SSx.areaClearLog || (SSx.areaClearLog = []); L.push({ wave: waveClears, sim: +sNow.toFixed(1), line: lines[li], heldMs: 3800, fleeClear }); if (L.length > 30) L.shift(); } // tester m1q: clear cue when the walk resumes
       breatherTo = window.SS.distance + (10 - 2 * pressureP()) + Math.random() * 5; phase = 'quiet'; phaseT = 0;
       // A11 (tester: gaps were ~5 s walks, no ambience): a real calm after every cleared wave - 15-25 game-s before the next
       // contact, NOT shortened by the 5e pressure curve (only the distance part is). The ambient director fills it.
