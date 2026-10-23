@@ -115,8 +115,8 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     const built = buildSamples([
       { x: p0.x, z: p0.z },
       { x: door.x - door.side * 2.5, z: door.z - 0.3 },
-      { x: 0, z: door.z - 9 },
-      { x: 0, z: door.z - 16 },
+      { x: 0, z: door.z - 6 },
+      { x: 0, z: door.z - 12 },
     ]);
     built.kind = 'out';
     built.door = door;
@@ -183,7 +183,7 @@ export function createDoorStop(camera, world, input, enemies, cover) {
         const ahead = cz - p.door.z;
         // Start the veer only when the door is ~16-20 m ahead so inLen≈16-20 m (in+out walk ~11 s at 3 m/s).
         // Wider look-ahead would lock a 35-40 m Bezier and blow the 11 s budget.
-        if (ahead >= 15.5 && ahead <= 20.5) found.push(p.door);
+        if (ahead >= 15.5 && ahead <= 17.5) found.push(p.door);
       }
     }
     found.sort((a, b) => (cz - a.z) - (cz - b.z));
