@@ -855,7 +855,15 @@ export function createWorld(scene, seed) {
       const rs = 0.15 + seg._wrng() * 0.2;
       addBox(seg, matPlaster, X(0.9 + seg._wrng() * 1.8), rs / 2, zc - cS * (W / 2 - 0.45) + (seg._wrng() - 0.5) * 0.4, rs, rs, rs, nc);
     }
-    seg.coverPoints.push({ pos: new THREE.Vector3(X(1.0), 1.2, zc + 0.9), type: 'room' });
+    seg.coverPoints.push({
+      pos: new THREE.Vector3(X(1.0), 1.2, zc + 0.9), type: 'room',
+      door: {
+        x: facadeX, z: zc, side, w: 1.2,
+        jamb: new THREE.Box3(
+          new THREE.Vector3(Math.min(X(0), X(0.3)), 0, zc - W / 2),
+          new THREE.Vector3(Math.max(X(0), X(0.3)), RH, zc - 0.6)),
+      },
+    });
     if (typeof window !== 'undefined' && window.SS) window.SS.bld4rooms = (window.SS.bld4rooms | 0) + 1;
     if (art) {
       const x0 = facadeX - side * 0.08, x1 = facadeX + side * 3.85;

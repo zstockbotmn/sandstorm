@@ -2296,6 +2296,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap && simS - (lastPlayerHitSim || -99) >= gap; // spacing holds in BOTH real and game time
     // m1v grace: no damage for COVER_GRACE_S (real time) after first reaching cover in a run
     if (hit && ducked && !flankShot) { hit = false; if (window.SS) window.SS.frontArcBlocked = (window.SS.frontArcBlocked | 0) + 1; } // A8: solid cover stops the front arc
+    // 4e5b: count front-arc shots while ducked at the doorway (0 hits alone proves nothing)
+    if (window.SS && window.SS.cover && window.SS.cover.kind === 'door' && duckedA8 && inFrontArc(enemy.group.position)) {
+      const ds = window.SS.doorStop || (window.SS.doorStop = {}); const duck = ds.duck || (ds.duck = { front: 0, flank: 0, frontShots: 0 });
+      duck.frontShots = (duck.frontShots | 0) + 1;
+    }
     if (hit && flankShot && !flankReady) { hit = false; if (window.SS) window.SS.flankTellBlocked = (window.SS.flankTellBlocked | 0) + 1; } // A8: the FLANKED tell runs first
     if (hit && window.SS && window.SS.coverGraceUntil && performance.now() < window.SS.coverGraceUntil) { hit = false; window.SS.graceBlocked = (window.SS.graceBlocked | 0) + 1; }
     if (offView && !flankHit) { hit = false; enemy.offViewShots = (enemy.offViewShots | 0) + 1; if (window.SS) window.SS.offViewShots = (window.SS.offViewShots | 0) + 1; warnFrom(enemy.group.position); }
@@ -2367,6 +2372,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (window.SS) { if (duckedA8 && !flankShot) window.SS.frontArcDuckHits = (window.SS.frontArcDuckHits | 0) + 1; if (flankHit) { window.SS.flankHits = (window.SS.flankHits | 0) + 1; window.SS.lastFlankHitSim = simS; const FH = window.SS.flankHitSims || (window.SS.flankHitSims = []); FH.push(+simS.toFixed(2)); if (FH.length > 60) FH.shift(); const wasMover = !!enemy._flankArr; flankAfterHit(enemy); const FR = window.SS.flankHitRecs || (window.SS.flankHitRecs = []); FR.push({ sim: +simS.toFixed(2), id: enemy.id, tellAge: enemy._lastTellAge, wave: waveClears + 1, mover: wasMover, retired: !enemy._flankArr, inArc: inFrontArc(enemy.group.position) }); if (FR.length > 60) FR.shift(); } }
       const own = !flankHit && pendTells && pendTells.includes(enemy); // the flanker's own ordinary hit after 1.5 s = its flank outcome
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, (flankHit || own) ? 'flank' : 'gun');
+      // 4e5b: door-frame duck counters (front should stay 0; flankers need the FLANKED tell)
+      if (window.SS && window.SS.cover && window.SS.cover.kind === 'door' && window.SS.input && window.SS.input.cover) {
+        const ds = window.SS.doorStop || (window.SS.doorStop = {}); const duck = ds.duck || (ds.duck = { front: 0, flank: 0, frontShots: 0 });
+        if (inFrontArc(enemy.group.position)) duck.front = (duck.front | 0) + 1; else duck.flank = (duck.flank | 0) + 1;
+      }
       { const SSg = window.SS, cv = SSg && SSg.cover, st = cv ? cv.state : '?', sc = !!(SSg.input && SSg.input.scope), walking = !!SSg.walking; // A22: why a rifle hit landed (tester + a15)
         const why = (flankHit || own) ? 'flank tell' : walking ? 'exposed: walking' : st === 'moving' ? 'exposed: moving to cover' : sc ? 'exposed: scoped' : st === 'in' ? 'IN COVER (leak)' : 'exposed: ' + st;
         const HL = SSg.rifleHitLog || (SSg.rifleHitLog = []); HL.push({ sim: +simS.toFixed(2), id: enemy.id, why, flank: !!(flankHit || own), ducked: duckedA8, coverState: st, scope: sc, stance: SSg.coverStanceNow ? SSg.coverStanceNow() : null, elev: !!(enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.5 }); if (HL.length > 80) HL.shift();
@@ -3781,7 +3791,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (waveActive && aliveCount() === 0 && truckPending === 0) waveActive = false; // clear only when every wave member (incl. truck) is dead
     if (window.SS) window.SS.waveActive = waveActive; // A12: set pieces key off the whole wave, not the 8-14 s spawn window
     if (waveActive) hold = true;
-    if (running) window.SS.walking = window.SS.forceWalk != null ? !!window.SS.forceWalk : (!hold && !window.SS.roomHold && (window.SS.simTime || 0) >= payoffUntil); /* A23: 2.2 s payoff beat after a clear */ /* A13 debug room jump holds the walk */ // forceWalk: test hook (fx3 footsteps) // halt from first engage until the last engaged enemy is KILLED
+    if (running) window.SS.walking = window.SS.forceWalk != null ? !!window.SS.forceWalk : (!hold && !window.SS.roomHold && !window.SS.doorHold && (window.SS.simTime || 0) >= payoffUntil); /* A23: 2.2 s payoff beat after a clear */ /* A13 debug room jump holds the walk */ // forceWalk: test hook (fx3 footsteps) // halt from first engage until the last engaged enemy is KILLED // 4e5a doorway hold
     // Stable ENEMIES counter: rises only when newly engaged appear, falls on engaged deaths (no silent mid-fight bumps from unengaged spawns).
     displayEngaged = aliveCount() + truckPending; // total remaining in the wave (incl. truck still driving in)
     if (!hold) displayEngaged = 0;
@@ -3915,6 +3925,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   api.killAll = killAll;
   // 5c: a fighter placed at a set-piece wreck runs from there to its cover like the reinforcement-truck dismount
   api.dismount = (e) => { if (!e) return; try { e.engaged = waveActive; e.path = pathOnto(e, e.anchor); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.moveKind = 'run'; e.exposed = true; e.goal = e.path && e.path[0]; e.fromTruck = true; } catch (err) { reportErr('setpiece dismount', err); } };
+  api.deferWaveTo = (d) => { if (!waveActive) breatherTo = Math.max(breatherTo, d); };
+  api.waveNow = () => { if (!waveActive) { breatherTo = window.SS.distance; calmUntil = -1e9; if (window.SS) window.SS.calmUntil = null; } };
 
   return api;
 }

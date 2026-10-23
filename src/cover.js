@@ -113,21 +113,31 @@ export function createCover(scene, camera, world, input) {
   c.unstick = unstick;
   function update(dt, walking) {
     if (walking) {
-      if (c.state !== 'none') { c.state = 'none'; c.target = null; c.surface = null; clearSpawned(); }
+      if (c.state !== 'none') { c.state = 'none'; c.target = null; c.surface = null; c.door = null; c.kind = null; clearSpawned(); }
       input.cover = false;
-      camera.position.x += (0 - camera.position.x) * (1 - Math.exp(-1.5 * dt)); // drift back to the road centre
+      if (!(window.SS && window.SS.doorStop && /veer|out/.test(window.SS.doorStop.state))) camera.position.x += (0 - camera.position.x) * (1 - Math.exp(-1.5 * dt)); // drift back to the road centre (held off while a doorway curve owns x)
       unstick('walk');
       return;
     }
     if (!window.SS || !window.SS.running) return;
-    if (!c.target) { c.target = pick(); c.state = 'moving'; }
+    // 4e5b: door frame is sticky cover — never auto-pick away; re-take if target lost
+    if (c.kind === 'door') {
+      if (!c.target && c.door) { takeDoor(c.door); }
+    } else if (!c.target) { c.target = pick(); c.state = 'moving'; }
+    if (!c.target) return;
     const dx = c.target.x - camera.position.x, dz = c.target.z - camera.position.z, d = Math.hypot(dx, dz);
     if (d > 0.05) { const s = Math.min(d, MOVE_SPEED * dt) / d; camera.position.x += dx * s; camera.position.z += dz * s;
-      if (c.surface && camera.position.z < c.surface.max.z + PLAYER_R) camera.position.z = c.surface.max.z + PLAYER_R; // never enter the cover
+      if (c.kind !== 'door' && c.surface && camera.position.z < c.surface.max.z + PLAYER_R) camera.position.z = c.surface.max.z + PLAYER_R; // never enter the cover (skip for door: stand is beside the jamb)
       unstick('cover-move'); }
     else { if (c.state !== 'in' && window.SS && !window.SS.firstCoverT) { window.SS.firstCoverT = performance.now(); window.SS.coverGraceUntil = performance.now() + COVER_GRACE_S * 1000; } c.state = 'in'; unstick('cover-in'); } // m1v: 1.5 s grace on first reaching cover (COVER_GRACE_S)
     if (c.reaim) reaim(dt);
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
+    // 4e5b: doorway pop-out leans 0.35 m toward the street so the fight ahead is visible
+    if (c.kind === 'door' && c.door && c.state === 'in') {
+      const want = input.scope ? -(c.door.side || 1) * 0.35 : 0;
+      c._doorLean = (c._doorLean || 0) + (want - (c._doorLean || 0)) * (1 - Math.exp(-8 * dt));
+      camera.position.x = c.target.x + c._doorLean;
+    } else c._doorLean = 0;
     if (c.spawned && c.spawned.material) {
       // ghost sandbag while ducked so a turn doesn't fill the screen; solid when popped out
       // (kept opaque: a transparent bag hit a 1-2 s first-blend-state stall on software GL)
@@ -136,6 +146,9 @@ export function createCover(scene, camera, world, input) {
   // Move to another cover (grenade flush / SWITCH COVER): a short exposed run, then duck again.
   c.relocate = function relocate(dir, why) {
     if (c.state === 'none' || !window.SS || !window.SS.running) return false;
+    // 4e5b: SWITCH COVER does nothing at the door; grenade flush may still leave to street cover
+    if (c.kind === 'door' && why !== 'grenade') return false;
+    if (c.kind === 'door') { c.kind = null; c.door = null; }
     input.scope = false; // m1u: a cover move always leaves the scope
     const cur = c.target ? c.target.clone() : camera.position.clone(); const old = c.spawned; if (old) c.spawned = null;
     c.surface = null; let t = pick(cur, dir || 0);
@@ -160,7 +173,20 @@ export function createCover(scene, camera, world, input) {
     const k = 1 - Math.exp(-8 * dt); input.yaw += dy * k; input.pitch = 0;
     if (c.reaim <= 0) c.reaim = 0;
   }
-  function reset() { c.reaim = 0; c.surface = null; c.state = 'none'; c.target = null; clearSpawned(); input.cover = false; }
+  function takeDoor(door) {
+    if (!door || !door.jamb) return false;
+    clearSpawned();
+    c.surface = door.jamb.clone();
+    c.kind = 'door';
+    c.door = door;
+    c._doorLean = 0;
+    c.target = new THREE.Vector3(door.x + door.side * 0.45, 0, door.jamb.max.z + PLAYER_R * 0.8);
+    c.state = 'moving';
+    input.cover = false;
+    return true;
+  }
+  c.takeDoor = takeDoor;
+  function reset() { c.reaim = 0; c.surface = null; c.state = 'none'; c.target = null; c.door = null; c.kind = null; c._doorLean = 0; clearSpawned(); input.cover = false; }
   c.reset = reset; // A13 debug: room teleport
   return c;
 }

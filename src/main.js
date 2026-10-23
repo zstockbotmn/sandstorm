@@ -15,6 +15,7 @@ import { createFx3 } from './fx3.js';
 import { createPost3 } from './post3.js';
 import { createStakes } from './stakes.js';
 import { createCover } from './cover.js';
+import { createDoorStop } from './doorstop.js';
 import { createSetPieces } from './setpiece.js';
 import { createPostFx, wantLow } from './postfx.js';
 import { createSky } from './sky.js';
@@ -94,6 +95,7 @@ window.SS = { fast: FAST,
 };
 // art.js may have started loading before this object existed. Keep the same reference.
 window.SS.art = art;
+const doorStop = createDoorStop(camera, world, input, enemies, cover);
 let fx = null, post3 = null;
 let fxPx = 0, fxPy = 0;
 function clearFxPos() {
@@ -198,7 +200,8 @@ function simStep(dt) {
   if (post3 && !window.SS.subStep) post3.update(dt || 0);
   if (window.SS.running) window.SS.simTime = (window.SS.simTime || 0) + (dt || 0);
   const frozen = !player.alive; // death freezes the world: no walking, no enemy/world updates
-  if (window.SS.walking && !frozen) {
+  const moved = doorStop.update(dt, window.SS.walking && window.SS.running && !frozen);
+  if (window.SS.walking && !frozen && !moved) {
     camera.position.z -= SPEED * dt;
     window.SS.distance += SPEED * dt;
   }
@@ -372,6 +375,7 @@ function restartRun() {
   window.SS.walking = true;
   window.SS.running = true; window.SS.startedAt = performance.now(); window.SS.firstCoverT = 0; window.SS.coverGraceUntil = 0; window.SS.simTime = 0; document.body.classList.remove('title'); if (window.SS.pendingTierToast && hud.hint) { const m = window.SS.pendingTierToast; window.SS.pendingTierToast = null; setTimeout(() => hud.hint(m), 600); } if (window.SS.input) window.SS.input.fire = false;
   cover.reset();
+  doorStop.reset();
   world.reset(camera.position.z);
   score.setDistance(0);
 }
@@ -602,6 +606,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     roomHoldEnd('G next');
     enemies.reset(); // debug only: clears enemies, nades, truck and the wave count (a clean street at the room)
     cover.reset();
+    doorStop.reset();
     const z = best.pos.z + 2.5, dz = cz - z; camera.position.set(0, camera.position.y, z); window.SS.distance += dz; try { if (cover.unstick) cover.unstick('room'); } catch (_) {}
     const side = best.pos.x > 0 ? 1 : -1; input.yaw = Math.atan2(best.pos.x - 0, -(best.pos.z - z)); input.pitch = -0.05;
     window.SS.walking = false; window.SS.roomHold = true; roomHoldT = window.SS.simTime || 0; roomLast = best;

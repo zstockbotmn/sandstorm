@@ -163,7 +163,12 @@ export function createHud() {
   function flanked(angle) { edgeWarn(angle); placeFlank(angle); warnHideAt = performance.now() + 1600; warnFrames = 4; flankEl.classList.remove('show'); void flankEl.offsetWidth; flankEl.classList.add('show');
     flankHideAt = performance.now() + 1800; flankFrames = 4; hud.flankedCount = (hud.flankedCount | 0) + 1; hud.flankedAngle = angle; if (!flankRaf) flankRaf = requestAnimationFrame(flankTick);
     if (window.SS && window.SS.audio && window.SS.audio.log) try { window.SS.audio.log('FLANKED', ''); } catch (_) {} }
-  function setStance(k) { if (k === stanceK) return; stanceK = k; stanceEl.style.display = k ? 'block' : 'none'; stanceEl.className = k || ''; stanceEl.textContent = k === 'ducked' ? 'IN COVER' : k === 'exposed' ? 'EXPOSED' : k === 'moving' ? 'MOVING' : ''; hud.stance = k; }
+  function setStance(k) {
+    const door = !!(window.SS && window.SS.cover && window.SS.cover.kind === 'door');
+    const label = k === 'ducked' ? (door ? 'IN COVER · DOORWAY' : 'IN COVER') : k === 'exposed' ? 'EXPOSED' : k === 'moving' ? 'MOVING' : '';
+    if (k === stanceK && stanceEl.textContent === label) return;
+    stanceK = k; stanceEl.style.display = k ? 'block' : 'none'; stanceEl.className = k || ''; stanceEl.textContent = label; hud.stance = k;
+  }
   function edgeWarn(angle) { hud.warnPoint = edgePath(warnSvg, warnPath, angle, 0.18, 6); for (const at of ['d', 'transform']) { const v = warnPath.getAttribute(at); if (v != null) warnOut.setAttribute(at, v); } warn.classList.add('show'); warnHideAt = performance.now() + 700; warnFrames = 3; hud.warnCount = (hud.warnCount | 0) + 1; hud.warnAngle = angle; if (!warnRaf) warnRaf = requestAnimationFrame(warnTick); }
 
   function setHealth(v) {
