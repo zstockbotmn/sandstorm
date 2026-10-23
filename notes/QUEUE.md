@@ -245,6 +245,10 @@ A) ?door=1: open aperture + lit interior (not shut door face); veer→IN COVER �
 B) ?cxnade=1: climax grenade fires deterministically; ducked soak / no yank; combined with door=1 still fires.
 Next: tester rescore A30.
 
+
+## A34 (App PM Oct 23 — DONE)
+DONE: tip 24d2736, build ss-69bbfd52db, label 'internal preview A34', preview :8850. Tests PASS (logs/a34): a34-smoke Low (door+cxnade truck→RPG→grenade same wave, followRpg, gaps OK); doorway-stop Low; a30-force Low (leafOpen, climax nade, yank false, camp soak). Fixes: same-wave RPG after truck on door path (cxnade climax waits for followRpg); skip door unstick spam; street-biased doorway yaw. Protect A33 calm/regen/pressure/shafts. No GH Pages. Hold release suite until Fun≥4 AND Immersion≥4.
+
 ## A31 (App PM Oct 23 — DONE)
 DONE: tip 3d0682f, build ss-197968570b, label 'internal preview A31', preview :8850. Tests PASS (logs/a31): doorway-stop Low; a30-force Low (door/cxnade/combined/camp); a31-variety Low (kinds grenade+truck+rpg, calm×2, spacing OK w/ grenade-rearm 12s, unstick 67/1004 logged). Code: director weights + early truck/RPG bias; doorway long-camp +15s; bigBeatCalm after RPG/truck; unstick rate-limit; brighter roomLit + roomWindow/roomShaft. Protects Immersion/Fun; no GH Pages.
 
