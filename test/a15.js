@@ -173,7 +173,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     for (const n of res.noneLines || []) fail.push('stall push none at ' + n.t + ': ' + n.d);
     // A16b: 'flank aborted' once per attempt (no repeats within 1 s)
     for (let i = 1; i < (res.aborts || []).length; i++) if (res.aborts[i].sim - res.aborts[i - 1].sim < 1) { fail.push('flank aborted repeats (' + res.aborts[i - 1].sim + ', ' + res.aborts[i].sim + ')'); break; }
-    if (res.push.length && !res.advLines.length) fail.push('no "advances" line in the sound log');
+    if (!(mode === 'w4end' || process.env.A15_W4END) && res.push.length && !res.advLines.length) fail.push('no "advances" line in the sound log'); // A25: w4end suppresses advances/stall pushes on W4
     // 4
     // A15a: a quick camp grenade (and a 2nd) only on a director 'grenade' wave; elsewhere <= 1 after a 22 s camp (30 s after a grenade wave)
     const nadesBy = {}; for (const s of res.spLog) if (s.kind === 'grenade') (nadesBy[s.wave] = nadesBy[s.wave] || []).push(s);
