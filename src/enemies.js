@@ -2832,6 +2832,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function stallPush() { const SSx = window.SS, sim = SSx ? (SSx.simTime || 0) : 0;
     if (!waveActive) { waveProgSim = sim; stallWasActive = false; return; }
     if (!stallWasActive) { stallWasActive = true; waveProgSim = sim; stallWaveStart = sim; stallPushAt = 12 + Math.random() * 3; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; } // re-arm at each wave start
+    // A25: ?w4end=1 keeps W4 at the initial 1-2 fighters — no stall push / late 'runs in' growth.
+    if (w4endArmed && Math.max(burstIndex, waveClears + 1) === 4) return;
     if (lullOn(sim) || cxPhase === 'tell' || cxPhase === 'active') return; // A21: the climax and its lull own this stretch
     // A21 (tester A20: assault 15-16 m -> arrived 12-14 m every ~12 s forever, HP flat 73-81): from ~28 s after contact
     // until the climax, 1-2 fighters bound at random 8-18 s to a random 8-16 m; stall pushes / mid-wave beat stay before that.
@@ -2889,7 +2891,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue; if (lullOn(sim)) { rec.at = cxLullUntil + 0.5; continue; } // A23 if (sim - lastStallSendSim < 5) { rec.at = lastStallSendSim + 5; continue; } // A20: no 3-push bursts
       if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) { stallSend(rec.e, c, c.near ? 'closes in (open)' : c.open ? 'advances (open)' : 'advances', a); rec.e._suppressOnArrive = 5; lastBeatSendSim = sim; } }
       rec.sent = true; }
-    const wv = mwWave; if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return;
+    const wv = mwWave;
+    // A25: w4end — latch contact for climax/skip clocks, but never fire the mid-wave push that grows 2 -> 3-4.
+    if (w4endArmed && wv === 4) { mwDone = true; mwPush.length = 0; return; }
+    if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return;
     const sp = SSx.spPick, quiet = !!(sp && sp.wave === wv && sp.pick === 'quiet');
     // A19 (PM ruling 8): the beat keeps >= 8 s from any set piece, before or after. It waits while one fired < 8 s ago or is
     // due within 8 s (the director's RPG, a pending truck, a grenade wave's next throw), up to 30 s after contact; past that it
@@ -2974,7 +2979,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, sp); e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; e._cxFlankTo = sp.pos; e._climaxUntil = cxEndSim; flankers.push(e); }
     if (flankers.length) { lastFlankSim = sim; SSx.flankMoves = (SSx.flankMoves | 0) + flankers.length; slog('enemy', 'climax flank pair (' + flankers.length + ')'); }
     for (const o of alive) { if (sent.includes(o) || flankers.includes(o)) continue; o._suppressUntilSim = tier === 2 ? cxEndSim : sim + 8; o._climaxUntil = cxEndSim; } // A21: rest + rooftops suppress (A22: W4+ for the whole climax)
-    cxNadeAt = tier === 2 && flankers.length < 2 ? sim + 2.5 + Math.random() * 1.5 : 0;
+    // A25: every climax (W2+) must include a grenade OR flanking pair inside the event — if no flankers, force a climax grenade.
+    cxNadeAt = flankers.length === 0 ? sim + 2.5 + Math.random() * 1.5 : 0;
     lastStallSendSim = sim;
     slog('enemy', 'climax size: ' + sent.length + ' bound ~' + range + 'm, ' + flankers.length + ' flank, ' + (alive.length - sent.length - flankers.length) + ' suppress (tier ' + tier + ')');
     cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, ground: ground.length, keep, tier, bound: sent.length, range, flank: flankers.length, suppress: alive.length - sent.length - flankers.length, fallbackSim: null };
@@ -3026,7 +3032,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (lsId !== e.id) { lsId = e.id; lsSince = sim; lsDue = sim + 25 + Math.random() * 5; lsMode = null; SSx.lastStandArmed = { wave: wv, id: e.id, since: +sim.toFixed(1) }; }
     const cam = camera.position, dz = cam.z - e.group.position.z, d = Math.hypot(e.group.position.x - cam.x, dz);
     const rec = (mode, extra) => { const L = SSx.lastStandLog || (SSx.lastStandLog = []); const o = Object.assign({ wave: wv, id: e.id, mode, sim: +sim.toFixed(1), alone: +(sim - lsSince).toFixed(1), dist: +d.toFixed(1) }, extra || {}); L.push(o); if (L.length > 30) L.shift(); return o; };
-    const flee = (why) => { lsMode = 'flee'; lsAt = sim; lsStandUntil = 0; e.pinned = false; e._flankMove = false; e._flankArr = null; e._lastRush = false;
+    const flee = (why) => { lsMode = 'flee'; lsAt = sim; lsStandUntil = 0; e.pinned = false; e._flankMove = false; e._flankArr = null; e._lastRush = false; e._lastStandHold = false; e._lsStandPos = null;
       const sx = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : 1; stallSend(e, { pos: new THREE.Vector3(sx * 4.5, 0, cam.z - 55), type: 'wall', open: true }, 'flees', d); e.noFireUntilSim = sim + 30; // a runner doesn't shoot back (after stallSend: relocation resets the clock)
       const afterStand = /after stand/.test(why || '');
       if (afterStand) slog('enemy', 'last flee after stand');
@@ -3036,7 +3042,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const f = SSx.lastStandForce; let mode = f === 'rush' || f === 'flee' ? f : (Math.random() < 0.5 ? 'rush' : 'flee');
       if (mode === 'rush' && (e.group.position.y > 0.5 || (e.anchor && isElevated(e.anchor.type)))) mode = 'flee'; // a roof shooter can't charge the street
       if (mode === 'rush') { const side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1); let spot = null;
-        for (const az of [5 + Math.random() * 4, 7, 6, 8.5]) { for (const sx of [side, -side]) for (const ax of [2.2, 3.6]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az); if (occupiedBy(pos, e) || !clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue; spot = { pos, type: 'wall', open: true, near: true }; break; } if (spot) break; }
+        // A25: prefer a more street-centred open stand (1.0-2.4 m off centre) so aim can land at box fps; keep 5-9 m range.
+        for (const az of [5 + Math.random() * 4, 7, 6, 8.5]) { for (const sx of [side, -side]) for (const ax of [1.0, 1.6, 2.2, 2.4]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az); if (occupiedBy(pos, e) || !clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue; spot = { pos, type: 'wall', open: true, near: true }; break; } if (spot) break; }
         if (!spot) mode = 'flee';
         else { e.pinned = false; e.staggerT = 0; e._flankMove = false; e._flankArr = null; stallSend(e, spot, 'last rush', d); e._suppressOnArrive = 0; e._suppressUntilSim = -1; e._lastRush = true; lsMode = 'rush'; lsAt = sim; lsStandUntil = 0;
           slog('enemy', 'last enemy breaks: rush ' + Math.round(d) + 'm -> ' + Math.round(cam.z - spot.pos.z) + 'm'); try { squadCall("He's charging!"); } catch (_) {} rec('rush', { to: +(cam.z - spot.pos.z).toFixed(1) }); return; } }
@@ -3049,10 +3056,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
         e.exposed = true; e.pinned = false; e.noFireUntilSim = -1; e.noFireUntilR = -1;
         e.shootCd = Math.min(e.shootCd || 0, 0.15);
         e._suppressUntilSim = lsStandUntil; // A19 suppress mul: faster fire during the stand
-        slog('enemy', 'last stand'); rec('stand', { until: +lsStandUntil.toFixed(1), hold: +(lsStandUntil - sim).toFixed(1) });
+        // A25: stand still and more shootable — lock pose, clear side-step/bob hold, keep fire window open for the whole stand.
+        e._lastStandHold = true; e._lsStandPos = e.group.position.clone();
+        if (e._stepVec) { e._stepVec.x = 0; e._stepVec.z = 0; } e._sideStep = false; e._stepDist = 0; e._peekArm = false;
+        e.moving = false; e.phase = 'fire'; e.phaseT = Math.max(e.phaseT || 0, lsStandUntil - sim + 0.5); e.coverHoldT = 0; e._reposAt = 1e9;
+        slog('enemy', 'last stand'); rec('stand', { until: +lsStandUntil.toFixed(1), hold: +(lsStandUntil - sim).toFixed(1), x: +e.group.position.x.toFixed(2) });
       }
       if (lsStandUntil) {
-        e.exposed = true; e.noFireUntilSim = Math.min(e.noFireUntilSim || 0, sim);
+        e.exposed = true; e._lastStandHold = true; e.moving = false; e.noFireUntilSim = Math.min(e.noFireUntilSim || 0, sim);
+        e.phase = 'fire'; e.phaseT = Math.max(e.phaseT || 0, 0.3); e._suppressUntilSim = Math.max(e._suppressUntilSim || 0, lsStandUntil);
+        if (e._lsStandPos) { e.group.position.x = e._lsStandPos.x; e.group.position.z = e._lsStandPos.z; }
+        if (e._stepVec) { e._stepVec.x = 0; e._stepVec.z = 0; } e._sideStep = false;
         if (sim >= lsStandUntil) { flee(' (after stand)'); return; }
       } else if (sim - lsAt > 25) { flee(' (rush stuck)'); return; } // never arrived: bail
     }
@@ -3066,7 +3080,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     SSx.climaxState = { wave: cxWave, phase: cxPhase, done: cxDone, due: cxDue ? +cxDue.toFixed(1) : null }; // A21: test hook
     if (cxDone || cxWave < 2) return;
     if (cxPhase === 'tell') { if (sim >= cxStartSim) startClimax(sim); return; }
-    if (cxPhase === 'active') { if (cxNadeAt && sim >= cxNadeAt) { cxNadeAt = 0; // A22: W4+ climax with no flanking pair -> a grenade (ring + 'Grenade!' tell) inside the climax
+    if (cxPhase === 'active') { if (cxNadeAt && sim >= cxNadeAt) { cxNadeAt = 0; // A25: any climax with no flankers -> grenade (ring + 'Grenade!') inside the climax
         // A23 (tester A22 pass B: no climax grenade in W4): any living fighter 6-40 m throws (settled ones first, then movers);
         // it is the climax's own grenade - never gated by the director's per-wave / 'grenade last wave' rules. Retries each tick.
         const cand = list.filter((e) => e.alive && !e.dying).map((e) => [e, e.group.position.distanceTo(camera.position)]).filter((x) => x[1] >= 6 && x[1] <= 40)
@@ -3640,7 +3654,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       }
       if (!(e.group.position.z > pz - 0.5)) e.behindT = 0;
       { const dP = e.group.position.distanceTo(camera.position); // lone far last fighter -> advances (8 s beyond 35 m)
-        if (e.engaged && !e.pinned && !e.dying && dP > 35 && e.phase !== 'relocate' && e.group.position.y < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && aliveCount() === 1 && truckPending === 0) { e.farT = (e.farT || 0) + dt;
+        if (e.engaged && !e.pinned && !e.dying && !e._lastStandHold && dP > 35 && e.phase !== 'relocate' && e.group.position.y < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && aliveCount() === 1 && truckPending === 0) { e.farT = (e.farT || 0) + dt;
           if (e.farT > 8 && !lullOn(window.SS.simTime || 0)) { e.farT = 0; advanceNearer(e); } } else e.farT = 0; } // ground fighters only: they run up (no vertical pop)
       if (REPOS) { // fighters holding one ground cover move (sim time). Off: this block never runs.
         // p1b: the hold clock reset on every anchor change (short shuffles, toSeenSpot) and on any phase outside
@@ -3651,7 +3665,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const last1 = aliveCount() === 1 && truckPending === 0;
         const ground = e.alive && !e.dying && !e.pinned && e.anchor && e.anchor.pos && !isElevated(e.anchor.type) && e.behavior !== 'flanker';
         const holding = ['takeCover', 'hide', 'peek', 'fire'].includes(e.phase) || (e.phase === 'relocate' && !e._repositioning && e._holdPos);
-        if (ground && holding && !lullOn(simS)) {
+        if (e._lastStandHold) { e.coverHoldT = 0; e._reposWhy = 'last-stand'; } // A25: no mid-stand reposition jitter
+        else if (ground && holding && !lullOn(simS)) {
           const ap = e.anchor.pos;
           const ovr = last1 ? window.SS_REPOS_S : window.SS_RELOC_S;
           const timer = () => (typeof ovr === 'number' ? ovr : last1 ? 20 + Math.random() * 5 : 15 + Math.random() * 15);

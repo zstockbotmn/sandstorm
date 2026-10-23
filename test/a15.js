@@ -30,8 +30,9 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     await p.goto('http://127.0.0.1:' + PORT + '/?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug' + (mode === 'forced' ? '&rpg=1&truck=1' : mode === 'quiet' ? '&spquiet=1' : mode === 'w4end' ? '&w4end=1' : '') + '&q=' + tier);
     await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
     await p.tap('#play'); await p.waitForFunction(() => SS.running && !document.body.classList.contains('starting'), null, { timeout: 120000 });
-    Object.assign(res, await p.evaluate(async ([NW, KILL_AFTER, EXPOSE]) => { SS.testAccuracy = 3; const R = { waves: [], advLines: [], grenT: [], waveEnds: [] }; let waveAt = null, lastKill = 0; const t0 = performance.now(); if (!SS.w4end && SS.debugW4End && NW === 4 && KILL_AFTER <= 8) try { SS.debugW4End(); } catch (_) {} /* A24 harness fallback for w4end mode */
+    Object.assign(res, await p.evaluate(async ([NW, KILL_AFTER, EXPOSE]) => { SS.testAccuracy = 3; const R = { waves: [], advLines: [], grenT: [], waveEnds: [], w4AliveMax: 0 }; let waveAt = null, lastKill = 0; const t0 = performance.now(); if (!SS.w4end && SS.debugW4End && NW === 4 && KILL_AFTER <= 8) try { SS.debugW4End(); } catch (_) {} /* A24 harness fallback for w4end mode */
       while (performance.now() - t0 < 2400000 && (SS.waveClears | 0) < NW) { const sim = SS.simTime || 0; const cxs = SS.climaxState, cxAct = !!(cxs && cxs.phase === 'active'); SS.input.scope = EXPOSE && cxAct; /* A15_EXPOSE=1: pop out (exposed) through each climax */ if (cxAct) { R.cxHp = R.cxHp || {}; R.cxHp[cxs.wave] = Math.min(R.cxHp[cxs.wave] ?? 999, Math.round(SS.player.health)); } const hpW = (SS.waveClears | 0) + 1; R.hpMin = R.hpMin || {}; if (SS.waveActive) R.hpMin[hpW] = Math.min(R.hpMin[hpW] ?? 999, Math.round(SS.player.health)); if (SS.player.health < 30) SS.player.health = 90; // A21: was < 40 (the climax floor is 35)
+        if (SS.w4end && SS.w4end.armed && hpW === 4 && SS.waveActive) { const n = ((SS.enemies && SS.enemies.list) || []).filter((e) => e.alive && !e.dying).length; if (n > R.w4AliveMax) R.w4AliveMax = n; }
         if (SS.waveActive) { if (waveAt == null) { waveAt = sim; R.waves.push({ start: +sim.toFixed(1), n: (SS.waveClears | 0) + 1 }); } const cs = SS.climaxState, cxOk = (SS.waveClears | 0) + 1 < 2 || (cs && cs.wave === (SS.waveClears | 0) + 1 && cs.done) || sim - waveAt > 120; /* A21: let the climax happen before the test kills */ const la = SS.lastStandArmed, lsL = (SS.lastStandLog || []).filter((x) => la && x.wave === la.wave && x.id === la.id), lsBrk = lsL.find((x) => x.mode === 'rush' || x.mode === 'flee'); /* A22: leave the last survivor alone until he breaks (rush: K him 6 s later; flee: let him go) */ const lsHold = la && la.wave === (SS.waveClears | 0) + 1 && (!lsBrk ? sim - la.since < 40 : lsBrk.mode !== 'rush' || sim - lsBrk.sim < 6 || lsL.some((x) => x.mode === 'flee')); if (sim - waveAt > KILL_AFTER && cxOk && !lsHold && sim - lastKill > 2) { SS.debugKillNearest(); lastKill = sim; } } else waveAt = null;
         for (const x of (SS.audioLog || [])) if (x.kind === 'gren' && !R.grenT.includes(x.t)) R.grenT.push(x.t);
         if (R._wa && !SS.waveActive) R.waveEnds.push(+sim.toFixed(1)); R._wa = !!SS.waveActive;
@@ -123,13 +124,19 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       if (!w4c.length) fail.push('w4end: no AREA CLEAR for wave 4');
       const ls = (res.lastStand || []).filter((x) => x.wave === 4 && (x.mode === 'rush' || x.mode === 'flee'));
       if (!ls.length) warn.push('w4end: no last-survivor break on W4 (may have cleared both before alone)');
-      res.w4endOk = { armed: !!(res.w4end && res.w4end.armed), clear: w4c.length, lastStand: ls.map((x) => x.mode + '@' + x.alone) };
+      // A25: stay at ~1-2 enemies — no mid-wave push / late 'runs in' growth on W4 while w4end armed
+      if ((res.w4AliveMax | 0) > 2) fail.push('w4end: W4 alive peaked at ' + res.w4AliveMax + ' (want <= 2)');
+      const w4push = (res.push || []).filter((x) => x.wave === 4 && /runs in|advances|closes/.test(x.kind || ''));
+      const w4mid = (res.mid || []).filter((m) => m.wave === 4 && m.kind === 'push');
+      if (w4mid.length) fail.push('w4end: mid-wave push beat fired on W4');
+      if (w4push.some((x) => /runs in/.test(x.kind || ''))) fail.push('w4end: late/mid reinforcement spawn on W4');
+      res.w4endOk = { armed: !!(res.w4end && res.w4end.armed), clear: w4c.length, lastStand: ls.map((x) => x.mode + '@' + x.alone), aliveMax: res.w4AliveMax | 0, midPush: w4mid.length, runsIn: w4push.filter((x) => /runs in/.test(x.kind || '')).length };
     }
     // A22: rush banner held >= 2.5 s and >= 4 frames per climax; climax size by wave; last-survivor breaks
     for (const c of res.climax) { const b = (res.rushBanners || []).find((x) => x.sim >= c.tellSim - 0.1 && x.sim <= c.tellSim + 15);
       if (!b) fail.push('wave ' + c.wave + ': no rush banner for the climax at ' + c.tellSim); else if (!(b.heldMs >= 2500 && b.frames >= 4)) fail.push('wave ' + c.wave + ': rush banner held ' + b.heldMs + ' ms / ' + b.frames + ' frames (want >= 2500 ms and >= 4)');
       if (c.wave >= 4 && !(c.bound >= Math.min(3, (c.ground ?? c.n) - (c.keep | 0)))) fail.push('wave ' + c.wave + ': climax only ' + c.bound + ' bounders with ' + c.ground + ' ground fighters / ' + c.n + ' alive (want 3-4 in W4+)');
-      if (c.wave >= 4 && !c.flank && c.nade == null) fail.push('wave ' + c.wave + ': W4+ climax with neither a flanking pair nor a grenade');
+      if (c.wave >= 2 && !c.flank && c.nade == null) fail.push('wave ' + c.wave + ': climax with neither a flanking pair nor a grenade'); // A25: all climaxes
       if (c.wave === 2 && c.bound > 2) fail.push('wave 2: climax ' + c.bound + ' bounders (want 2)'); }
     res.cxSize = res.climax.map((c) => ({ wave: c.wave, tier: c.tier, n: c.n, ground: c.ground, nade: c.nade, bound: c.bound, range: c.range, flank: c.flank, suppress: c.suppress }));
     for (const x of res.lastStand || []) { if ((x.mode === 'rush' || x.mode === 'flee') && !/after/.test(x.why || '') && x.alone != null && x.alone > 0 && !res.lastStand.some((y) => y !== x && y.wave === x.wave && y.id === x.id && y.sim < x.sim && (y.mode === 'rush' || y.mode === 'flee')) && (x.alone < 24.5 || x.alone > 31)) fail.push('wave ' + x.wave + ': last survivor broke (' + x.mode + ') after ' + x.alone + ' s alone (want 25-30)');
