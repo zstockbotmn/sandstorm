@@ -49,7 +49,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
       for (let i = 0; i < 6; i++) { SS.player.health = 100; SS.setPieceAt = -1e9; SS.setpieces.debugRpg(); const t0 = performance.now(); let r = null;
         while (performance.now() - t0 < 40000) { r = SS.setpiece && SS.setpiece.lastRpg; if (r && r.impactR && (!out.rpg.length || r.impactR !== out.rpg[out.rpg.length - 1].impactR)) break; await sleep(100); }
         await sleep(300); out.rpg.push({ impactR: r && r.impactR, dmg: r && r.dmg, d: r && r.dist, aim: r && r.aim, shielded: !!(r && r.shielded), inCover: !!(SS.cover && SS.cover.state === 'in'), ducked: !!SS.input.cover, hp: SS.player.health }); }
-      out.hitLog = (SS.audioLog || []).filter((x) => x.kind === 'hit taken').slice(-10).map((x) => x.detail);
+      out.hitLog = (SS.audioLog || []).filter((x) => x.kind === 'hit taken').slice(-10).map((x) => x.detail); out.hitSrc = (SS.hitLog || []).map((x) => x.src);
       out.calmLog = SS.calmLog || []; return out; });
     const r = res.run; if (r.err) fail.push(r.err);
     // A16: calmLog - one beat per calm, kinds radio / dog / fire, no back-to-back repeat
@@ -68,7 +68,7 @@ const [tier = 'low', out = 'logs/a11/a11'] = process.argv.slice(2); fs.mkdirSync
     const sh = (r.rpg || []).filter((x) => x.shielded && x.dmg > 0), un = (r.rpg || []).filter((x) => !x.shielded && x.dmg > 0);
     res.rpgCover = { shielded: sh.map((x) => +x.dmg.toFixed(1)), full: un.map((x) => +x.dmg.toFixed(1)) };
     if (sh.some((x) => x.dmg > 15)) fail.push('shielded RPG dmg > 15 ' + JSON.stringify(res.rpgCover));
-    if (sh.length && !(r.hitLog || []).some((x) => /\(RPG, cover\)/.test(x))) fail.push('hurt log lacks (RPG, cover)');
+    if (sh.length && !(r.hitLog || []).some((x) => /\(RPG, cover\)/.test(x)) && !(r.hitSrc || []).includes('rpg-cover')) fail.push('hurt log lacks (RPG, cover)'); /* A23: audioLog keeps 30; the cover line can rotate out, SS.hitLog is the durable record */
     if (un.some((x) => x.dmg < 10)) fail.push('unshielded rpg hit < 10');
     if (hits.length >= 2 && Math.max(...hits) - Math.min(...hits) < 3) fail.push('rpg damage does not vary ' + hits);
     if (hits.length && !(r.hitLog || []).some((x) => /\(RPG(, cover)?\)/.test(x))) fail.push('hurt log lacks (RPG)');
