@@ -124,13 +124,21 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       if (!w4c.length) fail.push('w4end: no AREA CLEAR for wave 4');
       const ls = (res.lastStand || []).filter((x) => x.wave === 4 && (x.mode === 'rush' || x.mode === 'flee'));
       if (!ls.length) warn.push('w4end: no last-survivor break on W4 (may have cleared both before alone)');
+      // A26: w4end must charge → stand (~4-6 s), never flee-only (tester A25: straight flee with no stand)
+      const rush = (res.lastStand || []).find((x) => x.wave === 4 && x.mode === 'rush');
+      const stand = (res.lastStand || []).find((x) => x.wave === 4 && x.mode === 'stand');
+      const fleeOnly = ls.length && ls.every((x) => x.mode === 'flee') && !rush;
+      if (fleeOnly) fail.push('w4end: last-stand flee-only (want rush→stand)');
+      if (ls.length && !rush) fail.push('w4end: no rush break on W4');
+      if (rush && !stand) fail.push('w4end: rush without stand');
+      if (stand && !(stand.hold >= 3.8 && stand.hold <= 6.2)) fail.push('w4end: stand hold ' + stand.hold + ' s (want 3.8-6.2)');
       // A25: stay at ~1-2 enemies — no mid-wave push / late 'runs in' growth on W4 while w4end armed
       if ((res.w4AliveMax | 0) > 2) fail.push('w4end: W4 alive peaked at ' + res.w4AliveMax + ' (want <= 2)');
       const w4push = (res.push || []).filter((x) => x.wave === 4 && /runs in|advances|closes/.test(x.kind || ''));
       const w4mid = (res.mid || []).filter((m) => m.wave === 4 && m.kind === 'push');
       if (w4mid.length) fail.push('w4end: mid-wave push beat fired on W4');
       if (w4push.some((x) => /runs in/.test(x.kind || ''))) fail.push('w4end: late/mid reinforcement spawn on W4');
-      res.w4endOk = { armed: !!(res.w4end && res.w4end.armed), clear: w4c.length, lastStand: ls.map((x) => x.mode + '@' + x.alone), aliveMax: res.w4AliveMax | 0, midPush: w4mid.length, runsIn: w4push.filter((x) => /runs in/.test(x.kind || '')).length };
+      res.w4endOk = { armed: !!(res.w4end && res.w4end.armed), clear: w4c.length, lastStand: ls.map((x) => x.mode + '@' + x.alone), standHold: stand ? stand.hold : null, aliveMax: res.w4AliveMax | 0, midPush: w4mid.length, runsIn: w4push.filter((x) => /runs in/.test(x.kind || '')).length };
     }
     // A22: rush banner held >= 2.5 s and >= 4 frames per climax; climax size by wave; last-survivor breaks
     for (const c of res.climax) { const b = (res.rushBanners || []).find((x) => x.sim >= c.tellSim - 0.1 && x.sim <= c.tellSim + 15);

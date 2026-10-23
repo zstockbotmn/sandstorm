@@ -2808,8 +2808,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       return { pos, type: 'wall', open: true, near: true }; }
     return null; }
   let assaultAt = -1e9, lastBeatSendSim = -1e9, lastStallSendSim = -1e9, assaultIv = 0, assaultIvs = [];
-  let cxNadeAt = 0, cxTier = 0, cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null; // A21
-  function resetClimax() { cxWave = -1; cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxLullUntil = 0; cxTellSim = cxStartSim = cxEndSim = 0; cxRec = null; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; }
+  let cxNadeAt = 0, cxTier = 0, cxWave = -1, cxDue = 0, cxPhase = 'idle', cxDone = false, cxLull = false, cxLullUntil = 0, cxTellSim = 0, cxStartSim = 0, cxEndSim = 0, cxRec = null, cxPrevHadNade = false; // A21 / A26
+  function resetClimax() { cxWave = -1; cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxLullUntil = 0; cxTellSim = cxStartSim = cxEndSim = 0; cxRec = null; cxPrevHadNade = false; assaultAt = -1e9; assaultIv = 0; assaultIvs = []; }
   function assaultSpot(e, range) { const cam = camera.position, tgt = range != null ? range : 10.5, lo = Math.max(6, tgt - 2), hi = Math.min(18, tgt + 2); let best = null, bd = 1e9; // A21: target range (was fixed 8-13)
     for (const c of coverPool(STALL_TYPES, [Math.max(5, lo - 1), hi + 1])) { const az = cam.z - c.pos.z + (FAR[c.type] || 0); if (az < lo || az > hi || Math.abs(c.pos.x) > 7) continue;
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
@@ -2967,19 +2967,28 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // tier 0 (W2): 2 bounders to 9-13 m; tier 1 (W3): 3 to 8-12 m; tier 2 (W4+, or W3 at high pressure): 3-4 to 6-10 m,
     // plus a flanking pair, heavier suppression and a bigger damage budget / exposed hit floor (HP floor 35 always holds).
     const pP = pressureP(), tier = cxWave >= 4 || (cxWave === 3 && pP > 0.6) ? 2 : cxWave === 3 ? 1 : 0; cxTier = tier;
+    // A26: if the previous climax used a grenade, prefer a flanking pair this time (when fighters allow) so it is not grenade-only forever.
+    const preferFlank = !!cxPrevHadNade && flankHitsWave < FLANK_CAP_WAVE && ground.length >= 2;
     const want = tier === 2 ? 3 + ((ground.length >= 5 || Math.random() < 0.5 + 0.4 * pP) ? 1 : 0) : tier === 1 ? 3 : 2;
     const keep = alive.some((e) => !ground.includes(e)) ? 0 : 1; // someone has to lay fire: a roof shooter, else one ground fighter
-    const nBound = Math.max(1, Math.min(want, ground.length - keep));
+    // Bound first (keeps W4 size assert); when mixing, reserve spare ground for flankers without dropping below the tier floor.
+    const minBound = tier === 2 ? Math.min(3, Math.max(1, ground.length - keep)) : 1;
+    const reserveFlank = preferFlank ? Math.min(2, Math.max(0, ground.length - keep - minBound)) : 0;
+    const nBound = Math.max(minBound, Math.min(want, ground.length - keep - reserveFlank));
     const range = tier === 2 ? 8 : tier === 1 ? 10 : 11, sent = []; let k = 0; // assaultSpot takes +-2 m round the target
     for (const e of ground) { if (k >= nBound) break; const c = climaxBoundSpot(e, range + (Math.random() * 2 - 1), sent); if (!c) continue;
       stallSend(e, c, 'assault', camera.position.z - e.group.position.z); e._suppressUntilSim = -1; e._suppressOnArrive = 8; e._assault = true; e._climaxUntil = cxEndSim; e._cxTo = c.pos; sent.push(e); k++; }
     const flankers = [];
-    if (tier === 2 && flankHitsWave < FLANK_CAP_WAVE) for (const e of ground) { if (flankers.length >= 2) break; if (sent.includes(e)) continue; if (alive.length - sent.length - flankers.length - 1 < 1) break; // keep one shooter laying fire
+    const tryFlank = (preferFlank || tier === 2) && flankHitsWave < FLANK_CAP_WAVE;
+    if (tryFlank) for (const e of ground) { if (flankers.length >= 2) break; if (sent.includes(e)) continue;
+      // keep one shooter laying fire when every alive fighter is ground; a roof already covers keep===0
+      if (keep > 0 && alive.length - sent.length - flankers.length - 1 < 1) break;
+      if (keep === 0 && alive.length - sent.length - flankers.length < 1) break;
       const sp = climaxFlankSpot(e, flankers.map((f) => f._cxFlankTo)); if (!sp) continue;
       e.pinned = false; e.staggerT = 0; parkCoverStep(e); startReposition(e, sp); e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; e._cxFlankTo = sp.pos; e._climaxUntil = cxEndSim; flankers.push(e); }
-    if (flankers.length) { lastFlankSim = sim; SSx.flankMoves = (SSx.flankMoves | 0) + flankers.length; slog('enemy', 'climax flank pair (' + flankers.length + ')'); }
+    if (flankers.length) { lastFlankSim = sim; SSx.flankMoves = (SSx.flankMoves | 0) + flankers.length; slog('enemy', 'climax flank pair (' + flankers.length + ')' + (preferFlank ? ' (mix)' : '')); }
     for (const o of alive) { if (sent.includes(o) || flankers.includes(o)) continue; o._suppressUntilSim = tier === 2 ? cxEndSim : sim + 8; o._climaxUntil = cxEndSim; } // A21: rest + rooftops suppress (A22: W4+ for the whole climax)
-    // A25: every climax (W2+) must include a grenade OR flanking pair inside the event — if no flankers, force a climax grenade.
+    // A25/A26: every climax (W2+) must include a grenade OR flanking pair inside the event — if no flankers, force a climax grenade.
     cxNadeAt = flankers.length === 0 ? sim + 2.5 + Math.random() * 1.5 : 0;
     lastStallSendSim = sim;
     slog('enemy', 'climax size: ' + sent.length + ' bound ~' + range + 'm, ' + flankers.length + ' flank, ' + (alive.length - sent.length - flankers.length) + ' suppress (tier ' + tier + ')');
@@ -3006,6 +3015,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   function endClimax(sim) {
     const SSx = window.SS; slog('enemy', 'climax end'); cxPhase = 'lull'; cxDone = true; cxLull = true; cxLullUntil = sim + LULL_S; lullShotSim = sim; if (SSx) { const LL = SSx.lullLog || (SSx.lullLog = []); LL.push({ wave: cxWave, start: +sim.toFixed(1), end: +(sim + LULL_S).toFixed(1), shots: 0, events: [] }); if (LL.length > 12) LL.shift(); } assaultAt = sim + LULL_S + 2 + Math.random() * 3; if (SSx) SSx.lullUntil = cxLullUntil; /* A22 (tester A21: quiet ~20 s, fire never stopped): 11 s of sparse fire, then mop-up */ cxStamp(sim); try { squadCall('They\'re falling back!'); } catch (_) {}
     if (cxRec) cxRec.fallbackSim = +sim.toFixed(1);
+    cxPrevHadNade = !!(cxRec && cxRec.nade != null); // A26: next climax prefers flank when this one was a grenade
     let nFb = 0, nRet = 0;
     for (const e of list) { if (!e.alive || e.dying) continue; if (e._flankMove || e._flankArr) { if (typeof e._flankTellSim === 'number') retireFlanker(e, 'fallback'); e._flankMove = false; e._flankArr = null; } e._cxFlankTo = null; // A22: climax flankers fall back too (an open tell ends as 'flank aborted (fallback)')
       e._climaxUntil = -1; e._lullUntil = sim + LULL_S; e._suppressOnArrive = 0; e._assault = false; e._suppressUntilSim = Math.min(e._suppressUntilSim || 0, sim);
@@ -3039,11 +3049,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
       else slog('enemy', 'last enemy breaks: flee from ' + Math.round(d) + 'm' + (why || ''));
       try { squadCall("He's running!"); } catch (_) {} rec('flee', { why: (why || '').trim(), afterStand }); };
     if (!lsMode) { if (sim < lsDue || lsDone) return;
-      const f = SSx.lastStandForce; let mode = f === 'rush' || f === 'flee' ? f : (Math.random() < 0.5 ? 'rush' : 'flee');
-      if (mode === 'rush' && (e.group.position.y > 0.5 || (e.anchor && isElevated(e.anchor.type)))) mode = 'flee'; // a roof shooter can't charge the street
+      // A26: rush is the default when a ground fighter can charge; ?w4end=1 / lastStandForce='rush' always forces rush (tester A25: straight-flee with no stand).
+      const f = SSx.lastStandForce; let mode = f === 'rush' || f === 'flee' ? f : (w4endArmed ? 'rush' : 'rush');
+      if (mode === 'rush' && (e.group.position.y > 0.5 || (e.anchor && isElevated(e.anchor.type))) && !(w4endArmed || f === 'rush')) mode = 'flee'; // A26: roof normally flees; w4end / forced rush still charges the street
       if (mode === 'rush') { const side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1); let spot = null;
-        // A25: prefer a more street-centred open stand (1.0-2.4 m off centre) so aim can land at box fps; keep 5-9 m range.
-        for (const az of [5 + Math.random() * 4, 7, 6, 8.5]) { for (const sx of [side, -side]) for (const ax of [1.0, 1.6, 2.2, 2.4]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az); if (occupiedBy(pos, e) || !clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue; spot = { pos, type: 'wall', open: true, near: true }; break; } if (spot) break; }
+        // A26: street-centred first (1.0-2.4), then wider A24 offsets; last pass skips LOS so a ground charge almost always finds a stand.
+        const azs = [5 + Math.random() * 4, 7, 6, 8.5, 5.5, 9];
+        const axSets = [[1.0, 1.6, 2.2, 2.4], [2.2, 3.6, 4.5]];
+        for (const needLos of [true, false]) { for (const axs of axSets) { for (const az of azs) { for (const sx of [side, -side]) for (const ax of axs) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az); if (occupiedBy(pos, e)) continue; if (needLos && !clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue; spot = { pos, type: 'wall', open: true, near: true }; break; } if (spot) break; } if (spot) break; } if (spot) break; }
         if (!spot) mode = 'flee';
         else { e.pinned = false; e.staggerT = 0; e._flankMove = false; e._flankArr = null; stallSend(e, spot, 'last rush', d); e._suppressOnArrive = 0; e._suppressUntilSim = -1; e._lastRush = true; lsMode = 'rush'; lsAt = sim; lsStandUntil = 0;
           slog('enemy', 'last enemy breaks: rush ' + Math.round(d) + 'm -> ' + Math.round(cam.z - spot.pos.z) + 'm'); try { squadCall("He's charging!"); } catch (_) {} rec('rush', { to: +(cam.z - spot.pos.z).toFixed(1) }); return; } }
@@ -3413,12 +3426,21 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let nadeWaveNo = null, lcWave = 0;
   const nades = []; let nadeThisWave = false, campT = 0, nadesWave = 0; const NADE_CAP = 2, SP_GAP_S = 15;
   let nadeWhyT = 0; const slog = (k, d) => { try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log(k, d); } catch (_) {} };
+  // A26: during an active climax, a scoped / exposed player must stay exposed (HP can reach ~35-50). Do not auto-yank cover.
+  function climaxStayExposed() {
+    if (cxPhase !== 'active') return false;
+    const inp = window.SS && window.SS.input, cov = window.SS && window.SS.cover;
+    const ducked = !!(cov && cov.state === 'in' && !(inp && inp.scope));
+    return !ducked;
+  }
   function throwGrenade(e, stay) {
     const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
     const from = e.group.position.clone().setY(e.group.position.y + 1.6);
     const to = camera.position.clone().setY(0.1); to.x += (Math.random() - 0.5) * 1.2; to.z -= 0.6 + Math.random() * 0.6;
     nades.push({ m, from, to, t: 0, flight: 1.1, fuse: 2.4, landed: false, stay: !!(stay) }); // stay: debug only (test the cap with no escape)
-    squadCall('Grenade!'); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('GRENADE! Moving cover');
+    squadCall('Grenade!');
+    const hint = climaxStayExposed() ? 'GRENADE!' : 'GRENADE! Moving cover';
+    if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint(hint);
     if (window.SS) { window.SS.grenades = (window.SS.grenades | 0) + 1; window.SS.setPieceAt = window.SS.simTime || 0; window.SS.lastNadeThrow = { sim: window.SS.simTime || 0, wave: burstIndex }; }
   }
   function updateGrenades(dt) {
@@ -3485,7 +3507,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       slog('gren', why); } } else nadeWhyT = 0;
     for (let i = nades.length - 1; i >= 0; i--) { const n = nades[i]; n.t += dt;
       if (!n.landed) { const k = Math.min(1, n.t / n.flight); n.m.position.lerpVectors(n.from, n.to, k); n.m.position.y += Math.sin(k * Math.PI) * 3.2;
-        if (k >= 1) { n.landed = true; n.t = 0; n.ring = new THREE.Mesh(nadeRingGeo, nadeRingMat); if (window.SS) window.SS.nadeRingAt = window.SS.simTime || 0; n.ring.rotation.x = -Math.PI / 2; n.ring.position.copy(n.to).setY(0.05); n.ring.renderOrder = 4; n.ring.add(new THREE.Mesh(nadeZoneGeo, nadeRingMat)); scene.add(n.ring); if (window.SS && window.SS.hud && window.SS.hud.callout) window.SS.hud.callout('GRENADE!', true); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint('GRENADE! Moving cover'); if (cov && cov.relocate && !n.stay) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
+        if (k >= 1) { n.landed = true; n.t = 0; n.ring = new THREE.Mesh(nadeRingGeo, nadeRingMat); if (window.SS) window.SS.nadeRingAt = window.SS.simTime || 0; n.ring.rotation.x = -Math.PI / 2; n.ring.position.copy(n.to).setY(0.05); n.ring.renderOrder = 4; n.ring.add(new THREE.Mesh(nadeZoneGeo, nadeRingMat)); scene.add(n.ring); if (window.SS && window.SS.hud && window.SS.hud.callout) window.SS.hud.callout('GRENADE!', true); const skipYank = climaxStayExposed(); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint(skipYank ? 'GRENADE!' : 'GRENADE! Moving cover'); if (cov && cov.relocate && !n.stay && !skipYank) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
       else if (n.ring && n.t < n.fuse) { n.ring.visible = Math.floor(n.t * 6) % 2 === 0; }
       if (n.landed && n.t >= n.fuse) { if (n.ring) { scene.remove(n.ring); n.ring = null; }
         for (let j = 0; j < 4; j++) muzzleFlash(n.m.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)));
