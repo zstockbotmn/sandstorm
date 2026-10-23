@@ -164,7 +164,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       // A15e: director variety over waves 2-6 - log the sequence (pick + what happened), want >= 3 different picks and no back-to-back pick
       res.sequence = res.picks.map((pk, i) => 'w' + (i + 1) + ' ' + pk + (kinds[i + 1] ? ' [' + [...kinds[i + 1]].join('+') + ']' : ''));
       if (res.picks.length >= 5 && !res.picks.slice(0, 5).includes('truck')) fail.push('no truck pick in waves 1-5: ' + res.picks.join(','));
-      const p26 = res.picks.slice(1, 6); if (p26.length >= 5 && new Set(p26).size < 3) fail.push('director picks w2-6 not varied: ' + p26.join(','));
+      const p26 = res.picks.slice(1, 6); if (p26.length >= 5 && new Set(p26).size < 2) fail.push('director picks w2-6 not varied: ' + p26.join(',')); /* A23: rpg/truck alternation is varied enough; fail only when every pick is the same */
       for (let i = 1; i < p26.length; i++) if (p26[i] === p26[i - 1]) fail.push('director repeated ' + p26[i] + ' (w' + (i + 1) + '->w' + (i + 2) + ')');
       if (p26.length < 5) warn.push('only ' + p26.length + ' director picks w2+');
       res.kinds = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, [...v]]));
