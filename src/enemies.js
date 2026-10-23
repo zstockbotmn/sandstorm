@@ -2172,7 +2172,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (enemy._flankRec && !enemy._flankRec.outcome) { const pr = enemy._flankRec, sN = +(SSx.simTime || 0).toFixed(2); pr.outcome = 'abort'; pr.outSim = sN; SSx.flankSuperseded = (SSx.flankSuperseded | 0) + 1; SSx.flankAborts = (SSx.flankAborts | 0) + 1;
       slog('enemy', 'flank aborted (superseded)'); const AL = SSx.flankAbortLog || (SSx.flankAbortLog = []); AL.push({ sim: sN, why: 'superseded', id: enemy.id, tell: pr.tellSim }); if (AL.length > 40) AL.shift(); }
     const L = SSx.flankLog || (SSx.flankLog = []); L.push({ tellSim: +(SSx.simTime || 0).toFixed(2), firstHitSim: null, id: enemy.id }); if (L.length > 80) L.shift(); enemy._flankRec = L[L.length - 1]; }
+  // A23 (tester A22 pass A: near misses and assaults resumed 1-2 s after the climax end): the post-climax quiet is held
+  // centrally - stallSend refuses every non-fallback move, the lone-advance / repositioning / mid-wave beat / last-survivor
+  // clocks wait, and at most ONE enemy round per 3.5 s is fired across the whole squad. SS.lullLog per climax.
+  let lullShotSim = -1e9;
+  function lullNote(what) { const L = window.SS && window.SS.lullLog; const cur = L && L[L.length - 1]; if (!cur) return; (cur.events || (cur.events = [])).push({ sim: +((window.SS.simTime || 0)).toFixed(1), what }); if (cur.events.length > 40) cur.events.shift(); }
   function enemyShoot(enemy) {
+    { const sQ = (window.SS && window.SS.simTime) || 0; if (lullOn(sQ)) { if (sQ - lullShotSim < 3.5) return; lullShotSim = sQ; const L = window.SS.lullLog, cur = L && L[L.length - 1]; if (cur) cur.shots = (cur.shots | 0) + 1; } }
     { const nR = performance.now() / 1000, nS = window.SS ? (window.SS.simTime || 0) : 0; if (enemy.noFireUntilR > nR || enemy.noFireUntilSim > nS) { enemy.shootCd = Math.max(enemy.shootCd || 0, 0.1); return; } } // just relocated: let the player see them first
     // m1u: a balcony/window/roof shooter fires only while visibly present (a tracer from an empty balcony otherwise)
     enemy.group.getWorldPosition(_losP); _losP.y += 1.25; const offView = !onScreen(_losP) && !onScreen(_losP.setY(_losP.y + 0.37));
@@ -2757,6 +2763,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(here); if (d < minMove * minMove) continue; if (d < bd) { bd = d; best = c; } }
     return best; }
   function stallSend(e, c, kind, from) { const SSx = window.SS, sim = SSx.simTime || 0, pz = camera.position.z;
+    if (lullOn(sim) && !/^(fallback|flees)/.test(kind)) { lullNote('blocked send: ' + kind); return false; } // A23: nothing advances in the post-climax quiet
     if (LOCO2 && e.phase !== 'relocate') { parkCoverStep(e); startReposition(e, c); }
     else { e._relocAt = sim; e.anchor = c; e.home = standPos(c); e.path = pathOnto(e, c); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.exposed = true; e.goal = e.path[0]; }
     e.moveKind = 'run'; e._reposWhy = 'stall-' + kind; e.advanced = (e.advanced | 0) + 1;
@@ -2859,7 +2866,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // review: latch the wave number at the wave start (it can step mid-wave, which would re-arm a 2nd beat)
     if (mwWave === -1) { mwWave = Math.max(burstIndex, waveClears + 1); mwContactSim = null; mwDone = false; mwShots0 = SSx.enemyShots|0; mwPush = []; }
     if (mwContactSim == null) { if ((SSx.enemyShots|0) > mwShots0) { mwContactSim = sim; mwAt = 20 + Math.random()*5; const L = SSx.waveContactLog || (SSx.waveContactLog = []); L.push({ wave: mwWave, sim: +sim.toFixed(1) }); if (L.length > 30) L.shift(); } else return; }
-    for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue; if (sim - lastStallSendSim < 5) { rec.at = lastStallSendSim + 5; continue; } // A20: no 3-push bursts
+    for (const rec of mwPush) { if (rec.sent || sim < rec.at) continue; if (lullOn(sim)) { rec.at = cxLullUntil + 0.5; continue; } // A23 if (sim - lastStallSendSim < 5) { rec.at = lastStallSendSim + 5; continue; } // A20: no 3-push bursts
       if (rec.e.alive && !rec.e.dying) { const a = camera.position.z - rec.e.group.position.z; const c = nearCover(rec.e, a) || openBound(rec.e, a) || openBoundNear(rec.e, a); if (c) { stallSend(rec.e, c, c.near ? 'closes in (open)' : c.open ? 'advances (open)' : 'advances', a); rec.e._suppressOnArrive = 5; lastBeatSendSim = sim; } }
       rec.sent = true; }
     const wv = mwWave; if (mwDone || wv < 2 || sim - mwContactSim < mwAt) return;
@@ -2971,7 +2978,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (!inFrontArc(pos) && clearToEye(_losP.set(pos.x - side * 0.3, 1.25, pos.z))) return { pos, type: 'wall' }; }
     return null; }
   function endClimax(sim) {
-    const SSx = window.SS; slog('enemy', 'climax end'); cxPhase = 'lull'; cxDone = true; cxLull = true; cxLullUntil = sim + LULL_S; assaultAt = sim + LULL_S + 2 + Math.random() * 3; if (SSx) SSx.lullUntil = cxLullUntil; /* A22 (tester A21: quiet ~20 s, fire never stopped): 11 s of sparse fire, then mop-up */ cxStamp(sim); try { squadCall('They\'re falling back!'); } catch (_) {}
+    const SSx = window.SS; slog('enemy', 'climax end'); cxPhase = 'lull'; cxDone = true; cxLull = true; cxLullUntil = sim + LULL_S; lullShotSim = sim; if (SSx) { const LL = SSx.lullLog || (SSx.lullLog = []); LL.push({ wave: cxWave, start: +sim.toFixed(1), end: +(sim + LULL_S).toFixed(1), shots: 0, events: [] }); if (LL.length > 12) LL.shift(); } assaultAt = sim + LULL_S + 2 + Math.random() * 3; if (SSx) SSx.lullUntil = cxLullUntil; /* A22 (tester A21: quiet ~20 s, fire never stopped): 11 s of sparse fire, then mop-up */ cxStamp(sim); try { squadCall('They\'re falling back!'); } catch (_) {}
     if (cxRec) cxRec.fallbackSim = +sim.toFixed(1);
     let nFb = 0, nRet = 0;
     for (const e of list) { if (!e.alive || e.dying) continue; if (e._flankMove || e._flankArr) { if (typeof e._flankTellSim === 'number') retireFlanker(e, 'fallback'); e._flankMove = false; e._flankArr = null; } e._cxFlankTo = null; // A22: climax flankers fall back too (an open tell ends as 'flank aborted (fallback)')
@@ -2993,6 +3000,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const alive = list.filter((e) => e.alive && !e.dying);
     if (alive.length !== 1 || waveSpawned < burstCap || truckPending > 0 || cxPhase === 'tell' || cxPhase === 'active') { if (!lsMode) { lsId = null; SSx.lastStandArmed = null; } return; }
     const e = alive[0];
+    if (lullOn(sim) && !lsMode) { if (lsId === e.id) lsDue = Math.max(lsDue, cxLullUntil + 1); else { /* armed after the lull */ } if (lsId !== e.id) { lsId = e.id; lsSince = sim; lsDue = Math.max(sim + 25 + Math.random() * 5, cxLullUntil + 1); SSx.lastStandArmed = { wave: wv, id: e.id, since: +sim.toFixed(1) }; } return; } // A23: no break inside the quiet
     if (lsId !== e.id) { lsId = e.id; lsSince = sim; lsDue = sim + 25 + Math.random() * 5; lsMode = null; SSx.lastStandArmed = { wave: wv, id: e.id, since: +sim.toFixed(1) }; }
     const cam = camera.position, dz = cam.z - e.group.position.z, d = Math.hypot(e.group.position.x - cam.x, dz);
     const rec = (mode, extra) => { const L = SSx.lastStandLog || (SSx.lastStandLog = []); const o = Object.assign({ wave: wv, id: e.id, mode, sim: +sim.toFixed(1), alone: +(sim - lsSince).toFixed(1), dist: +d.toFixed(1) }, extra || {}); L.push(o); if (L.length > 30) L.shift(); return o; };
@@ -3590,7 +3598,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (!(e.group.position.z > pz - 0.5)) e.behindT = 0;
       { const dP = e.group.position.distanceTo(camera.position); // lone far last fighter -> advances (8 s beyond 35 m)
         if (e.engaged && !e.pinned && !e.dying && dP > 35 && e.phase !== 'relocate' && e.group.position.y < 0.05 && !(e.anchor && isElevated(e.anchor.type)) && aliveCount() === 1 && truckPending === 0) { e.farT = (e.farT || 0) + dt;
-          if (e.farT > 8) { e.farT = 0; advanceNearer(e); } } else e.farT = 0; } // ground fighters only: they run up (no vertical pop)
+          if (e.farT > 8 && !lullOn(window.SS.simTime || 0)) { e.farT = 0; advanceNearer(e); } } else e.farT = 0; } // ground fighters only: they run up (no vertical pop)
       if (REPOS) { // fighters holding one ground cover move (sim time). Off: this block never runs.
         // p1b: the hold clock reset on every anchor change (short shuffles, toSeenSpot) and on any phase outside
         // takeCover/hide/peek/fire, and a failed pick waited a whole new 20-25 s. Now it follows the AREA held (resets
@@ -3600,7 +3608,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const last1 = aliveCount() === 1 && truckPending === 0;
         const ground = e.alive && !e.dying && !e.pinned && e.anchor && e.anchor.pos && !isElevated(e.anchor.type) && e.behavior !== 'flanker';
         const holding = ['takeCover', 'hide', 'peek', 'fire'].includes(e.phase) || (e.phase === 'relocate' && !e._repositioning && e._holdPos);
-        if (ground && holding) {
+        if (ground && holding && !lullOn(simS)) {
           const ap = e.anchor.pos;
           const ovr = last1 ? window.SS_REPOS_S : window.SS_RELOC_S;
           const timer = () => (typeof ovr === 'number' ? ovr : last1 ? 20 + Math.random() * 5 : 15 + Math.random() * 15);
