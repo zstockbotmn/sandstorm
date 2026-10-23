@@ -3432,12 +3432,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let nadeWaveNo = null, lcWave = 0;
   const nades = []; let nadeThisWave = false, campT = 0, nadesWave = 0; const NADE_CAP = 2, SP_GAP_S = 15;
   let nadeWhyT = 0; const slog = (k, d) => { try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log(k, d); } catch (_) {} };
-  // A26: during an active climax, a scoped / exposed player must stay exposed (HP can reach ~35-50). Do not auto-yank cover.
+  // A27: during an active climax, never force a Moving-cover yank — whether ducked/IN COVER or scoped/exposed.
+  // Outside climax, camping flush still relocates. Hint uses this too (GRENADE! vs GRENADE! Moving cover).
   function climaxStayExposed() {
-    if (cxPhase !== 'active') return false;
-    const inp = window.SS && window.SS.input, cov = window.SS && window.SS.cover;
-    const ducked = !!(cov && cov.state === 'in' && !(inp && inp.scope));
-    return !ducked;
+    return cxPhase === 'active';
   }
   function throwGrenade(e, stay) {
     const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
