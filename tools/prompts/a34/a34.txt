@@ -1,0 +1,24 @@
+A34 thin fix (behind existing ?sp=5). Recover Fun (RPG must appear on primary door+cxnade play) + Immersion (doorway look + kill unstick snap). Protect A33 wins: truck→calm→regen, climax soak/no-yank, shafts/dust, SP_GAP spacing, doorPressure. Edit ONLY as needed: src/setpiece.js (REQUIRED), optionally src/setpiece-truck.js / src/enemies.js if a gate blocks the same-wave RPG. Do NOT edit cover.js / doorstop.js (parent handles those). Do NOT git commit. Run node --check on every edited file. No browser/build. No public publish.
+
+A33 CONTEXT (must fix):
+Harness A33 PASS claimed truck+grenade+rpg, but RPG landed only in WAVE 3 (~75s sim) AFTER W2 truck+climax grenade. App Tester on primary ?door=1&cxnade=1&q=low saw truck→calm→flank→grenade in the doorway (W2) and stopped ~107s sim — NEVER saw RPG. Fun gate INCONCLUSIVE. Hypothesis confirmed: door-path director forces truck W2 and RPG only W3+; climax + gaps + calm eat W2; play never reaches W3 RPG.
+
+=== 1) RPG ON PRIMARY door+cxnade PATH (REQUIRED) ===
+On `?door=1&cxnade=1` (NO ?truck=1 / ?rpg=1), a typical doorway-camp run MUST land truck AND RPG AND grenade (climax OK) with ≥12–15 s gaps — RPG must fire during the SAME doorway hold / same wave as the truck when possible, NOT wait for W3.
+
+In src/setpiece.js director / update():
+a) Keep A33 door bias that forces early truck (W2).
+b) NEW A34: once truck has actually fired (spLog has truck) and RPG has not, on doorOn path (DOOR_BIAS or doorHold / doorStop held / forceDoor), arm an RPG SAME-WAVE follow-up even if this wave's pick was 'truck' (fireAt was -1). Do NOT wait for W3 pick.
+   - Set fireAt (or equivalent) so rpgDueAt becomes due AFTER truck bail/calm/setPieceAt with the existing ≥15 s set-piece gap gates (reuse the gates already in update: truck phase, truckPendingWave, truckBailAt+12, bigBeatCalmUntil, climax live, climaxAt+15, setPieceAt+15, flank lull, midBeat, lullUntil, nadeStarved).
+   - Practical: after truck in spLog and !firedWave and fireAt<0 and doorOn and !FORCED_ANY, set fireAt from waveT so the due time is roughly max(setPieceAt, truckBailAt, bigBeatCalmUntil||0) + small epsilon, OR simply set fireAt = (sim - waveT) so the existing gap gates become the only delay (RPG launches as soon as gates clear). Prefer the gate-driven approach so calm finishes first.
+   - When arming this follow-up, push 'rpg' into SS.spPick.hist (and refresh spVariety) so later waves do not double-force another RPG immediately; mark pick or a flag so harness can see intent (e.g. SS.spPick.followRpg = true).
+c) Desired order on door+cxnade: truck → (calm/regen) → RPG → (gap) → climax grenade. Setting rpgDueAt while truck calm is ending makes climax's existing "rpg due" block wait for the RPG — good.
+d) Keep forced ?rpg=1 / ?truck=1 behavior unchanged. Keep non-door variety path (A31 weights) unchanged.
+e) Do NOT weaken SP_GAP / SP_GAP_CX. Do NOT remove climax live / setPieceAt+15 waits.
+f) If RPG still cannot fire because firedWave is stuck true from a prior attempt, fix that edge only.
+
+=== 2) OUT OF SCOPE FOR THIS PROMPT ===
+- cover.js unstick / doorstop yaw (parent edits those)
+- tests, preview, commit
+
+After edits: node --check each changed file. Print a short summary of what changed and why RPG now lands in W2 on door+cxnade.

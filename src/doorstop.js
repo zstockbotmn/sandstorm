@@ -232,8 +232,8 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if ((performance.now() - (input.aimMovedT || 0)) <= 400) return;
     const pose = poseAt(path, Math.min(s, path.len));
     const street = path.kind === 'in' && path.len > 0 && s >= path.len * 0.8;
-    // A30/A33: late veer / hold peeks into the open aperture so lit interior + shafts sit in FOV (keep leaf off-frame).
-    const target = street ? Math.atan2((door.side || 1) * 1.35, 0.48) : Math.atan2(pose.tx, -pose.tz);
+    // A34: street-biased doorway peek — flankers on the opening stay on-screen; slight side bias keeps a sliver of lit room/shafts.
+    const target = street ? Math.atan2((door.side || 1) * 0.42, 1.05) : Math.atan2(pose.tx, -pose.tz);
     const d = Math.atan2(Math.sin(target - input.yaw), Math.cos(target - input.yaw));
     input.yaw += d * (1 - Math.exp(-3 * dt));
   }
@@ -263,9 +263,9 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if (!rec.duck) rec.duck = { front: 0, flank: 0, frontShots: 0 };
     if (enemies.waveNow) enemies.waveNow();
     if (cover && cover.takeDoor) cover.takeDoor(path.door);
-    // A30/A33: snap peek yaw so shafts + room light sit in the open-aperture view (not the hinged leaf).
+    // A34: snap toward street opening (shootable FLANKED) with light room bias — not ~70° into the interior wall.
     if (path.door && (performance.now() - (input.aimMovedT || 0)) > 400) {
-      input.yaw = Math.atan2((path.door.side || 1) * 1.35, 0.48);
+      input.yaw = Math.atan2((path.door.side || 1) * 0.42, 1.05);
     }
     if (path.door) S.doorPeek = { yaw: input.yaw, side: path.door.side || 1 };
     dlog('IN COVER · DOORWAY', 'sim ' + (S.simTime || 0).toFixed(1));
@@ -313,6 +313,13 @@ export function createDoorStop(camera, world, input, enemies, cover) {
       return false;
     } else if (rec.state === 'held') {
       const sim = S.simTime || 0;
+      // A34: while doorway-held and player isn't dragging aim, ease look back to street-biased peek (unstick no longer yaws, but keep flank on-screen).
+      if (path && path.door && (performance.now() - (input.aimMovedT || 0)) > 400) {
+        const want = Math.atan2((path.door.side || 1) * 0.42, 1.05);
+        const d = Math.atan2(Math.sin(want - input.yaw), Math.cos(want - input.yaw));
+        if (Math.abs(d) > 0.04) input.yaw += d * (1 - Math.exp(-2.2 * dt));
+        S.doorPeek = { yaw: input.yaw, side: path.door.side || 1, street: true };
+      }
       const due = (S.waveClears | 0) > (rec.clears0 | 0) || (rec.arriveSim != null && sim - rec.arriveSim >= 90);
       if (!due) return false;
       S.doorHold = false;

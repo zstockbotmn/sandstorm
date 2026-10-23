@@ -146,8 +146,8 @@ export function createCover(scene, camera, world, input) {
     const dx = c.target.x - camera.position.x, dz = c.target.z - camera.position.z, d = Math.hypot(dx, dz);
     if (d > 0.05) { const s = Math.min(d, MOVE_SPEED * dt) / d; camera.position.x += dx * s; camera.position.z += dz * s;
       if (c.kind !== 'door' && c.surface && camera.position.z < c.surface.max.z + PLAYER_R) camera.position.z = c.surface.max.z + PLAYER_R; // never enter the cover (skip for door: stand is beside the jamb)
-      unstick('cover-move'); }
-    else { if (c.state !== 'in' && window.SS && !window.SS.firstCoverT) { window.SS.firstCoverT = performance.now(); window.SS.coverGraceUntil = performance.now() + COVER_GRACE_S * 1000; } c.state = 'in'; unstick('cover-in'); } // m1v: 1.5 s grace on first reaching cover (COVER_GRACE_S)
+      if (c.kind !== 'door') unstick('cover-move'); } // A34: doorway stand is beside the jamb — unstick fought lean and snapped view every tick
+    else { if (c.state !== 'in' && window.SS && !window.SS.firstCoverT) { window.SS.firstCoverT = performance.now(); window.SS.coverGraceUntil = performance.now() + COVER_GRACE_S * 1000; } c.state = 'in'; if (c.kind !== 'door') unstick('cover-in'); } // m1v: 1.5 s grace on first reaching cover (COVER_GRACE_S); A34: no doorHold unstick spam
     if (c.reaim) reaim(dt);
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
     // A30: ducked lean keeps a sliver of lit interior in frame; scope peeks further toward the street fight.

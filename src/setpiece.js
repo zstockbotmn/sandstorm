@@ -279,6 +279,20 @@ export function createSetPieces({ scene, camera, player, hud }) {
         fireAt = pick === 'rpg' ? ((doorOn && CX_NADE) ? 6 + Math.random() * 10 : 10 + Math.random() * 16) : -1; }
       else fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 10 + Math.random() * 16 : -1; } // A13: random mode 10-26 s (middle / late wave; it may fire after the spawn window now)
     wasBurst = bursting;
+    // A34: door path — after truck lands, arm RPG same-wave (gate-driven). A33 waited for W3 pick; Tester never reached it.
+    if (!FORCED_ANY && !firedWave && fireAt < 0 && !flying) {
+      const doorOn = DOOR_BIAS || !!(SS.forceDoor || SS.doorHold || (SS.doorStop && (SS.doorStop.state === 'held' || SS.doorStop.state === 'veer')));
+      const log = SS.spLog || [];
+      const hasT = log.some((x) => x.kind === 'truck');
+      const hasR = log.some((x) => x.kind === 'rpg');
+      if (doorOn && hasT && !hasR && state.wave >= 2) {
+        fireAt = Math.max(0, sim - waveT); // due now; existing calm / setPieceAt / bail / climax gates hold the launch
+        const hist = ((SS.spPick && SS.spPick.hist) || []).slice();
+        if (!hist.includes('rpg')) hist.push('rpg');
+        SS.spPick = Object.assign({}, SS.spPick || {}, { wave: state.wave, pick: (SS.spPick && SS.spPick.pick) || 'truck', hist, sim, door: true, followRpg: true });
+        SS.spVariety = { rpg: hist.includes('rpg'), truck: hist.includes('truck'), grenade: hist.includes('grenade'), quiet: hist.includes('quiet') };
+      }
+    }
     SS.rpgDueAt = (!firedWave && fireAt >= 0 && !flying) ? waveT + fireAt : null; // A19: the mid-wave beat keeps 8 s from it
     if (flying) stepFlight(sim);
     stepVfx(dt || 0);

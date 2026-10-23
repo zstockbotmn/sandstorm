@@ -3277,6 +3277,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (FORCE_CX_NADE) {
       if (SSx.truckPendingWave) return;
       if (SSx.rpgDueAt != null && sim < SSx.rpgDueAt + 6) return;
+      // A34: door same-wave RPG follow-up must land before climax (cxnade used to proceed 6 s after due and eat the slot).
+      if (SSx.spPick && SSx.spPick.followRpg && SSx.rpgDueAt != null && !(SSx.spLog || []).some((x) => x.kind === 'rpg')) {
+        if (!cxSpacingWait) { cxSpacingWait = true; slog('enemy', 'climax wait rpg follow'); }
+        return;
+      }
     } else if (block && sim < cxDue + 15) return;
     const n = list.filter((e) => e.alive && !e.dying).length;
     if (n < (FORCE_CX_NADE ? 1 : 2)) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
