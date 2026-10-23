@@ -227,3 +227,18 @@ DONE: tip cbb0d67, build ss-957b1b79a3, label 'internal preview A27', preview :8
 Known: doorway detour walkS 12.3 (inside 11±1.5); box ~1–2 fps so doorway/a15 wall times are long. ?rooms=0 keeps rooms drawn but disables doorway stop + enemy doorway. No GH Pages / no Tester-PM ping this ship.
 Next: tester rescore A27 doorway + rooms depth.
 
+
+## A28 (App PM Oct 23 ~9:20 AM ET — CODE on branch a28-doorway-default; NOT previewed yet)
+Fix-only on worktree `/workspace/sandstorm-a28` branch `a28-doorway-default` (from tip 3b6dc76). Do NOT touch :8850 / step1-movement until tester finishes A27.
+Root causes (confirmed):
+1. Rooms + doorway required `?bld=4` URL — release/iPhone default never got enterable rooms.
+2. `doorstop.on()` and room spawn also required `quality !== 'ultra-low'` / `!ULTRA` — box auto-drop to ultra-low mid-run killed the feature even with bld=4.
+3. Art buildings always win (`rng()<1.01`) + 35% room rate + originZ<-30 + tight 15.5–17.5 m arm window made natural doorway rare at ~1 fps.
+4. Climax grenade for yank check needs ~40–60 s after W2 contact — never reached in A27 session.
+Code:
+- BLD4 default ON; opt out `?bld=0`. `?rooms=0` still kills enterable rooms + doorway stop (+ enemy doorway).
+- Rooms + doorway stay on ultra-low (cheaper furniture: no table/crates/rubble/rug). Early-force ≥1 room in first ~60–150 m.
+- Doorstop arm window 14–22 m (was 15.5–17.5); no ultra-low gate.
+- Force: `?door=1` / `?doorstop=1` (early doorway); `?cxnade=1` / `?grenadecx=1` (W2+ climax grenade ~8 s after contact).
+- Tests written, NOT run (hold): updated `test/doorway-stop.js`, new `test/a28-force.js`. `node --check` only until :8850 free.
+Ship: parent merges to step1-movement, preview A28 on 8850, hand to tester when browser free.
