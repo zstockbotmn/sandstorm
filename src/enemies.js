@@ -2393,7 +2393,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function squadCall(text) {
     const hud = window.SS && window.SS.hud;
-    if (hud && typeof hud.callout === 'function') hud.callout(text, /Moving|moving up|Flanking|Grenade|rushing|charging|running|gone/.test(text));
+    if (hud && typeof hud.callout === 'function') hud.callout(text, /Moving|moving up|Flanking|Grenade|rushing|charging|running|gone|Clear|Contact down|Good work|Area secure|last of them|Keep moving/.test(text));
     if (window.SS && /Flanking/.test(text)) { const L = window.SS.flankCallLog || (window.SS.flankCallLog = []); L.push(+(window.SS.simTime || 0).toFixed(2)); if (L.length > 80) L.shift(); } // A17: test hook
   }
 
@@ -3011,12 +3011,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A22 (tester A21 W4: the last fighter camped behind the green jeep wreck at 13-17 m for ~250 s): after 25-30 s alone the
   // last survivor BREAKS, ~50/50: a desperate rush to 5-9 m in the open (radio 'He's charging!'; killable), or he runs out
   // of the fight (radio 'He's running!'; despawned 40+ m out or after 9 s -> 'last enemy fled', the wave clears).
-  // A rusher still alive 20 s after the rush flees. SS.lastStandForce = 'rush' | 'flee' pins the pick (tests).
-  let lsWave = -1, lsId = null, lsSince = 0, lsDue = 0, lsMode = null, lsAt = 0, lsDone = false;
+  // A24 (tester A23: charge felt like a soft clear): after 'He's charging!' he must stand exposed at 5-9 m and shoot for
+  // ~4-6 game-s ('last stand') before he can flee ('last flee after stand'). Flee-only (no charge) is unchanged.
+  // SS.lastStandForce = 'rush' | 'flee' pins the pick (tests).
+  let lsWave = -1, lsId = null, lsSince = 0, lsDue = 0, lsMode = null, lsAt = 0, lsDone = false, lsStandUntil = 0;
   function lastStand() {
     const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
-    if (!waveActive) { lsWave = -1; lsId = null; lsMode = null; lsDone = false; return; }
-    const wv = Math.max(burstIndex, waveClears + 1); if (wv !== lsWave) { lsWave = wv; lsId = null; lsMode = null; lsDone = false; }
+    if (!waveActive) { lsWave = -1; lsId = null; lsMode = null; lsDone = false; lsStandUntil = 0; return; }
+    const wv = Math.max(burstIndex, waveClears + 1); if (wv !== lsWave) { lsWave = wv; lsId = null; lsMode = null; lsDone = false; lsStandUntil = 0; }
     const alive = list.filter((e) => e.alive && !e.dying);
     if (alive.length !== 1 || waveSpawned < burstCap || truckPending > 0 || cxPhase === 'tell' || cxPhase === 'active') { if (!lsMode) { lsId = null; SSx.lastStandArmed = null; } return; }
     const e = alive[0];
@@ -3024,19 +3026,36 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (lsId !== e.id) { lsId = e.id; lsSince = sim; lsDue = sim + 25 + Math.random() * 5; lsMode = null; SSx.lastStandArmed = { wave: wv, id: e.id, since: +sim.toFixed(1) }; }
     const cam = camera.position, dz = cam.z - e.group.position.z, d = Math.hypot(e.group.position.x - cam.x, dz);
     const rec = (mode, extra) => { const L = SSx.lastStandLog || (SSx.lastStandLog = []); const o = Object.assign({ wave: wv, id: e.id, mode, sim: +sim.toFixed(1), alone: +(sim - lsSince).toFixed(1), dist: +d.toFixed(1) }, extra || {}); L.push(o); if (L.length > 30) L.shift(); return o; };
-    const flee = (why) => { lsMode = 'flee'; lsAt = sim; e.pinned = false; e._flankMove = false; e._flankArr = null; e._lastRush = false;
+    const flee = (why) => { lsMode = 'flee'; lsAt = sim; lsStandUntil = 0; e.pinned = false; e._flankMove = false; e._flankArr = null; e._lastRush = false;
       const sx = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : 1; stallSend(e, { pos: new THREE.Vector3(sx * 4.5, 0, cam.z - 55), type: 'wall', open: true }, 'flees', d); e.noFireUntilSim = sim + 30; // a runner doesn't shoot back (after stallSend: relocation resets the clock)
-      slog('enemy', 'last enemy breaks: flee from ' + Math.round(d) + 'm' + (why || '')); try { squadCall("He's running!"); } catch (_) {} rec('flee'); };
+      const afterStand = /after stand/.test(why || '');
+      if (afterStand) slog('enemy', 'last flee after stand');
+      else slog('enemy', 'last enemy breaks: flee from ' + Math.round(d) + 'm' + (why || ''));
+      try { squadCall("He's running!"); } catch (_) {} rec('flee', { why: (why || '').trim(), afterStand }); };
     if (!lsMode) { if (sim < lsDue || lsDone) return;
       const f = SSx.lastStandForce; let mode = f === 'rush' || f === 'flee' ? f : (Math.random() < 0.5 ? 'rush' : 'flee');
       if (mode === 'rush' && (e.group.position.y > 0.5 || (e.anchor && isElevated(e.anchor.type)))) mode = 'flee'; // a roof shooter can't charge the street
       if (mode === 'rush') { const side = Math.abs(e.group.position.x) > 0.8 ? Math.sign(e.group.position.x) : (Math.random() < 0.5 ? 1 : -1); let spot = null;
         for (const az of [5 + Math.random() * 4, 7, 6, 8.5]) { for (const sx of [side, -side]) for (const ax of [2.2, 3.6]) { const pos = new THREE.Vector3(sx * ax, 0, cam.z - az); if (occupiedBy(pos, e) || !clearToEye(_losP.set(pos.x, 1.25, pos.z))) continue; spot = { pos, type: 'wall', open: true, near: true }; break; } if (spot) break; }
         if (!spot) mode = 'flee';
-        else { e.pinned = false; e.staggerT = 0; e._flankMove = false; e._flankArr = null; stallSend(e, spot, 'last rush', d); e._suppressOnArrive = 0; e._suppressUntilSim = -1; e._lastRush = true; lsMode = 'rush'; lsAt = sim;
+        else { e.pinned = false; e.staggerT = 0; e._flankMove = false; e._flankArr = null; stallSend(e, spot, 'last rush', d); e._suppressOnArrive = 0; e._suppressUntilSim = -1; e._lastRush = true; lsMode = 'rush'; lsAt = sim; lsStandUntil = 0;
           slog('enemy', 'last enemy breaks: rush ' + Math.round(d) + 'm -> ' + Math.round(cam.z - spot.pos.z) + 'm'); try { squadCall("He's charging!"); } catch (_) {} rec('rush', { to: +(cam.z - spot.pos.z).toFixed(1) }); return; } }
       flee(); return; }
-    if (lsMode === 'rush' && sim - lsAt > 20) { flee(' (after the rush)'); return; } // survived the charge: he runs
+    if (lsMode === 'rush') {
+      const moving = e.phase === 'relocate' || !!e._repositioning;
+      if (!moving && !lsStandUntil) {
+        // Arrived at 5-9 m: lethal window - exposed, shooting, before any flee.
+        lsStandUntil = sim + 4 + Math.random() * 2;
+        e.exposed = true; e.pinned = false; e.noFireUntilSim = -1; e.noFireUntilR = -1;
+        e.shootCd = Math.min(e.shootCd || 0, 0.15);
+        e._suppressUntilSim = lsStandUntil; // A19 suppress mul: faster fire during the stand
+        slog('enemy', 'last stand'); rec('stand', { until: +lsStandUntil.toFixed(1), hold: +(lsStandUntil - sim).toFixed(1) });
+      }
+      if (lsStandUntil) {
+        e.exposed = true; e.noFireUntilSim = Math.min(e.noFireUntilSim || 0, sim);
+        if (sim >= lsStandUntil) { flee(' (after stand)'); return; }
+      } else if (sim - lsAt > 25) { flee(' (rush stuck)'); return; } // never arrived: bail
+    }
     if (lsMode === 'flee' && (d > 40 || sim - lsAt > 9)) { slog('wave', 'last enemy fled'); try { squadCall('He\'s gone. Clear!'); } catch (_) {} rec('fled'); lsMode = 'gone'; lsDone = true; despawn(e); SSx.lastFled = (SSx.lastFled | 0) + 1; }
   }
   function waveClimax() {
@@ -3813,7 +3832,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; } w4endArmed = false;
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; lsStandUntil = 0; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; } w4endArmed = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;

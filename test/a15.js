@@ -133,7 +133,14 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     res.cxSize = res.climax.map((c) => ({ wave: c.wave, tier: c.tier, n: c.n, ground: c.ground, nade: c.nade, bound: c.bound, range: c.range, flank: c.flank, suppress: c.suppress }));
     for (const x of res.lastStand || []) { if ((x.mode === 'rush' || x.mode === 'flee') && !/after/.test(x.why || '') && x.alone != null && x.alone > 0 && !res.lastStand.some((y) => y !== x && y.wave === x.wave && y.id === x.id && y.sim < x.sim && (y.mode === 'rush' || y.mode === 'flee')) && (x.alone < 24.5 || x.alone > 31)) fail.push('wave ' + x.wave + ': last survivor broke (' + x.mode + ') after ' + x.alone + ' s alone (want 25-30)');
       if (x.mode === 'rush' && (x.to < 4.5 || x.to > 9.5)) fail.push('wave ' + x.wave + ': last rush to ' + x.to + ' m (want 5-9)'); }
-    res.lastStandSum = (res.lastStand || []).map((x) => 'W' + x.wave + ' ' + x.mode + ' @' + x.alone + 's' + (x.to ? ' ->' + x.to + 'm' : ''));
+    // A24: a charge that stands must hold ~4-6 game-s exposed before flee-after-stand
+    for (const st of (res.lastStand || []).filter((x) => x.mode === 'stand')) {
+      if (!(st.hold >= 3.8 && st.hold <= 6.2)) fail.push('wave ' + st.wave + ': last stand hold ' + st.hold + ' s (want ~4-6)');
+      const fled = (res.lastStand || []).find((x) => x.wave === st.wave && x.id === st.id && x.mode === 'flee' && x.afterStand);
+      // fled may be missing if the player killed him during the stand - that is fine
+      void fled;
+    }
+    res.lastStandSum = (res.lastStand || []).map((x) => 'W' + x.wave + ' ' + x.mode + ' @' + x.alone + 's' + (x.to ? ' ->' + x.to + 'm' : '') + (x.hold != null ? ' hold' + x.hold + 's' : '') + (x.afterStand ? ' afterStand' : ''));
     if (!(res.lastStand || []).length) warn.push('no last-survivor break seen');
     if (res.climax.length) for (const k of ['climax tell', 'climax start', 'climax end']) if (!res.cxLines.some((x) => x.d === k)) fail.push("no '" + k + "' line in the sound log");
     if (res.climax.some((c) => c.fallbackSim != null) && !res.cxLines.some((x) => /^fallback/.test(x.d))) fail.push("no 'fallback' line in the sound log");
