@@ -2,7 +2,7 @@
 // (last 6 lines). Repeats of the same kind fold into one line with a count (footsteps would flood it otherwise).
 const ALOG_ON = typeof location !== 'undefined' && /[?&]debug\b/.test(location.search);
 let alogEl = null;
-const SP_KIND = /^(launch thump|whoosh|boom|engine roar|door|bark|heli|crackle|grenade|wave|room)$/, SP_PIN = []; let spPinAt = -1e9;
+const SP_KIND = /^(launch thump|whoosh|boom|engine roar|door|edoor|bark|heli|crackle|grenade|grenade, cover|wave|room)$/, SP_PIN = []; let spPinAt = -1e9;
 function alog(kind, detail) {
   if (typeof window === 'undefined' || !window.SS) return;
   const L = window.SS.audioLog || (window.SS.audioLog = []);
@@ -253,6 +253,8 @@ export function createAudio() {
   const HURT_SRC = { gun: 'rifle', flank: 'rifle, flank', rpg: 'RPG', 'rpg-cover': 'RPG, cover', grenade: 'grenade', 'grenade-cover': 'grenade, cover', truck: 'truck', test: 'test' };
   function hurt(pos, dmg, src) {
     const hpNow = window.SS && window.SS.player ? Math.round(window.SS.player.health) : null; // A13: debug-only HP after the hit (log/overlay, never the HUD)
+    // A29: grenade-cover also emits kind "grenade, cover" with "-N" so SOUND panel matches tester expectation.
+    if (src === 'grenade-cover') alog('grenade, cover', '-' + Math.round(dmg || 0));
     alog('hit taken', '-' + Math.round(dmg || 0) + ' hp' + (src ? ' (' + (HURT_SRC[src] || src) + ')' : '') + (hpNow != null ? ' \u2192 ' + hpNow : '')); // A11: the source, so set-piece hits can be told from rifle hits
     if (window.SS) window.SS.hurtSounds = (window.SS.hurtSounds | 0) + 1;
     if (!ctx) return;

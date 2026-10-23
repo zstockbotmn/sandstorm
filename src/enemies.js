@@ -242,6 +242,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const W4END = (() => { try { return /[?&](?:w4end=1|skip=w4end)\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (_) { return false; } })();
   // A28: ?cxnade=1 / ?grenadecx=1 — force W2+ climax onto the grenade path soon (~8 s after contact) for ~1 fps yank checks.
   const FORCE_CX_NADE = (() => { try { return /[?&](?:cxnade|grenadecx)=1\b/.test(location.search); } catch (_) { return false; } })();
+  // A29: ?edoor=1 — force ≥1 enemy to use a room doorway as cover this run (Depth).
+  const FORCE_EDOOR = (() => { try { return /[?&]edoor=1\b/.test(location.search); } catch (_) { return false; } })();
   const FIRST_CONTACT_S = (() => { try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) return +m[1]; } catch (_) {} return 11; })(); // App PM (bundle): the opening walk was 24 s, Zack found it long
   const RADIO_WARN_S = 5, APPROACH_S = 3; // build-up from ~3 s, radio at ~6 s (11 - 5); the radio line still holds >= 6 s real / 5 frames, so at low fps it may overlap contact
   let quietRunT = 0, quietRealAt = 0, radioWarned = false;
@@ -2504,15 +2506,20 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (occupiedBy(pick.pos, null)) return null;
     // 4e5c: at most one fighter per wave may take another room's doorway (not the player's door)
     // A28: doorway enemy cover follows release-default rooms (not ?bld=4 / Low-only); stays on ultra-low.
+    // A29: ?edoor=1 forces the first eligible spawn onto a room doorway this run.
     const bld4 = typeof location === 'undefined' || !/[?&]bld=0\b/.test(location.search);
     const roomsOff = typeof location !== 'undefined' && /[?&]rooms=0\b/.test(location.search);
-    if (bld4 && !roomsOff && !roofOnly && roll !== 'flanker' && Math.random() < 0.35) {
+    const wantEdoor = FORCE_EDOOR && !(window.SS && window.SS.doorEnemy && (window.SS.doorEnemy.count | 0) > 0);
+    if (bld4 && !roomsOff && !roofOnly && roll !== 'flanker' && (wantEdoor || Math.random() < 0.35)) {
       const liveDoor = list.some((e) => e.alive && e.anchor && e.anchor.type === 'room' && e.anchor.door);
       if (!liveDoor) {
         const playerDoorZ = (window.SS && window.SS.doorStop && window.SS.doorStop.room) ? window.SS.doorStop.room[1] : null;
-        const rooms = coverPool(['room'], [10, 40]).filter((p) => p && p.door && !occupiedBy(p.pos, null)
+        const rooms = coverPool(['room'], wantEdoor ? [6, 55] : [10, 40]).filter((p) => p && p.door && !occupiedBy(p.pos, null)
           && (playerDoorZ == null || Math.abs(p.door.z - playerDoorZ) > 2));
-        if (rooms.length) pick = rooms[(Math.random() * rooms.length) | 0];
+        if (rooms.length) {
+          pick = rooms[(Math.random() * rooms.length) | 0];
+          if (wantEdoor) try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log('edoor', 'enemy doorway armed'); } catch (_) {}
+        }
       }
     }
     const enemy = buildEnemy(roll, pick);
@@ -2988,7 +2995,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (quiet && room && (forceSP || Math.random() < 0.5)) {
       let nadeE = null, nadeD = 1e9;
       for (const e of list) { if (!e.alive || e.dying || e.group.position.y >= 0.5) continue; const d = Math.hypot(e.group.position.x - camera.position.x, e.group.position.z - camera.position.z); if (d <= 36 && d < nadeD) { nadeD = d; nadeE = e; } }
-      if (!prevNade && !thisWave.includes('grenade') && (forceSP ? wv % 2 === 1 || !(SSx.setpieces && SSx.setpieces.debugRpg) : Math.random() < 0.5) && nadeE) { throwGrenade(nadeE); spLog('grenade', wv, { pick: 'mid-wave', camp: +campT.toFixed(1) }); nadeThisWave = true; nadesWave++; campT = 0; slog('grenade', 'thrown ' + Math.round(nadeD) + 'm (mid-wave)'); kind = 'grenade'; } // A19: counts as the wave's one grenade (a15 quiet: a long-camp grenade followed it)
+      if (!prevNade && !thisWave.includes('grenade') && !(FORCE_CX_NADE && !cxDone) && (forceSP ? wv % 2 === 1 || !(SSx.setpieces && SSx.setpieces.debugRpg) : Math.random() < 0.5) && nadeE) { throwGrenade(nadeE); spLog('grenade', wv, { pick: 'mid-wave', camp: +campT.toFixed(1) }); nadeThisWave = true; nadesWave++; campT = 0; slog('grenade', 'thrown ' + Math.round(nadeD) + 'm (mid-wave)'); kind = 'grenade'; } // A19: counts as the wave's one grenade // A29: cxnade suppresses until climax
       else if (SSx.setpieces && SSx.setpieces.debugRpg && !thisWave.includes('rpg') && !(SSx.spLog || []).some((x) => x.kind === 'rpg' && x.wave === wv - 1)) { SSx.setpieces.debugRpg(); kind = 'rpg'; } // A19: no RPG right after an RPG wave (director variety)
     }
     if (!kind) {
@@ -3506,9 +3513,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
   const nades = []; let nadeThisWave = false, campT = 0, nadesWave = 0; const NADE_CAP = 2, SP_GAP_S = 15;
   let nadeWhyT = 0; const slog = (k, d) => { try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log(k, d); } catch (_) {} };
   // A27: during an active climax, never force a Moving-cover yank — whether ducked/IN COVER or scoped/exposed.
-  // Outside climax, camping flush still relocates. Hint uses this too (GRENADE! vs GRENADE! Moving cover).
+  // A29: also never yank when already IN COVER + ducked (camping flush and climax alike). Hint uses skipGrenadeYank.
   function climaxStayExposed() {
     return cxPhase === 'active';
+  }
+  function skipGrenadeYank() {
+    if (climaxStayExposed()) return true;
+    const cov = window.SS && window.SS.cover;
+    return !!(cov && cov.state === 'in' && window.SS.input && window.SS.input.cover);
   }
   function throwGrenade(e, stay) {
     const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
@@ -3516,7 +3528,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const to = camera.position.clone().setY(0.1); to.x += (Math.random() - 0.5) * 1.2; to.z -= 0.6 + Math.random() * 0.6;
     nades.push({ m, from, to, t: 0, flight: 1.1, fuse: 2.4, landed: false, stay: !!(stay) }); // stay: debug only (test the cap with no escape)
     squadCall('Grenade!');
-    const hint = climaxStayExposed() ? 'GRENADE!' : 'GRENADE! Moving cover';
+    const hint = skipGrenadeYank() ? 'GRENADE!' : 'GRENADE! Moving cover';
     if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint(hint);
     if (window.SS) { window.SS.grenades = (window.SS.grenades | 0) + 1; window.SS.setPieceAt = window.SS.simTime || 0; window.SS.lastNadeThrow = { sim: window.SS.simTime || 0, wave: burstIndex }; }
   }
@@ -3561,7 +3573,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const midGap = (window.SS && window.SS.lullUntil != null && (window.SS.simTime || 0) < window.SS.lullUntil) ? 0 : _beat > -1e8 ? (window.SS.simTime || 0) - _beat : 1e9; // A22: no grenade in the lull // A19 / A21: 8 s after a mid-wave push or climax
     const lastSp = spL[spL.length - 1], gapOk = !(midGap >= 0 && midGap < 8) && (spGap >= SP_GAP_S || (nadeWave && nadesWave === 1 && lastSp && lastSp.kind === 'grenade' && lastSp.wave === waveNo && spGap >= 11.9)); // A16: a grenade wave's 2nd throw follows its 1st at ~12 s // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
     if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, waveNo, nadeWave: !!nadeWave, nadeThisWave, nadesWave, longCamp, prevNade, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
-    if (waveActive && !capped && campT > (nadeWave && !nadesWave ? 3 : 5 - 1.5 * pN) && waveOk && gapOk && (campT > certainAt || (nadeWave && !nadesWave && Math.random() < dt * 0.35))) {
+    // A29: ?cxnade=1 suppresses camping-flush grenades until climax has fired (cxDone) so the box reaches climax soak at ~1 fps.
+    const cxSuppressFlush = FORCE_CX_NADE && !cxDone;
+    if (waveActive && !capped && !cxSuppressFlush && campT > (nadeWave && !nadesWave ? 3 : 5 - 1.5 * pN) && waveOk && gapOk && (campT > certainAt || (nadeWave && !nadesWave && Math.random() < dt * 0.35))) {
       let th = null, bd = 40, roof = null, rd = 40; for (const e of list) { if (!e.alive || e.dying) continue; const dd = e.group.position.distanceTo(camera.position);
         if (e.group.position.y < 0.5) { if (dd < bd) { bd = dd; th = e; } } else if (dd < rd) { rd = dd; roof = e; } }
       th = th || roof;
@@ -3571,7 +3585,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // say WHY every ~5 game-s ('gren: ...' in the sound log, SS.nadeWhy). First failing gate in trigger order.
     if (waveActive) { nadeWhyT += dt; if (nadeWhyT >= 5) { nadeWhyT = 0; // A15: keeps going after a throw
       let why; const minCamp = 5 - 1.5 * pN;
-      if (capped) why = 'cap ' + capN + '/wave';
+      if (cxSuppressFlush) why = 'cxnade wait climax';
+      else if (capped) why = 'cap ' + capN + '/wave';
       else if (!(cov && cov.state === 'in')) why = 'not in cover (' + (cov ? cov.state : 'none') + ')';
       else if (!waveOk) why = 'wave ' + waveNo + ' < 3';
       else if (!nadeWave && prevNade) why = 'none: grenade last wave';
@@ -3584,7 +3599,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       slog('gren', why); } } else nadeWhyT = 0;
     for (let i = nades.length - 1; i >= 0; i--) { const n = nades[i]; n.t += dt;
       if (!n.landed) { const k = Math.min(1, n.t / n.flight); n.m.position.lerpVectors(n.from, n.to, k); n.m.position.y += Math.sin(k * Math.PI) * 3.2;
-        if (k >= 1) { n.landed = true; n.t = 0; n.ring = new THREE.Mesh(nadeRingGeo, nadeRingMat); if (window.SS) window.SS.nadeRingAt = window.SS.simTime || 0; n.ring.rotation.x = -Math.PI / 2; n.ring.position.copy(n.to).setY(0.05); n.ring.renderOrder = 4; n.ring.add(new THREE.Mesh(nadeZoneGeo, nadeRingMat)); scene.add(n.ring); if (window.SS && window.SS.hud && window.SS.hud.callout) window.SS.hud.callout('GRENADE!', true); const skipYank = climaxStayExposed(); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint(skipYank ? 'GRENADE!' : 'GRENADE! Moving cover'); if (cov && cov.relocate && !n.stay && !skipYank) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
+        if (k >= 1) { n.landed = true; n.t = 0; n.ring = new THREE.Mesh(nadeRingGeo, nadeRingMat); if (window.SS) window.SS.nadeRingAt = window.SS.simTime || 0; n.ring.rotation.x = -Math.PI / 2; n.ring.position.copy(n.to).setY(0.05); n.ring.renderOrder = 4; n.ring.add(new THREE.Mesh(nadeZoneGeo, nadeRingMat)); scene.add(n.ring); if (window.SS && window.SS.hud && window.SS.hud.callout) window.SS.hud.callout('GRENADE!', true); const skipYank = skipGrenadeYank(); if (window.SS && window.SS.hud && window.SS.hud.hint) window.SS.hud.hint(skipYank ? 'GRENADE!' : 'GRENADE! Moving cover'); if (cov && cov.relocate && !n.stay && !skipYank) cov.relocate(camera.position.x > 0 ? -1 : 1, 'grenade'); } }
       else if (n.ring && n.t < n.fuse) { n.ring.visible = Math.floor(n.t * 6) % 2 === 0; }
       if (n.landed && n.t >= n.fuse) { if (n.ring) { scene.remove(n.ring); n.ring = null; }
         for (let j = 0; j < 4; j++) muzzleFlash(n.m.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)));
@@ -3613,7 +3628,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
         // A26: climax 35 floor — clamp grenade (exposed stay); player.damage also re-clamps all sources
         if (dmg > 0 && cxPhase === 'active' && hp0 >= 35) { const cap = Math.max(0, hp0 - 35); if (dmg > cap) { dmg = cap; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; } }
         if (dmg > 0) player.damage(dmg, n.m.position, gSrc);
-        if (window.SS) window.SS.lastGrenade = { d: +d.toFixed(2), dmg: +dmg.toFixed(1), hpBefore: +hp0.toFixed(1), escaped: d >= 3, moving: !!(cv && cv.state === 'moving') };
+        // A29: clear SOUND line so tester can read soak digits at ~1 fps (also drives HP num flash via hurt).
+        if (dmg > 0 && gSrc === 'grenade-cover') slog('grenade, cover', '-' + Math.round(dmg));
+        if (window.SS) window.SS.lastGrenade = { d: +d.toFixed(2), dmg: +dmg.toFixed(1), hpBefore: +hp0.toFixed(1), hpAfter: +(player.health).toFixed(1), src: gSrc, escaped: d >= 3, moving: !!(cv && cv.state === 'moving') };
         if (window.SS && window.SS.fx) window.SS.fx.blast(n.m.position);
         if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);
         scene.remove(n.m); nades.splice(i, 1); } }

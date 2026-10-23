@@ -14,8 +14,11 @@ import { createInteriorAtlas, createInteriorMaterial, createInteriorFallback, bu
 const BLD4 = typeof location === 'undefined' || !/[?&]bld=0\b/.test(location.search);
 const BLD4P = typeof location !== 'undefined' && /[?&]bld=4p\b/.test(location.search);
 const ROOMS_OFF = typeof location !== 'undefined' && /[?&]rooms=0\b/.test(location.search);
-if (typeof window !== 'undefined' && window.SS) { window.SS.bld4roomsOff = ROOMS_OFF; window.SS.bld4Default = BLD4; }
+// A29: ?door=1 / ?doorstop=1 — force ≥1 enterable room with door ~25–40 m ahead of spawn (z≈4 → door z ≈ -21…-36).
+const FORCE_DOOR = typeof location !== 'undefined' && /[?&](?:door|doorstop)=1\b/.test(location.search);
+if (typeof window !== 'undefined' && window.SS) { window.SS.bld4roomsOff = ROOMS_OFF; window.SS.bld4Default = BLD4; window.SS.forceDoor = FORCE_DOOR; }
 let _roomsPlaced = 0; // A28: guarantee ≥1 room in the first ~60 m so doorway stop can fire after W1
+function doorBandZ(z) { return FORCE_DOOR && !_roomsPlaced && z < -20 && z > -42; } // spawn z≈4 → ahead ~24–46 m
 let winMat = null;
 function windowMaterial() {
   if (!winMat) {
@@ -633,15 +636,22 @@ export function createWorld(scene, seed) {
       const wallIn = Math.min(depthAll * 0.6, Math.max(0, d[Math.floor(d.length * 0.5)] - 0.05));
       const front = fx0 + side * wallIn, back = side < 0 ? box.min.x : box.max.x;
       const top = roofEarly ? Math.min(box.max.y, roofEarly.y - 0.17) : box.max.y;
-      // A28: rooms stay on ultra-low (cheaper furniture in addRoom); force first room by ~60 m; originZ < -20 (was -30).
+      // A28: rooms stay on ultra-low; force first room by ~60 m. A29 ?door=1: force in door-band (~25–40 m ahead of spawn).
       const spanOk = (box.max.z - box.min.z) >= 7;
-      const earlyForce = BLD4 && !ROOMS_OFF && !_roomsPlaced && seg.originZ < -20 && seg.originZ > -150 && !seg._roomDone && spanOk;
-      const artRoom = BLD4 && !ROOMS_OFF && seg.originZ < -20 && !seg._roomDone && spanOk && (earlyForce || seg._wrng() < 0.35);
+      const midZ = (box.min.z + box.max.z) * 0.5;
+      const earlyForce = BLD4 && !ROOMS_OFF && !_roomsPlaced && !seg._roomDone && spanOk && (
+        doorBandZ(midZ) || (!FORCE_DOOR && seg.originZ < -20 && seg.originZ > -150));
+      const artRoom = BLD4 && !ROOMS_OFF && !seg._roomDone && spanOk && (earlyForce || ((FORCE_DOOR ? doorBandZ(midZ) : seg.originZ < -20) && seg._wrng() < 0.35));
       if (artRoom) pending = { front, back, top, z0: box.min.z, z1: box.max.z };
       else { const col = addInvisibleBox(seg, (front + back) * 0.5, (box.min.y + top) * 0.5, (box.min.z + box.max.z) * 0.5, Math.abs(back - front), top - box.min.y, box.max.z - box.min.z); col.name = 'building'; col.userData.building = true; }
     }
     const spanZ = Math.max(0.5, box.max.z - box.min.z);
-    const doorZ = box.min.z + (0.12 + rng() * 0.76) * spanZ;
+    let doorZ = box.min.z + (0.12 + rng() * 0.76) * spanZ;
+    // A29: when forcing the early door room, snap door z into the 25–40 m band if the facade spans it.
+    if (FORCE_DOOR && pending && !_roomsPlaced) {
+      const lo = Math.max(box.min.z + 1.2, -40), hi = Math.min(box.max.z - 1.2, -25);
+      if (lo < hi) doorZ = lo + rng() * (hi - lo);
+    }
     doors.push(doorZ);
     if (pending) { if (addRoom(seg, side, 0, 0, 0, 0, 0, pending.front, doorZ, pending)) { seg._roomDone = true; _roomsPlaced++; } else { const col = addInvisibleBox(seg, (pending.front + pending.back) * 0.5, (box.min.y + pending.top) * 0.5, (pending.z0 + pending.z1) * 0.5, Math.abs(pending.back - pending.front), pending.top - box.min.y, pending.z1 - pending.z0); col.name = 'building'; col.userData.building = true; } }
     if (seg._wins && WIN_TABLE && WIN_TABLE[name] && Array.isArray(WIN_TABLE[name].windows)) {
@@ -874,6 +884,11 @@ export function createWorld(scene, seed) {
           new THREE.Vector3(Math.max(X(0), X(0.3)), RH, zc - 0.6)),
       },
     });
+    // A29: warm interior light so the tester sees a lit room at the doorway (cheap; one per enterable room).
+    {
+      const pl = new THREE.PointLight(0xffd6a0, FORCE_DOOR ? 1.35 : 0.85, 7.5, 2);
+      pl.position.set(X(2.0), 2.4, zc); pl.name = 'roomLit'; seg.group.add(pl);
+    }
     if (typeof window !== 'undefined' && window.SS) window.SS.bld4rooms = (window.SS.bld4rooms | 0) + 1;
     if (art) {
       const x0 = facadeX - side * 0.08, x1 = facadeX + side * 3.85;
@@ -941,15 +956,21 @@ export function createWorld(scene, seed) {
       const h = floors * 3.15;
       const cx = side * (6.2 + depth * 0.5);
       const cz = z - lot * 0.5;
-      const earlyForce = BLD4 && !ROOMS_OFF && !_roomsPlaced && seg.originZ < -20 && seg.originZ > -150 && !seg._roomDone && lot >= 7 && depth >= 6;
-      const room = BLD4 && !ROOMS_OFF && seg.originZ < -20 && !seg._roomDone && lot >= 7 && depth >= 6 && (earlyForce || seg._wrng() < 0.35);
+      // A29 ?door=1: force room when building center is in the 25–40 m door band; else A28 ~60 m earlyForce.
+      let doorZ = cz + (rng() - 0.5) * lot * 0.3;
+      if (FORCE_DOOR && !_roomsPlaced && doorBandZ(cz)) {
+        const lo = Math.max(cz - lot * 0.35, -40), hi = Math.min(cz + lot * 0.35, -25);
+        if (lo < hi) doorZ = lo + rng() * (hi - lo);
+      }
+      const earlyForce = BLD4 && !ROOMS_OFF && !_roomsPlaced && !seg._roomDone && lot >= 7 && depth >= 6 && (
+        doorBandZ(doorZ) || doorBandZ(cz) || (!FORCE_DOOR && seg.originZ < -20 && seg.originZ > -150));
+      const room = BLD4 && !ROOMS_OFF && !seg._roomDone && lot >= 7 && depth >= 6 && (earlyForce || ((FORCE_DOOR ? (doorBandZ(doorZ) || doorBandZ(cz)) : seg.originZ < -20) && seg._wrng() < 0.35));
       if (room) { seg._roomDone = true; _roomsPlaced++; }
       if (!room) addBox(seg, matPlaster, cx, h * 0.5, cz, depth, h, lot - 0.35);
       addBox(seg, matPlaster, cx, h + 0.28, cz, depth + 0.35, 0.55, lot, { collide: false });
       const facadeX = cx - side * (depth * 0.5);
       // Roof spot sits on the street-side parapet edge (not the roof centre, which put enemies inside the building).
       seg.coverPoints.push({ pos: new THREE.Vector3(facadeX + side * 0.45, h + 0.7, cz), type: 'roof' });
-      const doorZ = cz + (rng() - 0.5) * lot * 0.3;
       doors.push(doorZ);
       if (room) addRoom(seg, side, cx, cz, depth, h, lot, facadeX, doorZ);
       else addBox(seg, matDark, facadeX - side * 0.12, 1.15, doorZ, 0.28, 2.3, 1.15);

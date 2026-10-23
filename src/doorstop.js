@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Once per run (A28: default on; ?bld=0 or ?rooms=0 off) the walk curves into one doorway and holds for the next wave.
 // Control points are fixed; inLen/outLen are the precomputed sample lengths (no runtime tuning).
-// ?door=1 / ?doorstop=1 forces an early stop for ~1 fps tester (bypasses waveClears + tight distance window).
+// ?door=1 / ?doorstop=1: A29 forces a room in the 25–40 m band + arms on first post-W1 walk (wide fallback); SOUND logs door arm / veer / held.
 const SPEED = 3;
 const BLD4 = !/[?&]bld=0\b/.test(location.search);
 const ROOMS0 = /[?&]rooms=0\b/.test(location.search);
@@ -176,10 +176,15 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     return false;
   }
 
-  function candidates() {
+  function dlog(why, extra) {
+    if (window.SS) window.SS.doorDbg = why + (extra ? ' ' + extra : '');
+    try { if (window.SS && window.SS.audio && window.SS.audio.log) window.SS.audio.log('door', why + (extra ? ' ' + extra : '')); } catch (_) {}
+  }
+
+  function candidates(wide) {
     const cz = camera.position.z, found = [], segs = world.segments || [];
-    // A28: slightly wider arm window (was 15.5-17.5) so ~1 fps catch-up does not skip the door; force uses 4-55 m.
-    const lo = FORCE_DOOR ? 4 : 14, hi = FORCE_DOOR ? 55 : 22;
+    // A28: slightly wider arm window; force uses 4-55 m. A29 force fallback: any room ahead up to 120 m.
+    const lo = FORCE_DOOR ? (wide ? 2 : 4) : 14, hi = FORCE_DOOR ? (wide ? 120 : 55) : 22;
     for (let i = 0; i < segs.length; i++) {
       const pts = segs[i].coverPoints || [];
       for (let j = 0; j < pts.length; j++) {
@@ -195,7 +200,9 @@ export function createDoorStop(camera, world, input, enemies, cover) {
   }
 
   function begin(S) {
-    const doors = candidates();
+    let doors = candidates(false);
+    if (!doors.length && FORCE_DOOR) doors = candidates(true);
+    if (!doors.length) { dlog('no room ahead', 'z' + camera.position.z.toFixed(0)); return false; }
     for (let i = 0; i < doors.length; i++) {
       const door = doors[i];
       const built = makeIn(door);
@@ -211,9 +218,11 @@ export function createDoorStop(camera, world, input, enemies, cover) {
       s = 0;
       parked = { x: camera.position.x, z: camera.position.z };
       needRebuild = false;
+      dlog('veer start', 'door z' + door.z.toFixed(0) + ' ahead ' + (camera.position.z - door.z).toFixed(0) + 'm');
       if (enemies.deferWaveTo) enemies.deferWaveTo((S.distance || 0) + built.len + 1);
       return true;
     }
+    dlog('no room ahead', 'blocked');
     return false;
   }
 
@@ -251,6 +260,7 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if (!rec.duck) rec.duck = { front: 0, flank: 0, frontShots: 0 };
     if (enemies.waveNow) enemies.waveNow();
     if (cover && cover.takeDoor) cover.takeDoor(path.door);
+    dlog('IN COVER · DOORWAY', 'sim ' + (S.simTime || 0).toFixed(1));
   }
 
   function finishOut() {
@@ -284,9 +294,12 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if (!S || !on() || !S.running) return false;
     dt = dt || 0;
     if (rec.state === 'idle') {
-      // A28: force arms as soon as walking after start (or after first clear); normal still waits for waveClears >= 1.
-      const clearsOk = FORCE_DOOR ? (S.waveClears | 0) >= 0 : (S.waveClears | 0) >= 1;
-      if (rec.count === 0 && clearsOk && walking) begin(S);
+      // A29: ?door=1 arms on the first post-W1 walk (waveClears >= 1), same as release — early room + wide fallback make it deterministic.
+      const clearsOk = (S.waveClears | 0) >= 1;
+      if (rec.count === 0 && clearsOk && walking) {
+        if (!rec._armedLog) { rec._armedLog = true; dlog('door arm', 'clears ' + (S.waveClears | 0) + ' dist ' + (S.distance || 0).toFixed(0)); }
+        begin(S);
+      }
       if (rec.state !== 'veer') return false;
     } else if (rec.state === 'done') {
       return false;

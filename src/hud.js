@@ -98,11 +98,15 @@ export function createHud() {
   let dirTimer = 0;
   let hsTimer = 0;
 
+  let hpNumUntil = 0;
   function applyHealth() {
     const h = Math.max(0, Math.min(100, health));
     healthFill.style.width = h + '%';
-    healthNum.textContent = h > 0 && h < 30 ? String(Math.ceil(h)) : '';
+    // A29: show HP digits briefly after set-piece/soak hits so ~1 fps tester sees the bar change (also when < 30).
+    const showNum = (h > 0 && h < 30) || performance.now() < hpNumUntil;
+    healthNum.textContent = showNum && h > 0 ? String(Math.ceil(h)) : '';
   }
+  function flashHealthNum(ms) { hpNumUntil = performance.now() + (ms || 3500); applyHealth(); }
 
   // m1s: every hit shows a marker, a kill a distinct one (red, larger), and each stays up for a minimum time AND at
   // least 2 painted frames, so it is seen at 4-6 fps (a 380 ms timer could expire between two slow frames). A kill
@@ -172,9 +176,12 @@ export function createHud() {
   function edgeWarn(angle) { hud.warnPoint = edgePath(warnSvg, warnPath, angle, 0.18, 6); for (const at of ['d', 'transform']) { const v = warnPath.getAttribute(at); if (v != null) warnOut.setAttribute(at, v); } warn.classList.add('show'); warnHideAt = performance.now() + 700; warnFrames = 3; hud.warnCount = (hud.warnCount | 0) + 1; hud.warnAngle = angle; if (!warnRaf) warnRaf = requestAnimationFrame(warnTick); }
 
   function setHealth(v) {
+    const prev = health;
     health = v;
     if (window.SS) window.SS.health = v;
-    applyHealth();
+    // A29: any HP drop flashes the number so soak / grenade-cover is readable on the bar.
+    if (v < prev) flashHealthNum(4000);
+    else applyHealth();
   }
 
   function headshotFlash() {
@@ -323,6 +330,7 @@ export function createHud() {
     flanked,
     setStance,
     setHealth,
+    flashHealthNum,
     setScore,
     headshotFlash,
     callout,

@@ -2,7 +2,7 @@
 // Checks (default Low — no ?bld=4 needed): stop exactly once; IN COVER·DOORWAY while held; front-arc hits while ducked = 0
 // with front-arc shots > 0; detour walk 11 +- 1.5 s; screenshot.
 // Absent: ?rooms=0 and ?bld=0. Ultra-low NOW keeps rooms+doorway (A28; cheaper furniture).
-// Force: ?door=1 / ?doorstop=1 arms early (see test/a28-force.js).
+// Force: ?door=1 / ?doorstop=1 arms post-W1 (see test/a29-force.js).
 // Usage: node test/doorway-stop.js [low] [outPrefix]
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const D = path.resolve(__dirname, '../dist'); const PORT = 8848;
