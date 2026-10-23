@@ -2072,7 +2072,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let fightSim0 = -1e9, lastShotSim = -1e9; // threat ramp clocks (game time)
   const LOW_HP_CHANCE = 0.3, LOW_HP_SLIVER = 6; // m1x: hit-chance floor once a hit would be lethal and the player is exposed
   const DMG_CAP_HPS = 2.8, DMG_CAP_BURST = 22; let dmgBucket = DMG_CAP_BURST, dmgBucketR = 0, dmgBucketSim = 0;
-  function dmgBudget(nowS, simS) { const mul = cxPhase === 'active' ? [1.4, 1.6, 2.6][cxTier] : 1; const hps = DMG_CAP_HPS * mul, burst = DMG_CAP_BURST * mul; /* A21: climax budget ~1.6x so an EXPOSED player can drop to ~35-50 */ if (dmgBucketR) dmgBucket = Math.min(burst, dmgBucket + hps * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
+  function dmgBudget(nowS, simS) { const mul = cxPhase === 'active' ? [1.4, 1.6, 3.2][cxTier] : 1; /* A24: W4+ budget up so exposed climax bottoms 35-50 */ const hps = DMG_CAP_HPS * mul, burst = DMG_CAP_BURST * mul; /* A21: climax budget ~1.6x so an EXPOSED player can drop to ~35-50 */ if (dmgBucketR) dmgBucket = Math.min(burst, dmgBucket + hps * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
   // m1v: warning for fire from outside the view - edge flash on the shooter's side + a supersonic crack
   function warnFrom(pos) { const SSx = window.SS; if (!SSx) return; const c = camera.position, yaw = SSx.input ? SSx.input.yaw : 0, dx = pos.x - c.x, dz = pos.z - c.z;
     const fwd = dx * Math.sin(yaw) + dz * -Math.cos(yaw), right = dx * Math.cos(yaw) + dz * Math.sin(yaw);
@@ -2288,7 +2288,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const pEx = pressureP();
     const slope = 0.05 + 0.02 * pEx, exposedCap = 0.5 + 0.12 * pEx;
     if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : exposedCap, 0.10 + slope * (dryS - 3))); // A8: ducking now blocks the front arc outright, so the exposed ramp is a bit steeper (0.10 + slope/s, cap 0.5+0.12p) // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
-    if (cxPhase === 'active' && !ducked) chance = Math.max(chance, [0.2, 0.25, 0.5][cxTier]); // A22: by climax tier // A21 (a15 exposed: only 2 hits, HP 81 -> 62): an exposed player in the climax really bleeds (floor 35, cap 1.6x still apply)
+    if (cxPhase === 'active' && !ducked) chance = Math.max(chance, [0.2, 0.25, 0.65][cxTier]); // A22: by climax tier // A21 (a15 exposed: only 2 hits, HP 81 -> 62): an exposed player in the climax really bleeds (floor 35, cap 1.6x still apply)
     if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3), ducked, flankShot, flankReady };
     if (flankHit) chance = 1; // A16: a told flank shot in its window lands (each tell leads to a hit or an abort + reposition)
     const gap = 0.9 - 0.5 * grace, nowS = performance.now() / 1000;
@@ -3272,7 +3272,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         if (LOCO2) enemy._peekFired = true;
         let cd = (0.55 + Math.random() * 0.5) * (1.12 - 0.35 * diff) * 1.2; // fix 7: ~20% slower fire
         const supp = (enemy._suppressUntilSim || -1) > (window.SS.simTime || 0); if (supp) cd *= 0.6; // A19: suppressing after a push (same per-hit damage and cover rules)
-        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= [0.7, 0.65, 0.45][cxTier]; // A21: climax fire-rate boost (A22: by tier)
+        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= [0.7, 0.65, 0.35][cxTier]; // A21/A24: W4+ fire faster
         if ((enemy._lullUntil || -1) > (window.SS.simTime || 0)) cd *= 4; // A21/A22: fallback taper - sparse fire through the lull
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
@@ -3324,7 +3324,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (enemy.shootCd <= 0) {
         enemyShoot(enemy);
         let cd = (0.65 + Math.random() * 0.7) * (1.1 - 0.35 * diff) * 1.2;
-        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= [0.7, 0.65, 0.45][cxTier]; // A21/A22
+        if ((enemy._climaxUntil || -1) > (window.SS.simTime || 0)) cd *= [0.7, 0.65, 0.35][cxTier]; // A21/A24
         if ((enemy._lullUntil || -1) > (window.SS.simTime || 0)) cd *= 4; // A22
         if (((window.SS ? window.SS.distance : 0) < 120 || burstIndex <= 2) && pressure < 0.45) cd *= 1.35;
         if ((enemy.suppressT || 0) > 0) cd *= 1.5;
