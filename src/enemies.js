@@ -2175,7 +2175,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A23 (tester A22 pass A: near misses and assaults resumed 1-2 s after the climax end): the post-climax quiet is held
   // centrally - stallSend refuses every non-fallback move, the lone-advance / repositioning / mid-wave beat / last-survivor
   // clocks wait, and at most ONE enemy round per 3.5 s is fired across the whole squad. SS.lullLog per climax.
-  let lullShotSim = -1e9;
+  let lullShotSim = -1e9, payoffUntil = 0, lastClearLine = -1;
   function lullNote(what) { const L = window.SS && window.SS.lullLog; const cur = L && L[L.length - 1]; if (!cur) return; (cur.events || (cur.events = [])).push({ sim: +((window.SS.simTime || 0)).toFixed(1), what }); if (cur.events.length > 40) cur.events.shift(); }
   function enemyShoot(enemy) {
     { const sQ = (window.SS && window.SS.simTime) || 0; if (lullOn(sQ)) { if (sQ - lullShotSim < 3.5) return; lullShotSim = sQ; const L = window.SS.lullLog, cur = L && L[L.length - 1]; if (cur) cur.shots = (cur.shots | 0) + 1; } }
@@ -3694,7 +3694,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (waveActive && aliveCount() === 0 && truckPending === 0) waveActive = false; // clear only when every wave member (incl. truck) is dead
     if (window.SS) window.SS.waveActive = waveActive; // A12: set pieces key off the whole wave, not the 8-14 s spawn window
     if (waveActive) hold = true;
-    if (running) window.SS.walking = window.SS.forceWalk != null ? !!window.SS.forceWalk : (!hold && !window.SS.roomHold); /* A13 debug room jump holds the walk */ // forceWalk: test hook (fx3 footsteps) // halt from first engage until the last engaged enemy is KILLED
+    if (running) window.SS.walking = window.SS.forceWalk != null ? !!window.SS.forceWalk : (!hold && !window.SS.roomHold && (window.SS.simTime || 0) >= payoffUntil); /* A23: 2.2 s payoff beat after a clear */ /* A13 debug room jump holds the walk */ // forceWalk: test hook (fx3 footsteps) // halt from first engage until the last engaged enemy is KILLED
     // Stable ENEMIES counter: rises only when newly engaged appear, falls on engaged deaths (no silent mid-fight bumps from unengaged spawns).
     displayEngaged = aliveCount() + truckPending; // total remaining in the wave (incl. truck still driving in)
     if (!hold) displayEngaged = 0;
@@ -3703,7 +3703,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const waveDone = (waveOpen && waveSpawned >= burstCap && aliveCount() === 0 && truckPending === 0 && !hold) || (prevHold && !hold);
     if (waveDone) waveOpen = false;
     if (running && waveDone && window.SS.hud && window.SS.hud.banner) {
-      waveClears += 1; window.SS.waveClears = waveClears; slog('wave', waveClears + ' clear'); /* A14 */ window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing'); try { squadCall('Clear! Moving up.'); } catch (_) {} // tester m1q: clear cue when the walk resumes
+      waveClears += 1; window.SS.waveClears = waveClears; slog('wave', waveClears + ' clear'); /* A14 */ window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing');
+      { // A23 wave-end payoff (tester A22): AREA CLEAR centre banner ~2 s, a varied squad radio line, the combat look eases out
+        // (red edge / hurt grade fade over ~1.5 s) and the squad holds 2.2 game-s before the walk resumes.
+        const SSx = window.SS, sNow = SSx.simTime || 0, lines = ['Clear!', 'Contact down, moving on.', 'Good work, keep moving.', 'Area secure. Moving up.', 'That\'s the last of them. Move out.'];
+        let li = Math.floor(Math.random() * lines.length); if (li === lastClearLine) li = (li + 1) % lines.length; lastClearLine = li;
+        payoffUntil = sNow + 2.2; SSx.walking = false; SSx.areaClearAt = sNow;
+        try { if (SSx.hud.areaClear) SSx.hud.areaClear('AREA CLEAR', 2000); } catch (_) {} try { squadCall(lines[li]); } catch (_) {}
+        const L = SSx.areaClearLog || (SSx.areaClearLog = []); L.push({ wave: waveClears, sim: +sNow.toFixed(1), line: lines[li] }); if (L.length > 30) L.shift(); } // tester m1q: clear cue when the walk resumes
       breatherTo = window.SS.distance + (10 - 2 * pressureP()) + Math.random() * 5; phase = 'quiet'; phaseT = 0;
       // A11 (tester: gaps were ~5 s walks, no ambience): a real calm after every cleared wave - 15-25 game-s before the next
       // contact, NOT shortened by the 5e pressure curve (only the distance part is). The ambient director fills it.
@@ -3782,7 +3789,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; }
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; }
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;

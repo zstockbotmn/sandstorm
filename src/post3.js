@@ -146,6 +146,7 @@ export function createPost3({ renderer } = {}) {
     let hurt = (45 - hp) / 35;
     if (hurt < 0) hurt = 0;
     else if (hurt > 1) hurt = 1;
+    if (SS && SS.areaClearAt != null) { const dt = (SS.simTime || 0) - SS.areaClearAt; if (dt >= 0 && dt < 10) { const k = Math.min(1, dt / 1.5), back = Math.max(0, Math.min(1, (dt - 7) / 3)); hurt *= 1 - k * (1 - back); } } // A23: combat look eases out after a clear
     let blast = (SS && SS.fx3 && SS.fx3.muffle) || 0;
     blast = +blast || 0;
     if (blast < 0) blast = 0;

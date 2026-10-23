@@ -223,6 +223,16 @@ export function createHud() {
   // A22 (tester A21: the 'They're rushing us!' radio line was missed every time): a big centre-screen banner, separate
   // from the radio log, held >= 2.5 s AND >= 4 rendered frames (low fps), then faded
   const rushEl = document.createElement('div'); rushEl.id = 'rush-banner'; root.appendChild(rushEl); let rushTok = 0;
+  // A23 wave-end payoff: AREA CLEAR centre banner (own element and log, held >= holdMs real AND >= 3 painted frames) and
+  // an ease-out of the hit vignette / flash over 1.5 s
+  const clearEl = document.createElement('div'); clearEl.id = 'clear-banner'; root.appendChild(clearEl); let clearTok = 0;
+  function areaClear(text, holdMs) { const hold = holdMs || 2000, now = performance.now(), f0 = (window.SS && window.SS.frameN) | 0, tok = ++clearTok;
+    clearEl.textContent = text; clearEl.classList.remove('fade'); clearEl.classList.add('on');
+    vignette.style.transition = 'opacity 1.5s ease-out'; vignette.style.opacity = '0'; flash.style.transition = 'opacity 1.5s ease-out'; flash.style.opacity = '0';
+    const check = () => { if (tok !== clearTok) return; const fN = ((window.SS && window.SS.frameN) | 0) - f0, ms = performance.now() - now;
+      if (ms >= hold && fN >= 3) { hud.lastClear = { text, heldMs: Math.round(ms), frames: fN }; clearEl.classList.add('fade'); setTimeout(() => { if (tok === clearTok) clearEl.classList.remove('on', 'fade'); }, 600); }
+      else setTimeout(check, 100); };
+    setTimeout(check, 100); }
   function rushBanner(text, holdMs) { const hold = holdMs || 2500, now = performance.now(), f0 = (window.SS && window.SS.frameN) | 0, tok = ++rushTok;
     rushEl.textContent = text; rushEl.classList.remove('fade'); rushEl.classList.add('on'); hud.lastRush = { text, t: now, frame: f0, heldMs: null, frames: null };
     const check = () => { if (tok !== rushTok) return; const fN = ((window.SS && window.SS.frameN) | 0) - f0, ms = performance.now() - now;
@@ -308,7 +318,7 @@ export function createHud() {
     headshotFlash,
     callout,
     radio,
-    banner, rushBanner,
+    banner, rushBanner, areaClear,
     hint,
     setRemaining,
     onTarget,

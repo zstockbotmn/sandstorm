@@ -505,3 +505,7 @@ body.starting #starting { display: flex; }
 #rush-banner { position: fixed; left: 0; right: 0; top: 40%; transform: translateY(-50%); text-align: center; font: 900 46px/1.15 system-ui, sans-serif; letter-spacing: 3px; color: #ffd23a; background: rgba(90, 10, 0, 0.62); padding: 14px 0; text-shadow: 0 2px 8px #000; text-transform: uppercase; opacity: 0; pointer-events: none; z-index: 30; }
 #rush-banner.on { opacity: 1; }
 #rush-banner.on.fade { opacity: 0; transition: opacity 0.45s ease-in; }
+/* A23 wave-end payoff */
+#clear-banner { position: fixed; left: 0; right: 0; top: 36%; transform: translateY(-50%); text-align: center; font: 900 44px/1.15 system-ui, sans-serif; letter-spacing: 6px; color: #e9fbe9; background: rgba(10, 50, 20, 0.5); padding: 12px 0; text-shadow: 0 2px 8px #000; opacity: 0; pointer-events: none; z-index: 29; }
+#clear-banner.on { opacity: 1; transition: opacity 0.25s ease-out; }
+#clear-banner.on.fade { opacity: 0; transition: opacity 0.55s ease-in; }
