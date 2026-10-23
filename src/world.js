@@ -802,6 +802,7 @@ export function createWorld(scene, seed) {
   }
 
   function addRoom(seg, side, cx, cz, depth, h, lot, facadeX, doorZ, art) {
+    const c0 = seg.group.children.length;
     if (art && Math.abs(art.back - art.front) < 4.4) return false;
     if (art) facadeX = art.front;
     const W = Math.min(3.6, (art ? art.z1 - art.z0 : lot) - 2.4), RH = 3, L = art ? art.z1 - art.z0 : lot - 0.35, z0 = art ? art.z0 : cz - L / 2, z1 = art ? art.z1 : cz + L / 2;
@@ -864,6 +865,22 @@ export function createWorld(scene, seed) {
         }
       }
       if (typeof window !== 'undefined' && window.SS) window.SS.bld4roomWinCut = (window.SS.bld4roomWinCut | 0) + removed;
+    }
+    // Non-colliding shared boxGeo only; leaf stays separate (rotated). ownGeo matches other merged meshes on recycle.
+    if (BLD4) {
+      const added = seg.group.children.slice(c0), before = added.length, byMat = new Map();
+      for (const m of added) if (m.isMesh && m.geometry === boxGeo && m !== leaf && !colliders.includes(m)) {
+        const a = byMat.get(m.material); if (a) a.push(m); else byMat.set(m.material, [m]);
+      }
+      byMat.forEach((list, mat) => {
+        if (list.length < 2) return;
+        const geos = list.map((m) => { m.updateMatrix(); const g = boxGeo.clone().applyMatrix4(m.matrix); if (!g.index) return g; const n = g.toNonIndexed(); g.dispose(); return n; });
+        const geometry = mergeGeometries(geos); geos.forEach((g) => g.dispose()); if (!geometry) return;
+        const mesh = new THREE.Mesh(geometry, mat);
+        mesh.castShadow = false; mesh.receiveShadow = true; mesh.userData.segId = seg.id; mesh.userData.ownGeo = true;
+        seg.group.add(mesh); list.forEach((m) => seg.group.remove(m));
+      });
+      if (typeof window !== 'undefined' && window.SS) window.SS.bld4roomMeshes = { before, after: seg.group.children.length - c0 };
     }
     return true;
   }
