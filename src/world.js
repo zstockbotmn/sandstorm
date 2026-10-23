@@ -11,6 +11,8 @@ import { createInteriorAtlas, createInteriorMaterial, createInteriorFallback, bu
 
 const BLD4 = typeof location !== 'undefined' && /[?&]bld=4/.test(location.search);
 const BLD4P = BLD4 && /[?&]bld=4p\b/.test(location.search);
+const ROOMS_OFF = typeof location !== 'undefined' && /[?&]rooms=0\b/.test(location.search);
+if (typeof window !== 'undefined' && window.SS) window.SS.bld4roomsOff = ROOMS_OFF;
 let winMat = null;
 function windowMaterial() {
   if (!winMat) {
@@ -30,20 +32,22 @@ function winDbgRect(seg, x, y, z, w, h, hex) {
   const l = new THREE.LineLoop(g, m); l.renderOrder = 999; l.name = 'winDbg'; seg.group.add(l);
   if (typeof window !== 'undefined' && window.SS) { const d = window.SS.winDbg || (window.SS.winDbg = { placed: 0, inferred: 0, skipped: 0 }); d[hex === 0xff3030 ? 'skipped' : hex === 0xffd000 ? 'inferred' : 'placed']++; } }
 if (BLD4 && typeof fetch !== 'undefined') fetch('assets/models/windows.json').then((r) => (r.ok ? r.json() : null)).then((j) => { WIN_TABLE = j || {}; }).catch(() => { WIN_TABLE = {}; });
-const ROOM_N = 8;
+const ROOM_N = SEG_COUNT;
 const ROOM_UA = { value: Array.from({ length: ROOM_N }, () => new THREE.Vector3(1e9, 1e9, 1e9)) }, ROOM_UB = { value: Array.from({ length: ROOM_N }, () => new THREE.Vector3(-1e9, -1e9, -1e9)) };
+const ROOM_ALLA = { value: new THREE.Vector3(1e9, 1e9, 1e9) }, ROOM_ALLB = { value: new THREE.Vector3(-1e9, -1e9, -1e9) };
 const ROOMS = new Map();
-function syncRoomClip() { let i = 0; for (const b of ROOMS.values()) { if (i >= ROOM_N) break; ROOM_UA.value[i].copy(b.min); ROOM_UB.value[i].copy(b.max); i++; } for (; i < ROOM_N; i++) { ROOM_UA.value[i].set(1e9, 1e9, 1e9); ROOM_UB.value[i].set(-1e9, -1e9, -1e9); } }
+function syncRoomClip() { let i = 0; ROOM_ALLA.value.set(1e9, 1e9, 1e9); ROOM_ALLB.value.set(-1e9, -1e9, -1e9); for (const b of ROOMS.values()) { if (i >= ROOM_N) break; ROOM_UA.value[i].copy(b.min); ROOM_UB.value[i].copy(b.max); ROOM_ALLA.value.min(b.min); ROOM_ALLB.value.max(b.max); i++; } for (; i < ROOM_N; i++) { ROOM_UA.value[i].set(1e9, 1e9, 1e9); ROOM_UB.value[i].set(-1e9, -1e9, -1e9); } }
 function roomClipPatch(mat) {
+  if (ROOMS_OFF) return;
   if (!mat || mat.userData.roomClip) return;
   mat.userData.roomClip = true; const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = function (sh, r) {
     if (prev) prev.call(this, sh, r);
-    sh.uniforms.uRA = ROOM_UA; sh.uniforms.uRB = ROOM_UB;
+    sh.uniforms.uRA = ROOM_UA; sh.uniforms.uRB = ROOM_UB; sh.uniforms.uRAllA = ROOM_ALLA; sh.uniforms.uRAllB = ROOM_ALLB;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vClipW;').replace('#include <project_vertex>', '#include <project_vertex>\nvClipW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vClipW;\nuniform vec3 uRA[' + ROOM_N + '];\nuniform vec3 uRB[' + ROOM_N + '];').replace('void main() {', 'void main() {\n  for (int i = 0; i < ' + ROOM_N + '; i++) { if (all(greaterThan(vClipW, uRA[i])) && all(lessThan(vClipW, uRB[i]))) discard; }');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vClipW;\nuniform vec3 uRA[' + ROOM_N + '];\nuniform vec3 uRB[' + ROOM_N + '];\nuniform vec3 uRAllA;\nuniform vec3 uRAllB;').replace('void main() {', 'void main() {\n  if (all(greaterThan(vClipW, uRAllA)) && all(lessThan(vClipW, uRAllB))) { for (int i = 0; i < ' + ROOM_N + '; i++) { if (all(greaterThan(vClipW, uRA[i])) && all(lessThan(vClipW, uRB[i]))) discard; } }');
   };
-  const pk = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => ''; mat.customProgramCacheKey = () => pk() + '|roomclip'; mat.needsUpdate = true;
+  const pk = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => ''; mat.customProgramCacheKey = () => pk() + '|roomclip2'; mat.needsUpdate = true;
 }
 
 const DRAW_AHEAD = Q.drawAhead;  // segments wholly beyond this (fogged out anyway) are not drawn
@@ -626,7 +630,7 @@ export function createWorld(scene, seed) {
       const wallIn = Math.min(depthAll * 0.6, Math.max(0, d[Math.floor(d.length * 0.5)] - 0.05));
       const front = fx0 + side * wallIn, back = side < 0 ? box.min.x : box.max.x;
       const top = roofEarly ? Math.min(box.max.y, roofEarly.y - 0.17) : box.max.y;
-      const artRoom = BLD4 && !ULTRA && seg.originZ < -30 && !seg._roomDone && (box.max.z - box.min.z) >= 7 && seg._wrng() < 0.35;
+      const artRoom = BLD4 && !ULTRA && seg.originZ < -30 && !seg._roomDone && (box.max.z - box.min.z) >= 7 && seg._wrng() < 0.35 && !ROOMS_OFF;
       if (artRoom) pending = { front, back, top, z0: box.min.z, z1: box.max.z };
       else { const col = addInvisibleBox(seg, (front + back) * 0.5, (box.min.y + top) * 0.5, (box.min.z + box.max.z) * 0.5, Math.abs(back - front), top - box.min.y, box.max.z - box.min.z); col.name = 'building'; col.userData.building = true; }
     }
@@ -919,7 +923,7 @@ export function createWorld(scene, seed) {
       const h = floors * 3.15;
       const cx = side * (6.2 + depth * 0.5);
       const cz = z - lot * 0.5;
-      const room = BLD4 && !ULTRA && seg.originZ < -30 && !seg._roomDone && lot >= 7 && depth >= 6 && seg._wrng() < 0.35;
+      const room = BLD4 && !ULTRA && seg.originZ < -30 && !seg._roomDone && lot >= 7 && depth >= 6 && seg._wrng() < 0.35 && !ROOMS_OFF;
       if (room) seg._roomDone = true;
       if (!room) addBox(seg, matPlaster, cx, h * 0.5, cz, depth, h, lot - 0.35);
       addBox(seg, matPlaster, cx, h + 0.28, cz, depth + 0.35, 0.55, lot, { collide: false });
