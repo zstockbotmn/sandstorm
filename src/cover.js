@@ -113,6 +113,12 @@ export function createCover(scene, camera, world, input) {
   c.unstick = unstick;
   function update(dt, walking) {
     if (walking) {
+      // 4e5b: while the doorway stop holds the player, keep door cover (arrive sets doorHold before enemies refresh walking)
+      if (window.SS && window.SS.doorHold && c.kind === 'door') {
+        if (!c.target && c.door) takeDoor(c.door);
+        input.cover = c.state === 'in' && !input.scope;
+        return;
+      }
       if (c.state !== 'none') { c.state = 'none'; c.target = null; c.surface = null; c.door = null; c.kind = null; clearSpawned(); }
       input.cover = false;
       if (!(window.SS && window.SS.doorStop && /veer|out/.test(window.SS.doorStop.state))) camera.position.x += (0 - camera.position.x) * (1 - Math.exp(-1.5 * dt)); // drift back to the road centre (held off while a doorway curve owns x)

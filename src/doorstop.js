@@ -181,7 +181,9 @@ export function createDoorStop(camera, world, input, enemies, cover) {
         const p = pts[j];
         if (!p || p.type !== 'room' || !p.door) continue;
         const ahead = cz - p.door.z;
-        if (ahead >= 16 && ahead <= 40) found.push(p.door);
+        // Start the veer only when the door is ~16-20 m ahead so inLen≈16-20 m (in+out walk ~11 s at 3 m/s).
+        // Wider look-ahead would lock a 35-40 m Bezier and blow the 11 s budget.
+        if (ahead >= 15.5 && ahead <= 20.5) found.push(p.door);
       }
     }
     found.sort((a, b) => (cz - a.z) - (cz - b.z));
@@ -237,6 +239,7 @@ export function createDoorStop(camera, world, input, enemies, cover) {
   function arrive(S) {
     rec.state = 'held';
     S.doorHold = true;
+    S.walking = false; // same-frame: cover.update still runs this tick; do not let a stale walking flag wipe takeDoor
     rec.arriveSim = S.simTime || 0;
     rec.clears0 = S.waveClears | 0;
     rec.coverKind = 'door';

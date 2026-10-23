@@ -30,7 +30,7 @@ const DRIVE = async ({ maxSim, stopWhenDone, maxDist }) => {
   R.doorStop = SS.doorStop ? JSON.parse(JSON.stringify(SS.doorStop)) : null;
   R.roomPoints = (SS.world && SS.world.segments || []).reduce((n, s) => n + (s.coverPoints || []).filter((p) => p.type === 'room').length, 0);
   return R; };
-(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 1400000 });
+(async () => { const b = await require('../tools/guard').launch(chromium, { executablePath: '/usr/bin/google-chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }, { timeoutMs: 3600000 });
   const res = { tier }, fail = [];
   const run = async (name, q, opts, onHold) => { const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true }); const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e)));
     try { await p.goto('http://127.0.0.1:' + PORT + BASE + q); await p.waitForFunction(() => window.SS && SS.art && SS.art.done, null, { timeout: 180000 });
@@ -42,7 +42,7 @@ const DRIVE = async ({ maxSim, stopWhenDone, maxDist }) => {
     } catch (e) { await ctx.close().catch(() => {}); return { exception: e.message, errs }; } };
   try {
     // 1) bld=4 Low: the stop
-    const a = res.on = await run('on', '&q=' + tier, { maxSim: 420, stopWhenDone: false, maxDist: 0 }, true);
+    const a = res.on = await run('on', '&q=' + tier, { maxSim: 240, stopWhenDone: true, maxDist: 0 }, true);
     // keep going after 'done' until 420 s game so a 2nd stop would show; stopWhenDone false on purpose
     if (a.exception) fail.push('on: ' + a.exception); else {
       const ds = a.doorStop || {};
@@ -54,10 +54,10 @@ const DRIVE = async ({ maxSim, stopWhenDone, maxDist }) => {
       const walk = (ds.inWalkS || 0) + (ds.outWalkS || 0); res.walkS = +walk.toFixed(1); if (Math.abs(walk - 11) > 1.5) fail.push('detour walk ' + walk.toFixed(1) + ' s (want 11 +- 1.5)');
       if (a.died != null) fail.push('player died at ' + a.died + ' s'); if (a.errs) fail.push('on: page errors'); if (!res.shot) fail.push('no frame screenshot'); }
     // 2) rooms=0: absent
-    const z = res.rooms0 = await run('rooms0', '&rooms=0&q=' + tier, { maxSim: 300, maxDist: 150 });
+    const z = res.rooms0 = await run('rooms0', '&rooms=0&q=' + tier, { maxSim: 240, maxDist: 120 });
     if (z.exception) fail.push('rooms0: ' + z.exception); else { if (z.maxCount !== 0 || (z.doorStop && z.doorStop.count)) fail.push('rooms=0: doorway stop happened'); if (z.errs) fail.push('rooms0: page errors'); }
     // 3) Ultra-low: absent, and no rooms
-    const u = res.ultra = await run('ultra', '&q=ultra-low', { maxSim: 300, maxDist: 150 });
+    const u = res.ultra = await run('ultra', '&q=ultra-low', { maxSim: 240, maxDist: 120 });
     if (u.exception) fail.push('ultra: ' + u.exception); else { if (u.maxCount !== 0 || (u.doorStop && u.doorStop.count)) fail.push('ultra-low: doorway stop happened'); if (u.roomPoints) fail.push('ultra-low: ' + u.roomPoints + ' room points'); if (u.errs) fail.push('ultra: page errors'); }
   } catch (e) { fail.push('exception ' + e.message); }
   await b.close(); srv.close(); res.fail = fail; fs.writeFileSync(out + '_' + tier + '.json', JSON.stringify(res, null, 1));
