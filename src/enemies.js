@@ -33,6 +33,10 @@ const _supRc = new THREE.Raycaster(), _supD = new THREE.Vector3(), _supN = new T
 const _fwd = new THREE.Vector3();
 const _wA = new THREE.Vector3();
 const _wB = new THREE.Vector3();
+// A28: grenade cover soak (RPG-cover parity in setpiece.js)
+const _gcHead = new THREE.Vector3(), _gcDir = new THREE.Vector3(), _gcHp = new THREE.Vector3();
+const _gcFwdN = new THREE.Vector3(0, 0.3, -1).normalize(), _gcRay = new THREE.Ray(), _gcBox = new THREE.Box3();
+const _gcTmp = new THREE.Vector3(), _gcUp = new THREE.Vector3(0, 1, 0);
 
 const ENEMY_SCALE = 1.2; // ~20% larger; adult silhouette ~1.85–2.1 m
 const HB_TORSO_W = 1.12, HB_HEAD = 1.2, HB_Q_LIMB = 0.65, HB_Q_TORSO = 0.65, HB_Q_HEAD = 0.75; // fit percentiles: below the max so hip/shoulder vertices skinned to limb bones do not inflate the boxes (aim-reg: 92% silhouette cover, <= 36% spill) // m1w item 6: hit volumes fitted to the visible skinned body (test/aim-reg.js coverage)
@@ -3590,9 +3594,25 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const cv = window.SS && window.SS.cover, at = (cv && cv.state === 'moving' && cv.target) ? cv.target : camera.position;
         const d = Math.hypot(n.m.position.x - at.x, n.m.position.z - at.z), hp0 = player.health;
         let dmg = d < 3 ? Math.max(0, Math.min(34 * (1 - d / 3.2), 30, hp0 - 5)) : 0;
+        // A28 (PM: RPG-cover parity): IN COVER + ducked/shielded soaks to ~40-50%; dust+debris off cover; src grenade-cover.
+        // Not while moving away / exposed / scoped — those stay full grenade (or escape by distance). Cap 30 + 5 HP floor already in dmg.
+        let gSrc = 'grenade';
+        if (dmg > 0 && cv && cv.state === 'in' && cv.surface) {
+          const sf = cv.surface, blast = n.m.position; let shielded = false;
+          _gcHead.copy(camera.position); _gcBox.copy(sf).expandByScalar(0.05); _gcDir.subVectors(_gcHead, blast); const len = _gcDir.length();
+          if (len > 1e-3) { _gcRay.set(blast, _gcDir.multiplyScalar(1 / len)); const hit = _gcBox.containsPoint(blast) || _gcRay.intersectBox(_gcBox, _gcHp); shielded = !!hit && (_gcBox.containsPoint(blast) || blast.distanceTo(_gcHp) < len); }
+          if (!shielded && window.SS.input && window.SS.input.cover && blast.z <= sf.max.z + 0.1 && blast.x > sf.min.x - 1.5 && blast.x < sf.max.x + 1.5) shielded = true;
+          if (shielded) {
+            dmg *= 0.4 + Math.random() * 0.1; dmg = Math.max(0, Math.min(dmg, 30, hp0 - 5)); gSrc = 'grenade-cover';
+            const f = window.SS && window.SS.fx;
+            if (f && f.dust) { _gcTmp.set(Math.max(sf.min.x, Math.min(sf.max.x, blast.x)), sf.max.y + 0.05, Math.max(sf.min.z, Math.min(sf.max.z, blast.z))); f.dust(_gcTmp.clone(), _gcUp, 10, 0x8a7a62);
+              _gcTmp.z = sf.min.z - 0.05; _gcTmp.y = (sf.min.y + sf.max.y) * 0.5; f.dust(_gcTmp.clone(), _gcFwdN, 8, 0x8a7a62); }
+            if (f && f.debris) { _gcTmp.set(Math.max(sf.min.x, Math.min(sf.max.x, blast.x)), sf.max.y, (sf.min.z + sf.max.z) * 0.5); f.debris(_gcTmp.clone(), _gcUp, 8); _gcTmp.z = sf.min.z - 0.05; f.debris(_gcTmp.clone(), _gcFwdN, 5); }
+          }
+        }
         // A26: climax 35 floor — clamp grenade (exposed stay); player.damage also re-clamps all sources
         if (dmg > 0 && cxPhase === 'active' && hp0 >= 35) { const cap = Math.max(0, hp0 - 35); if (dmg > cap) { dmg = cap; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; } }
-        if (dmg > 0) player.damage(dmg, n.m.position, 'grenade');
+        if (dmg > 0) player.damage(dmg, n.m.position, gSrc);
         if (window.SS) window.SS.lastGrenade = { d: +d.toFixed(2), dmg: +dmg.toFixed(1), hpBefore: +hp0.toFixed(1), escaped: d >= 3, moving: !!(cv && cv.state === 'moving') };
         if (window.SS && window.SS.fx) window.SS.fx.blast(n.m.position);
         if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);

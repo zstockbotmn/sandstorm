@@ -20,7 +20,7 @@ function alog(kind, detail) {
   // A11 (tester could not read the 0.3 s thump -> whoosh): set-piece lines are also PINNED in their own block for 12 s
   // (real time) after the latest one, so footsteps / near misses cannot scroll them away.
   const fmt = (e) => e.t.toFixed(1) + 's ' + e.kind + (e.detail ? ' ' + e.detail : '') + (e.n > 1 ? ' x' + e.n : '');
-  if (kind !== 'footstep' && kind !== 'breath' && (SP_KIND.test(kind) || (kind === 'hit taken' && /\((RPG|RPG, cover|grenade|truck)\)/.test(detail || '')))) { SP_PIN.push(fmt(L[L.length - 1])); if (SP_PIN.length > 5) SP_PIN.shift(); spPinAt = performance.now(); }
+  if (kind !== 'footstep' && kind !== 'breath' && (SP_KIND.test(kind) || (kind === 'hit taken' && /\((RPG|RPG, cover|grenade|grenade, cover|truck)\)/.test(detail || '')))) { SP_PIN.push(fmt(L[L.length - 1])); if (SP_PIN.length > 5) SP_PIN.shift(); spPinAt = performance.now(); }
   const pin = SP_PIN.length && performance.now() - spPinAt < 12000 ? '\nSET PIECE\n' + SP_PIN.join('\n') : '';
   const quiet = Q.steps || Q.breath ? '\n' + (Q.steps ? 'footsteps x' + Q.steps : '') + (Q.breath ? (Q.steps ? ' · ' : '') + 'breath ' + Q.breath : '') : '';
   alogEl.textContent = 'SOUND\n' + L.slice(-6).map(fmt).join('\n') + quiet + pin;
@@ -250,7 +250,7 @@ export function createAudio() {
   }
 
   // A6: every hit on the player has its own sound event: a dull body thump + a short ring, panned toward the shooter
-  const HURT_SRC = { gun: 'rifle', flank: 'rifle, flank', rpg: 'RPG', 'rpg-cover': 'RPG, cover', grenade: 'grenade', truck: 'truck', test: 'test' };
+  const HURT_SRC = { gun: 'rifle', flank: 'rifle, flank', rpg: 'RPG', 'rpg-cover': 'RPG, cover', grenade: 'grenade', 'grenade-cover': 'grenade, cover', truck: 'truck', test: 'test' };
   function hurt(pos, dmg, src) {
     const hpNow = window.SS && window.SS.player ? Math.round(window.SS.player.health) : null; // A13: debug-only HP after the hit (log/overlay, never the HUD)
     alog('hit taken', '-' + Math.round(dmg || 0) + ' hp' + (src ? ' (' + (HURT_SRC[src] || src) + ')' : '') + (hpNow != null ? ' \u2192 ' + hpNow : '')); // A11: the source, so set-piece hits can be told from rifle hits
