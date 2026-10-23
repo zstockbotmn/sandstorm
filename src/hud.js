@@ -227,7 +227,11 @@ export function createHud() {
   // an ease-out of the hit vignette / flash over 1.5 s
   const clearEl = document.createElement('div'); clearEl.id = 'clear-banner'; root.appendChild(clearEl); let clearTok = 0;
   function areaClear(text, holdMs) { const hold = holdMs || 2000, now = performance.now(), f0 = (window.SS && window.SS.frameN) | 0, tok = ++clearTok;
-    clearEl.textContent = text; clearEl.classList.remove('fade'); clearEl.classList.add('on');
+    // A24 (tester A23 clr_w3_center): WAVE CLEARED (red) + AREA CLEAR (green) stacked into "WAREA CLEARD". Kill the wave banner
+    // and hard-reset this element's opacity/classes so a prior fade cannot crossfade into the next clear.
+    try { bannerEl.classList.remove('show'); bannerEl.textContent = ''; clearTimeout(bannerTimer); } catch (_) {}
+    clearEl.classList.remove('on', 'fade'); clearEl.style.transition = 'none'; clearEl.style.opacity = '0'; void clearEl.offsetWidth;
+    clearEl.textContent = text; clearEl.style.transition = ''; clearEl.style.opacity = ''; clearEl.classList.add('on');
     vignette.style.transition = 'opacity 1.5s ease-out'; vignette.style.opacity = '0'; flash.style.transition = 'opacity 1.5s ease-out'; flash.style.opacity = '0';
     const check = () => { if (tok !== clearTok) return; const fN = ((window.SS && window.SS.frameN) | 0) - f0, ms = performance.now() - now;
       if (ms >= hold && fN >= 3) { hud.lastClear = { text, heldMs: Math.round(ms), frames: fN }; clearEl.classList.add('fade'); setTimeout(() => { if (tok === clearTok) clearEl.classList.remove('on', 'fade'); }, 600); }

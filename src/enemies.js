@@ -3703,7 +3703,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const waveDone = (waveOpen && waveSpawned >= burstCap && aliveCount() === 0 && truckPending === 0 && !hold) || (prevHold && !hold);
     if (waveDone) waveOpen = false;
     if (running && waveDone && window.SS.hud && window.SS.hud.banner) {
-      waveClears += 1; window.SS.waveClears = waveClears; slog('wave', waveClears + ' clear'); /* A14 */ window.SS.hud.banner('WAVE CLEARED'); if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing');
+      waveClears += 1; window.SS.waveClears = waveClears; slog('wave', waveClears + ' clear'); /* A14 / A24: AREA CLEAR is the sole centre banner (WAVE CLEARED stacked with it on W3) */ if (window.SS.hud.hint) window.SS.hud.hint('Wave cleared \u2013 advancing');
       { // A23 wave-end payoff (tester A22): AREA CLEAR centre banner ~2 s, a varied squad radio line, the combat look eases out
         // (red edge / hurt grade fade over ~1.5 s) and the squad holds 2.2 game-s before the walk resumes.
         const SSx = window.SS, sNow = SSx.simTime || 0, lines = ['Clear!', 'Contact down, moving on.', 'Good work, keep moving.', 'Area secure. Moving up.', 'That\'s the last of them. Move out.'];
