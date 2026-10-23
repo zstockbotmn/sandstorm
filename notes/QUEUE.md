@@ -244,3 +244,7 @@ DONE: tip c8f4744, build ss-22810b8d16, label 'internal preview A30', preview :8
 A) ?door=1: open aperture + lit interior (not shut door face); veer→IN COVER · DOORWAY post-W1.
 B) ?cxnade=1: climax grenade fires deterministically; ducked soak / no yank; combined with door=1 still fires.
 Next: tester rescore A30.
+
+## A31 (App PM Oct 23 — DONE)
+DONE: tip PLACEHOLDER, build ss-197968570b, label 'internal preview A31', preview :8850. Tests PASS (logs/a31): doorway-stop Low; a30-force Low (door/cxnade/combined/camp); a31-variety Low (kinds grenade+truck+rpg, calm×2, spacing OK w/ grenade-rearm 12s, unstick 67/1004 logged). Code: director weights + early truck/RPG bias; doorway long-camp +15s; bigBeatCalm after RPG/truck; unstick rate-limit; brighter roomLit + roomWindow/roomShaft. Protects Immersion/Fun; no GH Pages.
+

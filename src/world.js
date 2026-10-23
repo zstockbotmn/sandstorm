@@ -889,12 +889,20 @@ export function createWorld(scene, seed) {
         open: true,
       },
     });
-    // A30: brighter warm fill + doorway rim so the open hole reads as a lit interior (not a dark shut face).
+    // A30/A31: warmer fill + doorway rim + window shaft so the interior reads lit (not flat olive).
     {
-      const pl = new THREE.PointLight(0xffd6a0, FORCE_DOOR ? 2.1 : 1.35, 9, 2);
+      const pl = new THREE.PointLight(0xffd6a0, FORCE_DOOR ? 2.8 : 1.9, 11, 2);
       pl.position.set(X(2.0), 2.4, zc); pl.name = 'roomLit'; seg.group.add(pl);
-      const rim = new THREE.PointLight(0xffe2b0, FORCE_DOOR ? 1.1 : 0.7, 4.5, 2);
+      const rim = new THREE.PointLight(0xffe2b0, FORCE_DOOR ? 1.5 : 1.0, 5.5, 2);
       rim.position.set(X(0.55), 1.6, zc); rim.name = 'roomLitRim'; seg.group.add(rim);
+      if (!ULTRA) {
+        const winMat = new THREE.MeshBasicMaterial({ color: 0xffe6c0, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false });
+        const win = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.9), winMat);
+        win.position.set(X(3.76), 1.7, zc); win.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        win.name = 'roomWindow'; win.castShadow = false; win.receiveShadow = false; seg.group.add(win);
+        const shaft = new THREE.PointLight(0xffefd0, FORCE_DOOR ? 1.2 : 0.75, 7, 2);
+        shaft.position.set(X(3.5), 1.7, zc); shaft.name = 'roomShaft'; seg.group.add(shaft);
+      }
     }
     if (typeof window !== 'undefined' && window.SS) window.SS.bld4rooms = (window.SS.bld4rooms | 0) + 1;
     if (art) {

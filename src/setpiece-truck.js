@@ -110,6 +110,15 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     run.rec.crashSim = sim; run.rec.crashR = performance.now(); run.rec.dmg = dmg; run.rec.hpBefore = hpBefore; run.rec.dist = d;
     publish();
     if (dmg > 0 && player.damage) player.damage(dmg, p.clone(), 'truck');
+    // A31: short calm after truck crash
+    if (window.SS) {
+      const until = sim + 6 + Math.random() * 3;
+      window.SS.bigBeatCalmUntil = until;
+      if (window.SS.calmUntil == null || until > window.SS.calmUntil) window.SS.calmUntil = until;
+      const L = window.SS.bigBeatCalmLog || (window.SS.bigBeatCalmLog = []);
+      L.push({ sim: +sim.toFixed(1), until: +until.toFixed(1), kind: 'truck' }); if (L.length > 20) L.shift();
+      try { if (window.SS.audio && window.SS.audio.log) window.SS.audio.log('setpiece', 'big-beat calm'); } catch (_) {}
+    }
   }
   function stepDrive(sim) {
     const simElapsed = sim - run.startSim, realMs = performance.now() - run.startR;
@@ -161,7 +170,7 @@ export function createTruckMoment({ scene, camera, player, hud }) {
     if (run && run.phase === 'drive') stepDrive(sim);
     else if (run && run.phase === 'crash' && sim - run.crashSim >= 0.6) bail();
     else if (run && run.phase === 'wreck' && camera.position.z < run.cz - 25) { scene.remove(run.g); run = null; state.phase = 'idle'; }
-    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt >= 0 && sim - SS.setPieceAt < 15) /* A15: 15 s set-piece spacing */ && !SS.nadeStarved && !(SS.midBeatAt != null && sim - SS.midBeatAt >= 0 && sim - SS.midBeatAt < 8) /* A19 (PM 8) */) start(sim); // A11: a starved grenade goes first // A10: shared set-piece gap
+    if (armed && !firedWave && SS.running && player.alive && sim - waveT >= delay && !(SS.setPieceAt != null && sim - SS.setPieceAt >= 0 && sim - SS.setPieceAt < 15) /* A15: 15 s set-piece spacing */ && !(SS.bigBeatCalmUntil != null && sim < SS.bigBeatCalmUntil) /* A31 */ && !SS.nadeStarved && !(SS.midBeatAt != null && sim - SS.midBeatAt >= 0 && sim - SS.midBeatAt < 8) /* A19 (PM 8) */) start(sim); // A11: a starved grenade goes first // A10: shared set-piece gap
     // A13: a truck wave in waiting (armed, not started, < 20 s into the wave) holds the RPG until the bail-out + 12 s
     if (window.SS) window.SS.truckPendingWave = !!(armed && !firedWave && sim - waveT < 20);
   }

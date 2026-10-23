@@ -2222,7 +2222,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let lullShotSim = -1e9, payoffUntil = 0, lastClearLine = -1;
   function lullNote(what) { const L = window.SS && window.SS.lullLog; const cur = L && L[L.length - 1]; if (!cur) return; (cur.events || (cur.events = [])).push({ sim: +((window.SS.simTime || 0)).toFixed(1), what }); if (cur.events.length > 40) cur.events.shift(); }
   function enemyShoot(enemy) {
-    { const sQ = (window.SS && window.SS.simTime) || 0; if (lullOn(sQ)) { if (sQ - lullShotSim < 3.5) return; lullShotSim = sQ; const L = window.SS.lullLog, cur = L && L[L.length - 1]; if (cur) cur.shots = (cur.shots | 0) + 1; } }
+    { const sQ = (window.SS && window.SS.simTime) || 0;
+      // A31: post big-beat calm — no damaging rounds so fight-regen can tick
+      if (window.SS && window.SS.bigBeatCalmUntil != null && sQ < window.SS.bigBeatCalmUntil) return;
+      if (lullOn(sQ)) { if (sQ - lullShotSim < 3.5) return; lullShotSim = sQ; const L = window.SS.lullLog, cur = L && L[L.length - 1]; if (cur) cur.shots = (cur.shots | 0) + 1; } }
     { const nR = performance.now() / 1000, nS = window.SS ? (window.SS.simTime || 0) : 0; if (enemy.noFireUntilR > nR || enemy.noFireUntilSim > nS) { enemy.shootCd = Math.max(enemy.shootCd || 0, 0.1); return; } } // just relocated: let the player see them first
     // m1u: a balcony/window/roof shooter fires only while visibly present (a tracer from an empty balcony otherwise)
     enemy.group.getWorldPosition(_losP); _losP.y += 1.25; const offView = !onScreen(_losP) && !onScreen(_losP.setY(_losP.y + 0.37));
@@ -3580,11 +3583,15 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const otherPiece = spL.some((x) => (x.kind === 'rpg' || x.kind === 'truck') && x.wave === wN);
     // A16 (PM): after a grenade wave there is NO long-camp grenade (a camp there gets a stall push / flank instead); else 25 s
     // on a quiet wave, 40 s once the RPG / truck came (was up to 50).
-    const longCamp = nadeWave ? 0 : prevNade ? Infinity : (lcWave = Math.max(lcWave, otherPiece ? 40 : 25)), capN = nadeWave ? NADE_CAP : 1;
+    // A31: doorway camp ≠ grenade spam — long-camp threshold +15 s while IN COVER · DOORWAY (grenade waves unchanged)
+    const doorCamp = !!(cov && cov.state === 'in' && cov.kind === 'door');
+    if (window.SS) window.SS.doorCampBoost = !!(!nadeWave && doorCamp);
+    const longCamp = nadeWave ? 0 : prevNade ? Infinity : (lcWave = Math.max(lcWave, (otherPiece ? 40 : 25) + (doorCamp ? 15 : 0))), capN = nadeWave ? NADE_CAP : 1;
     const capped = nadesWave >= capN, certainAt = nadeWave ? (!nadesWave ? 7 : 12) : longCamp /* A16: 2nd throw ~12 s after the 1st */, starved = waveActive && !capped && waveOk && campT > certainAt - 3;
     if (window.SS) window.SS.nadeStarved = starved;
     const _beat = window.SS ? Math.max(window.SS.midBeatAt == null ? -1e9 : window.SS.midBeatAt, window.SS.climaxAt == null ? -1e9 : window.SS.climaxAt) : -1e9;
-    const midGap = (window.SS && window.SS.lullUntil != null && (window.SS.simTime || 0) < window.SS.lullUntil) ? 0 : _beat > -1e8 ? (window.SS.simTime || 0) - _beat : 1e9; // A22: no grenade in the lull // A19 / A21: 8 s after a mid-wave push or climax
+    const _bbc = window.SS && window.SS.bigBeatCalmUntil != null && (window.SS.simTime || 0) < window.SS.bigBeatCalmUntil;
+    const midGap = (window.SS && window.SS.lullUntil != null && (window.SS.simTime || 0) < window.SS.lullUntil) || _bbc ? 0 : _beat > -1e8 ? (window.SS.simTime || 0) - _beat : 1e9; // A22/A31: no grenade in lull or big-beat calm
     const lastSp = spL[spL.length - 1], gapOk = !(midGap >= 0 && midGap < 8) && (spGap >= SP_GAP_S || (nadeWave && nadesWave === 1 && lastSp && lastSp.kind === 'grenade' && lastSp.wave === waveNo && spGap >= 11.9)); // A16: a grenade wave's 2nd throw follows its 1st at ~12 s // A15: >= 15 s between any two set pieces (was 8, or 3 when starved)
     if (window.SS) window.SS.nadeGate = { campT: +campT.toFixed(1), wave: burstIndex, waveNo, nadeWave: !!nadeWave, nadeThisWave, nadesWave, longCamp, prevNade, spGap: +Math.min(spGap, 999).toFixed(1), starved, gapOk };
     // A29: ?cxnade=1 suppresses camping-flush grenades until climax has fired (cxDone) so the box reaches climax soak at ~1 fps.
@@ -3998,7 +4005,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; lsStandUntil = 0; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; } w4endArmed = false;
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; lsStandUntil = 0; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; window.SS.bigBeatCalmUntil = null; } w4endArmed = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;

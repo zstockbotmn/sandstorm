@@ -64,7 +64,20 @@ export function createCover(scene, camera, world, input) {
   }
   // A24: if the eye embeds in a prop/wall (cover switch path, sandbag near a wooden facade, doorway hold),
   // push out along the shallowest exit (prefer street-centre x, then +z) and log once per nudge.
+  // A31: rate-limit the log (not the nudge) — doorway veer was flooding 'camera unstick' x91.
   const _ub = new THREE.Box3(), _up = new THREE.Vector3();
+  let _unstickLogSim = -1e9, _unstickNudges = 0, _unstickLogged = 0;
+  function unstickLog(why, extra) {
+    const sim = (window.SS && window.SS.simTime) || 0;
+    _unstickNudges += 1;
+    if (window.SS) window.SS.unstickSpam = { nudges: _unstickNudges, logged: _unstickLogged };
+    if (sim - _unstickLogSim < 0.75) return; // still nudge; skip spam log
+    _unstickLogSim = sim; _unstickLogged += 1;
+    if (window.SS) window.SS.unstickSpam = { nudges: _unstickNudges, logged: _unstickLogged };
+    try { if (window.SS && window.SS.audio) window.SS.audio.log('player', 'camera unstick'); } catch (_) {}
+    const L = window.SS && (window.SS.unstickLog || (window.SS.unstickLog = []));
+    if (L) { L.push(Object.assign({ sim: +sim.toFixed(1), why: why || 'geom', x: +camera.position.x.toFixed(2), z: +camera.position.z.toFixed(2) }, extra || {})); if (L.length > 20) L.shift(); }
+  }
   function unstick(why) {
     const cols = world.colliders || []; if (!cols.length) return false;
     _up.set(camera.position.x, camera.position.y, camera.position.z);
@@ -80,12 +93,12 @@ export function createCover(scene, camera, world, input) {
     }
     if (!hit) {
       // Soft street clamp: never park past the facade line while in cover / walking back.
-      if (Math.abs(camera.position.x) > STREET_X + 0.15) {
+      // A31: during doorway veer/out, doorstop owns x — skip street clamp (it was logging every frame).
+      const doorVeer = !!(window.SS && window.SS.doorStop && /veer|out/.test(window.SS.doorStop.state));
+      if (!doorVeer && Math.abs(camera.position.x) > STREET_X + 0.15) {
         const nx = Math.sign(camera.position.x) * STREET_X;
         camera.position.x = nx;
-        try { if (window.SS && window.SS.audio) window.SS.audio.log('player', 'camera unstick'); } catch (_) {}
-        const L = window.SS && (window.SS.unstickLog || (window.SS.unstickLog = []));
-        if (L) { L.push({ sim: +((window.SS.simTime) || 0).toFixed(1), why: why || 'street', x: +camera.position.x.toFixed(2), z: +camera.position.z.toFixed(2) }); if (L.length > 20) L.shift(); }
+        unstickLog(why || 'street');
         return true;
       }
       return false;
@@ -105,9 +118,7 @@ export function createCover(scene, camera, world, input) {
     if (best === 'x') camera.position.x += sign * (bestD + pad);
     else camera.position.z += sign * (bestD + pad);
     if (Math.abs(camera.position.x) > STREET_X) camera.position.x = Math.sign(camera.position.x || 1) * STREET_X;
-    try { if (window.SS && window.SS.audio) window.SS.audio.log('player', 'camera unstick'); } catch (_) {}
-    const L = window.SS && (window.SS.unstickLog || (window.SS.unstickLog = []));
-    if (L) { L.push({ sim: +((window.SS.simTime) || 0).toFixed(1), why: why || 'geom', x: +camera.position.x.toFixed(2), z: +camera.position.z.toFixed(2), axis: best }); if (L.length > 20) L.shift(); }
+    unstickLog(why || 'geom', { axis: best });
     return true;
   }
   c.unstick = unstick;

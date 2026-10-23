@@ -189,6 +189,15 @@ export function createSetPieces({ scene, camera, player, hud }) {
     publish();
     // Duck does not cancel a warned blast; the cap leaves at least 5 hp.
     if (dmg > 0 && player.damage) player.damage(dmg, target.clone(), shielded ? 'rpg-cover' : 'rpg');
+    // A31: short calm after big beat so HP can regen (quiet stretch in the rhythm)
+    if (window.SS) {
+      const until = sim + 6 + Math.random() * 3;
+      window.SS.bigBeatCalmUntil = until;
+      if (window.SS.calmUntil == null || until > window.SS.calmUntil) window.SS.calmUntil = until;
+      const L = window.SS.bigBeatCalmLog || (window.SS.bigBeatCalmLog = []);
+      L.push({ sim: +sim.toFixed(1), until: +until.toFixed(1), kind: 'rpg' }); if (L.length > 20) L.shift();
+      try { if (window.SS.audio && window.SS.audio.log) window.SS.audio.log('setpiece', 'big-beat calm'); } catch (_) {}
+    }
   }
   function stepFlight(sim) {
     const simElapsed = sim - launchSim, realElapsedMs = performance.now() - launchR;
@@ -232,11 +241,13 @@ export function createSetPieces({ scene, camera, player, hud }) {
         if (SP_QUIET) SS.spQuietForce = true; // A19 (PM 10) test hook: ?spquiet=1 = every wave director-quiet
         // A15a: no repeat of last wave's pick NOR of any set piece that actually happened last wave (a long-camp grenade counts).
         const did = new Set((SS.spLog || []).filter((x) => x.sim >= prevWaveT && x.sim < sim).map((x) => x.kind)); SS.spLastDid = [...did];
-        if (state.wave >= 2 && !SP_QUIET) { const W = { rpg: 0.3, grenade: 0.3, truck: 0.25, quiet: 0.15 }; if (last) delete W[last]; for (const k of did) delete W[k];
-          // A16 (PM: no truck in the A15 run's 5 waves): a truck is due by wave 5 - x2.5 weight on wave 4, forced on wave 5 if allowed
-          if (W.truck && !hist.includes('truck')) { if (state.wave >= 5) { for (const k in W) if (k !== 'truck') delete W[k]; } else if (state.wave === 4) W.truck *= 2.5; }
+        if (state.wave >= 2 && !SP_QUIET) { const W = { rpg: 0.34, truck: 0.30, grenade: 0.20, quiet: 0.16 }; if (last) delete W[last]; for (const k of did) delete W[k];
+          // A31: big beats earlier — truck x2.5 from W3, forced W4; RPG x2 from W4, forced W5 if still missing
+          if (W.truck && !hist.includes('truck')) { if (state.wave >= 4) { for (const k in W) if (k !== 'truck') delete W[k]; } else if (state.wave >= 3) W.truck *= 2.5; }
+          if (W.rpg && !hist.includes('rpg') && Object.keys(W).length > 1) { if (state.wave >= 5) { for (const k in W) if (k !== 'rpg') delete W[k]; } else if (state.wave >= 4) W.rpg *= 2.0; }
           let tot = 0; for (const k in W) tot += W[k]; let r = Math.random() * tot; for (const k in W) { r -= W[k]; if (r <= 0) { pick = k; break; } } }
         hist.push(pick); if (hist.length > 12) hist.shift(); SS.spPick = { wave: state.wave, pick, hist, sim };
+        SS.spVariety = { rpg: hist.includes('rpg'), truck: hist.includes('truck'), grenade: hist.includes('grenade'), quiet: hist.includes('quiet') };
         fireAt = pick === 'rpg' ? 10 + Math.random() * 16 : -1; } // A13 window 10-26 s kept
       else fireAt = forced ? 6 : (state.wave >= 2 && sim - lastAt >= 45 && Math.random() < 0.65) ? 10 + Math.random() * 16 : -1; } // A13: random mode 10-26 s (middle / late wave; it may fire after the spawn window now)
     wasBurst = bursting;
@@ -261,6 +272,7 @@ export function createSetPieces({ scene, camera, player, hud }) {
     if (SS.lastFlankHitSim != null && sim - SS.lastFlankHitSim >= 0 && sim - SS.lastFlankHitSim < RPG_FLANK_LULL_S) { SS.rpgFlankWaits = (SS.rpgFlankWaits | 0) + 1; return; }
     if (SS.midBeatAt != null && sim - SS.midBeatAt >= 0 && sim - SS.midBeatAt < 8) return; // A19 (PM 8): 8 s after a mid-wave push beat
     if (SS.lullUntil != null && sim < SS.lullUntil) return; // A22: no RPG / truck in the post-climax lull
+    if (SS.bigBeatCalmUntil != null && sim < SS.bigBeatCalmUntil) return; // A31: calm after a big beat
     if (SS.climaxAt != null && sim - SS.climaxAt >= 0 && sim - SS.climaxAt < 8) return; // A21: 8 s after a climax tell/start/fallback
     if (SS.setPieceAt != null && sim - SS.setPieceAt >= 0 && sim - SS.setPieceAt < 15) return; // A15: >= 15 s between any two set pieces (RPG / truck / grenade; was 8)
     // A11: a starved camping grenade goes first (the forced RPG used to keep starving it). A12: but only for 6 s - with no

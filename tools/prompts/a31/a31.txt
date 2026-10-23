@@ -1,0 +1,56 @@
+A31 (behind existing ?sp=5; preview already injects sp=5). Raise Fun via set-piece variety + fold thin polish. Protect A30 doorway/soak/cxnade. Edit ONLY: src/setpiece.js, src/setpiece-truck.js (only if needed for calm stamp), src/enemies.js (camp grenade + post-big-beat calm), src/cover.js (unstick spam), src/world.js (brighter doorway + window shafts). Do NOT touch climax/cxnade soak/no-yank logic beyond adding calm stamps. Do NOT git commit. Run node --check on every edited file. No browser/build.
+
+GOAL rhythm (QUEUE step 5): quiet → sudden contact → occasional big beats (RPG / truck) → short calm while HP regenerates. Camping one doorway must NOT be grenade-only mid-game. Truck AND RPG must show up in a typical random (no rpg=1/truck=1) multi-wave run. Keep mid-wave spacing ≥8 s from other set pieces (existing SS.midBeatAt / climaxAt) and ≥15 s between RPG/truck/grenade (SS.setPieceAt / SP_GAP_S) — do not weaken those gaps.
+
+=== 1) DIRECTOR VARIETY (src/setpiece.js ~226-240) ===
+Current weights W2+: rpg 0.3, grenade 0.3, truck 0.25, quiet 0.15; truck forced by W5 / x2.5 on W4 if never picked.
+Change:
+a) Reweight to favor big beats: rpg 0.34, truck 0.30, grenade 0.20, quiet 0.16 (still sum ~1). Keep never-same-as-last and never-repeat-what-did-last-wave.
+b) Truck due earlier: if hist has no 'truck' yet, x2.5 weight on wave >= 3 (was only wave 4), force truck on wave 4 if still allowed (was wave 5). Still respect delete of last/did.
+c) RPG due: if hist has no 'rpg' yet and wave >= 4, x2.0 weight on rpg (symmetric to truck bias). Do not force-delete other keys unless wave >= 5 and still no rpg and rpg is allowed — then prefer forcing rpg the same way truck is forced on late waves.
+d) Publish SS.spPick as today. Add SS.spVariety = { rpg: hist.includes('rpg'), truck: hist.includes('truck'), grenade: hist.includes('grenade'), quiet: hist.includes('quiet') } after each pick (boolean presence in hist).
+
+=== 2) DOORWAY CAMP ≠ GRENADE SPAM (src/enemies.js updateGrenades) ===
+When the player is IN COVER with cover.kind === 'door' (doorway hold):
+a) On non-director-grenade waves (long-camp path): raise longCamp by +15 s (so 40→55 / 25→40) so camping a doorway does not flush with a long-camp grenade before the wave's RPG/truck has room to fire. Still respect Infinity when prevNade.
+b) On director grenade waves: leave 3/7/12 timings alone (grenade waves should still throw).
+c) Publish SS.doorCampBoost = true when the +15 path is active (for harness).
+
+Do NOT change climax grenade, cxnade suppress, soak (grenade-cover), or skipGrenadeYank.
+
+=== 3) POST-BIG-BEAT CALM + REGEN (setpiece.js RPG impact + setpiece-truck.js crash) ===
+After an RPG detonation (where player.damage is called for the RPG) and after a truck crash (where player.damage is called for truck):
+a) Set SS.bigBeatCalmUntil = sim + (6 + Math.random()*3)  // ~6-9 game-s
+b) Also set SS.calmUntil = Math.max(SS.calmUntil||0, SS.bigBeatCalmUntil) only if that does not already fight the post-wave calm (OK to max).
+c) In enemies.js update loop (near where lullUntil / set pieces are gated): while sim < SS.bigBeatCalmUntil, suppress NEW camping-flush grenades (treat like lull — reuse midGap/lull style gate), and suppress enemy rifle shots that would damage the player (or zero the fire chance / skip sendShot) so HP can regen via existing player.js fight regen after FIGHT_DELAY_S. Keep existing climax/lull behavior intact; this is an ADDITIONAL short calm after big beats only.
+d) Log once when calm starts: audio.log('setpiece', 'big-beat calm') and push to SS.bigBeatCalmLog = [{sim, until, kind:'rpg'|'truck'}] (cap 20).
+e) Do NOT cancel an in-flight RPG or truck tell; do NOT yank cover; do NOT heal instantly (regen only).
+
+=== 4) CAMERA UNSTICK SPAM (src/cover.js unstick) ===
+Root: unstick('walk'|'cover-move'|...) logs every successful nudge; during doorway veer the eye clips every frame → "player camera unstick xN" flood (tester x91).
+Fix without breaking recovery:
+a) Rate-limit the audio.log('player','camera unstick') and unstickLog push to at most once per 0.75 game-s (track lastLogSim on a module-local let). Still APPLY the position nudge every call.
+b) During doorway veer/out (SS.doorStop && /veer|out/.test(SS.doorStop.state)): skip the soft street-clamp branch that fires when NOT geometrically embedded (the Math.abs(x)>STREET_X block that still logs) — doorstop owns x there. Still run the geometric containsPoint unstick if truly embedded.
+c) Publish SS.unstickSpam = { nudges, logged } counters for harness (increment nudges every successful move; logged only when a log line is emitted).
+
+=== 5) BRIGHTER DOORWAY + WINDOW SHAFTS (src/world.js addRoom, A30 light block ~892-898) ===
+Keep A30 leafOpen/open/jamb/aperture behavior EXACTLY.
+a) Bump roomLit intensity: FORCE_DOOR ? 2.8 : 1.9 (was 2.1/1.35); range 11. roomLitRim: FORCE_DOOR ? 1.5 : 1.0; range 5.5.
+b) Add a cheap "window shaft": on the back wall (X(3.78)), cut nothing — instead add a non-colliding emissive quad (MeshBasicMaterial color 0xffe6c0, opacity ~0.55, transparent, depthWrite false) ~1.1×0.9 at X(3.76), y=1.7, z=zc, name 'roomWindow'. Behind/through it add a SpotLight or second PointLight (0xffefd0, intensity FORCE_DOOR?1.2:0.75, distance 7) named 'roomShaft' aimed toward the doorway (position near back wall, slightly toward facade). Skip shaft meshes on ULTRA (keep PointLights so roomLit still reads).
+c) Harness can count roomWindow / roomShaft / roomLit by name.
+
+=== 6) HARNESS stub — write test/a31-variety.js ===
+Playwright Low harness (copy structure from test/a30-force.js / a15.js; PORT 8851). One run:
+  /?seed=11&loco=2&hits=2&repos=1&fx=3&sp=5&debug&q=low
+Ducked the whole time (SS.input.cover=true when in cover). Advance ~5 wave clears by debugKillNearest after ~40s per wave (same idea as a15). Collect SS.spLog, SS.spPick.hist, SS.bigBeatCalmLog, SS.unstickSpam.
+PASS if:
+  - kinds in spLog across run include at least 2 of {rpg, truck, grenade} (prefer requiring rpg AND truck within 5 clears — if flaky at Low fps allow warn for truck if wave<4 ended early, but FAIL if only grenade)
+  - every pair of consecutive spLog entries in same wave >= 14.5 s apart (15 s rule, 0.5 tolerance)
+  - bigBeatCalmLog length >= 1 if any rpg or truck fired (calm stamped)
+  - if SS.unstickSpam present: logged/nudges <= 0.15 OR logged < 12 over the run (spam tamed)
+Also a quick door regression block (optional second goto): ?door=1&cxnade=1&q=low for ~90s sim or until doorway held — assert roomLit>0, leafOpen>=1.7, aperture not leaf-blocked (same checks as a30-force door section, shortened). If too long for this prompt, write the variety-only harness and leave a TODO comment for door regression (parent will run a30-force separately).
+
+Write results JSON to logs/a31/ (path from argv). Exit 1 on fail.
+
+=== REPORT ===
+List every file touched and what changed. node --check results. Do not commit. Do not run the harness (parent will).
