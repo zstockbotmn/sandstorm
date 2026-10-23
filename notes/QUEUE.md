@@ -213,3 +213,10 @@ Immersion 3 · Fun 3 · Graphics 4 · Ease 4 · Depth 3 (down from A24 4/4/4/4/3
 PASS: SW bust, climax in-event grenade, w4end no mid-wave, AREA CLEAR + flee radio, quiet ~13s, cover chip.
 FAIL: last-stand charge→stand missing (straight flee ~26s alone); exposed climax HP bottom 63 (Moving cover / auto-cover after 1 hit).
 Rec A26: restore rush→stand 4–6s; sustain climax exposure for HP 35–50; keep A25 wins. Then re-score before winDbg/step-4.
+
+## A26 (App PM Oct 23 ~3:53 AM ET — IN PROGRESS)
+Fix-only. After scores hold Immersion/Fun 4+ → winDbg → step-4 rooms/doorway (depth).
+1. Restore last-stand charge → open stand ~4–6s before flee; force rush on w4end
+2. Climax: while scoped/exposed, no grenade Moving-cover yank; HP can reach ~35–50; ducked + 35 floor kept
+3. Keep A25 wins (SW, climax grenade|flank, w4end size, AREA CLEAR + flee radio, quiet)
+4. Mix flank into some climaxes when prior climax used grenade
