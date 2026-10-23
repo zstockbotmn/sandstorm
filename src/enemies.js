@@ -1779,7 +1779,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const dx = model.position.x - _cA.x, dz = model.position.z - _cA.z; model.position.x = _cA.x - dx; model.position.z = _cA.z - dz; model.rotation.y += Math.PI; model.updateMatrixWorld(true); hips.getWorldPosition(_cA); }
       const ax = e.anchor && e.anchor.type === 'roof' && e.anchor.pos ? e.anchor.pos.x : null; // roof spot = facade + 0.45 m; the cap overhangs the facade by 0.175 m
       const edgeX = ax != null ? ax - out * 0.625 : _cA.x - out * 0.35;
-      model.position.x += (edgeX + out * 0.12) - _cA.x; model.updateMatrixWorld(true);
+      model.position.x += (edgeX + out * 0.28) - _cA.x; /* A23: hang further over the street edge so the body reads from the road */ model.updateMatrixWorld(true);
       drape = { out, bone: e.bones.Spine01 || e.bones.Spine || null, edgeX }; }
     // the clip's last pose props the body on one forearm (torso joints ~0.33 m above that hand): rest the TORSO on the floor
     // (hips / spine / head joints ~0.15 m up, the propping arm tucks under the body), never more than 0.3 m below the lowest bone

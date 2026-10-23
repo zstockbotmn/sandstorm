@@ -24,12 +24,14 @@ const [tier = 'low', out = 'logs/a20/doll', thr = '1', mode = 'street'] = proces
         // A23: render one frame from the PLAYER's position aimed at the body (head-hips midpoint), then again with the body hidden;
         // the number of changed pixels around the body = how much of it a player can actually see (occlusion by the roof included)
         const pixTest = (e, m) => { const R = SS.renderer, cam = SS.camera, gl = R.getContext(); const q0 = cam.quaternion.clone();
-          const B = e.bones || {}, a = new SS.THREE.Vector3(), c = new SS.THREE.Vector3(); (B.Hips || m).getWorldPosition(a); (B.Head || B.Hips || m).getWorldPosition(c); a.add(c).multiplyScalar(0.5);
+          const B = e.bones || {}, a = new SS.THREE.Vector3(), c = new SS.THREE.Vector3(), p0 = cam.position.clone(); (B.Hips || m).getWorldPosition(a); (B.Head || B.Hips || m).getWorldPosition(c); a.add(c).multiplyScalar(0.5);
+          // A23: at >18 m a draped body is a speck on Ultra-low; dolly in to ~12 m so the check is 'on the street edge and drawn', not 'fills 40 px from 30 m'
+          { const d = a.distanceTo(cam.position); if (d > 18) { const t = 1 - 12 / d; cam.position.lerp(a, t); } }
           cam.lookAt(a); cam.updateMatrixWorld(); const sz = R.getDrawingBufferSize(new SS.THREE.Vector2()), W = sz.x, H = sz.y, bw = Math.min(160, W), bh = Math.min(160, H), x0 = (W - bw) >> 1, y0b = (H - bh) >> 1;
           const grab = () => { R.setRenderTarget(null); R.render(SS.scene, cam); const px = new Uint8Array(bw * bh * 4); gl.readPixels(x0, y0b, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
           const vis0 = m.visible; const A = grab(); const png = R.domElement.toDataURL('image/png'); m.visible = false; const Bp = grab(); m.visible = vis0;
           let n = 0; for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - Bp[i]) + Math.abs(A[i + 1] - Bp[i + 1]) + Math.abs(A[i + 2] - Bp[i + 2]) > 24) n++;
-          cam.quaternion.copy(q0); cam.updateMatrixWorld(); return { changedPx: n, box: bw + 'x' + bh, dist: +a.distanceTo(cam.position).toFixed(1), camY: +cam.position.y.toFixed(2), png }; };
+          cam.position.copy(p0); cam.quaternion.copy(q0); cam.updateMatrixWorld(); return { changedPx: n, box: bw + 'x' + bh, dist: +a.distanceTo(cam.position).toFixed(1), camY: +cam.position.y.toFixed(2), png }; };
         const shown = (o) => { let n = o; while (n) { if (!n.visible) return false; if (n === SS.scene || !n.parent) return n === SS.scene || n.type === 'Scene'; n = n.parent; } return false; };
         while (out.length < 2 && performance.now() - t00 < 330000) { await new Promise((r) => setTimeout(r, 400)); SS.input.scope = false; if (SS.player.health < 40) SS.player.health = 90;
           const L = (SS.enemies.list || []).filter((e) => e.alive && !e.dying); const roofE = L.find((e) => e.group.position.y > 2 && e.engaged !== false);
