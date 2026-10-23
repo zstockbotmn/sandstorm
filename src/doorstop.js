@@ -4,6 +4,7 @@ import * as THREE from 'three';
 // Control points are fixed; inLen/outLen are the precomputed sample lengths (no runtime tuning).
 // ?door=1 / ?doorstop=1: A29 forces a room in the 25–40 m band + arms on first post-W1 walk (wide fallback); SOUND logs door arm / veer / held.
 // A30: free-side stand + peek yaw into lit open aperture (not shut door face).
+// A35: doorway hold looks OUT to street (flankers centered); only recenters from room-drift, not street aim.
 const SPEED = 3;
 const BLD4 = !/[?&]bld=0\b/.test(location.search);
 const ROOMS0 = /[?&]rooms=0\b/.test(location.search);
@@ -67,6 +68,16 @@ function poseAt(path, dist) {
 function standOf(door) {
   // A30: free (+z) jamb — opposite hinged leaf — so the open lit aperture sits in the cover-side FOV.
   return { x: door.x + door.side * 0.45, z: door.z + 0.6 - 0.35 };
+}
+
+// A35: street peek yaw — look OUT the opening toward street center ahead (FLANKED mid-frame).
+// A34 used +side*0.42/1.05 (~+22° into the room wall); Tester saw wall/pillar with flankers only at the far edge.
+function streetYaw(door) {
+  const stand = standOf(door);
+  // Aim at a point near the street rail ~14 m ahead so opening + street fighters sit centered.
+  const tx = (door.side || 1) * 1.2 - stand.x; // ~1.2 m off rail toward this facade (keep jamb in FOV)
+  const tz = -14;
+  return Math.atan2(tx, -tz);
 }
 
 function xzDist(x, z, b) {
@@ -232,8 +243,8 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if ((performance.now() - (input.aimMovedT || 0)) <= 400) return;
     const pose = poseAt(path, Math.min(s, path.len));
     const street = path.kind === 'in' && path.len > 0 && s >= path.len * 0.8;
-    // A34: street-biased doorway peek — flankers on the opening stay on-screen; slight side bias keeps a sliver of lit room/shafts.
-    const target = street ? Math.atan2((door.side || 1) * 0.42, 1.05) : Math.atan2(pose.tx, -pose.tz);
+    // A35: late veer aims street-out (not into room). Early veer follows path tangent.
+    const target = street ? streetYaw(door) : Math.atan2(pose.tx, -pose.tz);
     const d = Math.atan2(Math.sin(target - input.yaw), Math.cos(target - input.yaw));
     input.yaw += d * (1 - Math.exp(-3 * dt));
   }
@@ -263,11 +274,11 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if (!rec.duck) rec.duck = { front: 0, flank: 0, frontShots: 0 };
     if (enemies.waveNow) enemies.waveNow();
     if (cover && cover.takeDoor) cover.takeDoor(path.door);
-    // A34: snap toward street opening (shootable FLANKED) with light room bias — not ~70° into the interior wall.
+    // A35: snap look OUT to street opening so FLANKED are centered/shootable (A34 still aimed ~+22° into room).
     if (path.door && (performance.now() - (input.aimMovedT || 0)) > 400) {
-      input.yaw = Math.atan2((path.door.side || 1) * 0.42, 1.05);
+      input.yaw = streetYaw(path.door);
     }
-    if (path.door) S.doorPeek = { yaw: input.yaw, side: path.door.side || 1 };
+    if (path.door) S.doorPeek = { yaw: input.yaw, side: path.door.side || 1, want: streetYaw(path.door), street: true };
     dlog('IN COVER · DOORWAY', 'sim ' + (S.simTime || 0).toFixed(1));
   }
 
@@ -313,12 +324,17 @@ export function createDoorStop(camera, world, input, enemies, cover) {
       return false;
     } else if (rec.state === 'held') {
       const sim = S.simTime || 0;
-      // A34: while doorway-held and player isn't dragging aim, ease look back to street-biased peek (unstick no longer yaws, but keep flank on-screen).
-      if (path && path.door && (performance.now() - (input.aimMovedT || 0)) > 400) {
-        const want = Math.atan2((path.door.side || 1) * 0.42, 1.05);
-        const d = Math.atan2(Math.sin(want - input.yaw), Math.cos(want - input.yaw));
-        if (Math.abs(d) > 0.04) input.yaw += d * (1 - Math.exp(-2.2 * dt));
-        S.doorPeek = { yaw: input.yaw, side: path.door.side || 1, street: true };
+      // A35: only correct if look drifted INTO the room; never yank a street-side aim back toward the wall.
+      // Longer idle grace (2s wall) so brief aim pauses don't fight the peek (A34 ~10–15s snap-back to room).
+      if (path && path.door && (performance.now() - (input.aimMovedT || 0)) > 2000) {
+        const side = path.door.side || 1;
+        const want = streetYaw(path.door);
+        const intoRoom = Math.atan2(Math.sin(input.yaw - want), Math.cos(input.yaw - want));
+        if (intoRoom * side > 0.08) {
+          const d = Math.atan2(Math.sin(want - input.yaw), Math.cos(want - input.yaw));
+          input.yaw += d * (1 - Math.exp(-2.2 * dt));
+        }
+        S.doorPeek = { yaw: input.yaw, side, want, street: true };
       }
       const due = (S.waveClears | 0) > (rec.clears0 | 0) || (rec.arriveSim != null && sim - rec.arriveSim >= 90);
       if (!due) return false;
