@@ -207,3 +207,9 @@ Thin polish, no new systems. After scores hold 4+ → winDbg → step-4 rooms / 
 3. w4end: suppress mid-wave reinforcements (stay ~1–2)
 4. Bust SW cache on every preview deploy
 5. Optional cheap camera-unstick debug hook only if free
+
+## A25 scores (App Tester ~3:53 AM ET Oct 23) — WAITING PM
+Immersion 3 · Fun 3 · Graphics 4 · Ease 4 · Depth 3 (down from A24 4/4/4/4/3).
+PASS: SW bust, climax in-event grenade, w4end no mid-wave, AREA CLEAR + flee radio, quiet ~13s, cover chip.
+FAIL: last-stand charge→stand missing (straight flee ~26s alone); exposed climax HP bottom 63 (Moving cover / auto-cover after 1 hit).
+Rec A26: restore rush→stand 4–6s; sustain climax exposure for HP 35–50; keep A25 wins. Then re-score before winDbg/step-4.
