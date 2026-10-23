@@ -62,19 +62,70 @@ export function createCover(scene, camera, world, input) {
   function clearSpawned() {
     if (!c.spawned) return; scene.remove(c.spawned); const i = world.colliders.indexOf(c.spawned); if (i >= 0) world.colliders.splice(i, 1); c.spawned = null;
   }
+  // A24: if the eye embeds in a prop/wall (cover switch path, sandbag near a wooden facade, doorway hold),
+  // push out along the shallowest exit (prefer street-centre x, then +z) and log once per nudge.
+  const _ub = new THREE.Box3(), _up = new THREE.Vector3();
+  function unstick(why) {
+    const cols = world.colliders || []; if (!cols.length) return false;
+    _up.set(camera.position.x, camera.position.y, camera.position.z);
+    let hit = null;
+    for (const m of cols) {
+      if (!m || !m.geometry) continue;
+      try { _ub.setFromObject(m); } catch (_) { continue; }
+      // Ignore flat ground slabs and giant skyboxes; keep facade / prop / room wood.
+      const sx = _ub.max.x - _ub.min.x, sy = _ub.max.y - _ub.min.y, sz = _ub.max.z - _ub.min.z;
+      if (sy < 0.4 || sy > 14 || sx > 40 || sz > 40) continue;
+      if (!_ub.containsPoint(_up)) continue;
+      hit = _ub; break;
+    }
+    if (!hit) {
+      // Soft street clamp: never park past the facade line while in cover / walking back.
+      if (Math.abs(camera.position.x) > STREET_X + 0.15) {
+        const nx = Math.sign(camera.position.x) * STREET_X;
+        camera.position.x = nx;
+        try { if (window.SS && window.SS.audio) window.SS.audio.log('player', 'camera unstick'); } catch (_) {}
+        const L = window.SS && (window.SS.unstickLog || (window.SS.unstickLog = []));
+        if (L) { L.push({ sim: +((window.SS.simTime) || 0).toFixed(1), why: why || 'street', x: +camera.position.x.toFixed(2), z: +camera.position.z.toFixed(2) }); if (L.length > 20) L.shift(); }
+        return true;
+      }
+      return false;
+    }
+    const pen = {
+      xNeg: _up.x - hit.min.x, xPos: hit.max.x - _up.x,
+      zNeg: _up.z - hit.min.z, zPos: hit.max.z - _up.z,
+      yNeg: _up.y - hit.min.y, yPos: hit.max.y - _up.y
+    };
+    // Prefer exit toward street centre (x->0), then toward +z (behind cover / toward spawn).
+    let best = 'x', bestD = 1e9, sign = 0;
+    const xToward0 = camera.position.x >= 0 ? pen.xNeg : pen.xPos;
+    if (xToward0 < bestD) { bestD = xToward0; best = 'x'; sign = camera.position.x >= 0 ? -1 : 1; }
+    if (pen.zPos < bestD) { bestD = pen.zPos; best = 'z'; sign = 1; }
+    if (pen.zNeg < bestD) { bestD = pen.zNeg; best = 'z'; sign = -1; }
+    const pad = 0.12;
+    if (best === 'x') camera.position.x += sign * (bestD + pad);
+    else camera.position.z += sign * (bestD + pad);
+    if (Math.abs(camera.position.x) > STREET_X) camera.position.x = Math.sign(camera.position.x || 1) * STREET_X;
+    try { if (window.SS && window.SS.audio) window.SS.audio.log('player', 'camera unstick'); } catch (_) {}
+    const L = window.SS && (window.SS.unstickLog || (window.SS.unstickLog = []));
+    if (L) { L.push({ sim: +((window.SS.simTime) || 0).toFixed(1), why: why || 'geom', x: +camera.position.x.toFixed(2), z: +camera.position.z.toFixed(2), axis: best }); if (L.length > 20) L.shift(); }
+    return true;
+  }
+  c.unstick = unstick;
   function update(dt, walking) {
     if (walking) {
       if (c.state !== 'none') { c.state = 'none'; c.target = null; c.surface = null; clearSpawned(); }
       input.cover = false;
       camera.position.x += (0 - camera.position.x) * (1 - Math.exp(-1.5 * dt)); // drift back to the road centre
+      unstick('walk');
       return;
     }
     if (!window.SS || !window.SS.running) return;
     if (!c.target) { c.target = pick(); c.state = 'moving'; }
     const dx = c.target.x - camera.position.x, dz = c.target.z - camera.position.z, d = Math.hypot(dx, dz);
     if (d > 0.05) { const s = Math.min(d, MOVE_SPEED * dt) / d; camera.position.x += dx * s; camera.position.z += dz * s;
-      if (c.surface && camera.position.z < c.surface.max.z + PLAYER_R) camera.position.z = c.surface.max.z + PLAYER_R; } // never enter the cover
-    else { if (c.state !== 'in' && window.SS && !window.SS.firstCoverT) { window.SS.firstCoverT = performance.now(); window.SS.coverGraceUntil = performance.now() + COVER_GRACE_S * 1000; } c.state = 'in'; } // m1v: 1.5 s grace on first reaching cover (COVER_GRACE_S)
+      if (c.surface && camera.position.z < c.surface.max.z + PLAYER_R) camera.position.z = c.surface.max.z + PLAYER_R; // never enter the cover
+      unstick('cover-move'); }
+    else { if (c.state !== 'in' && window.SS && !window.SS.firstCoverT) { window.SS.firstCoverT = performance.now(); window.SS.coverGraceUntil = performance.now() + COVER_GRACE_S * 1000; } c.state = 'in'; unstick('cover-in'); } // m1v: 1.5 s grace on first reaching cover (COVER_GRACE_S)
     if (c.reaim) reaim(dt);
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
     if (c.spawned && c.spawned.material) {
@@ -95,6 +146,8 @@ export function createCover(scene, camera, world, input) {
       if (Math.hypot(t.x - cur.x, t.z - cur.z) < 1.5) { clearSpawned(); c.surface = null; t = pick(cur, 0); } }
     if (why === 'switch') { const n = Math.hypot(t.x - cur.x, t.z - cur.z); try { window.SS.audio.log('player', 'switch cover -> ' + n.toFixed(1) + 'm (' + (c.kind || '?') + ')'); } catch (_) {}
       const L = window.SS.switchLog || (window.SS.switchLog = []); L.push({ sim: +(window.SS.simTime || 0).toFixed(1), m: +n.toFixed(1), kind: c.kind, t: performance.now() }); } if (old && old !== c.spawned) { scene.remove(old); const i = world.colliders.indexOf(old); if (i >= 0) world.colliders.splice(i, 1); }
+    // A24: never park the cover target inside a collider (wooden wall / prop)
+    { const px = camera.position.x, pz = camera.position.z; camera.position.x = t.x; camera.position.z = t.z; unstick('cover-target'); t.x = camera.position.x; t.z = camera.position.z; camera.position.x = px; camera.position.z = pz; }
     c.target = t; c.state = 'moving'; input.cover = false; if (why === 'grenade') { c.reaim = 1.2; input.pitch = 0; /* only the announced grenade move turns the view; a SWITCH COVER tap never does (tester: view swung ~90 deg during a hold) */ if (input.clearAim) input.clearAim(); const w = window.SS && window.SS.weapon; if (w && w.cancelRecoil) w.cancelRecoil(); } /* hard level reset (tester: stuck looking at the bags) */ c.moves = (c.moves | 0) + 1; c.lastMove = why || 'switch'; return true;
   };
   // Fix 5: after a grenade-forced move the view was left facing a wall. Ease the view (yaw toward the nearest live enemy,

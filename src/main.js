@@ -601,7 +601,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     roomHoldEnd('G next');
     enemies.reset(); // debug only: clears enemies, nades, truck and the wave count (a clean street at the room)
     cover.reset();
-    const z = best.pos.z + 2.5, dz = cz - z; camera.position.set(0, camera.position.y, z); window.SS.distance += dz;
+    const z = best.pos.z + 2.5, dz = cz - z; camera.position.set(0, camera.position.y, z); window.SS.distance += dz; try { if (cover.unstick) cover.unstick('room'); } catch (_) {}
     const side = best.pos.x > 0 ? 1 : -1; input.yaw = Math.atan2(best.pos.x - 0, -(best.pos.z - z)); input.pitch = -0.05;
     window.SS.walking = false; window.SS.roomHold = true; roomHoldT = window.SS.simTime || 0; roomLast = best;
     window.SS.lastRoomJump = { ok: true, room: [+best.pos.x.toFixed(1), +best.pos.z.toFixed(1)], side, jumped: +dz.toFixed(1), distance: +window.SS.distance.toFixed(1) };
