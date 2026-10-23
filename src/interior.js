@@ -6,6 +6,8 @@ export const ATLAS_BACK = 0.5;
 
 const WALLS = ['#d9c7a3', '#c49a5a', '#9fb3b8', '#9aa58a'];
 const FLOORS = ['#a0583a', '#7a2e2a', '#8c7a60'];
+export const ROOM_WALLS = WALLS;
+export const ROOM_FLOORS = FLOORS;
 let atlas = null;
 
 function shade(hex, k) {

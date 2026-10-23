@@ -7,7 +7,7 @@ const START_Z = 24;      // first segment starts behind the spawn so the run ope
 import { Q, LOWQ, ULTRA } from './quality.js';
 import { pbrMaterial, worldBox, triplanarDetail } from './texlib.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { createInteriorAtlas, createInteriorMaterial, createInteriorFallback, buildWindowMesh } from './interior.js';
+import { createInteriorAtlas, createInteriorMaterial, createInteriorFallback, buildWindowMesh, ROOM_WALLS, ROOM_FLOORS } from './interior.js';
 
 const BLD4 = typeof location !== 'undefined' && /[?&]bld=4/.test(location.search);
 const BLD4P = BLD4 && /[?&]bld=4p\b/.test(location.search);
@@ -158,6 +158,16 @@ export function createWorld(scene, seed) {
     // walls / floor / ceiling are now Poly Haven CC0 plastered_wall_02 with world-tiled UVs (uvTile at the call sites), dimmed.
     const m = pbrMaterial('plastered_wall_02', { full: !LOWQ }); m.color.setRGB(1.0, 0.9, 0.78).multiplyScalar(ROOM_DIM[i] * 1.25); m.roughness = 0.95;
     return (_roomMats[i] = m);
+  }
+  const _artMats = new Map();
+  function artRoomMat(cell, part) {
+    const key = cell + part; const hit = _artMats.get(key); if (hit) return hit;
+    const hex = part === 'floor' ? ROOM_FLOORS[cell % 3] : ROOM_WALLS[cell % 4];
+    const k = (part === 'ceil' ? 0.7 : part === 'side' ? 0.8 : part === 'floor' ? 0.85 : 1) * 0.75;
+    // Color('#hex') is already linear here; park the hex so convertSRGBToLinear runs once and matches the atlas.
+    const color = new THREE.Color().setStyle(hex, THREE.LinearSRGBColorSpace).convertSRGBToLinear().multiplyScalar(k);
+    const m = new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0 });
+    return _artMats.set(key, m), m;
   }
   let _roomWood = null;
   // A14 (tester: door / table / rug read as blocky flat-shaded boxes): Poly Haven CC0 planks (wood) and hessian (rug,
@@ -816,12 +826,13 @@ export function createWorld(scene, seed) {
       addBox(seg, matPlaster, X(0.15), RH / 2, zc + W / 4 + 0.3, 0.3, RH, jw);
     }
     addBox(seg, matPlaster, X(0.15), (2.2 + RH) / 2, zc, 0.3, RH - 2.2, 1.2);
-    const iw = W - 0.06, id = 3.47;
-    addBox(seg, roomMat(0), X(2.035), 0.02, zc, id, 0.02, iw, { ...nc, uvTile: 1.6 });
-    addBox(seg, roomMat(1), X(2.035), RH - 0.02, zc, id, 0.02, iw, { ...nc, uvTile: 1.6 });
-    addBox(seg, roomMat(0), X(2.035), RH / 2, zc - W / 2 + 0.02, id, RH - 0.04, 0.02, { ...nc, uvTile: 1.6 });
-    addBox(seg, roomMat(0), X(2.035), RH / 2, zc + W / 2 - 0.02, id, RH - 0.04, 0.02, { ...nc, uvTile: 1.6 });
-    addBox(seg, roomMat(2), X(3.78), RH / 2, zc, 0.02, RH - 0.04, iw, { ...nc, uvTile: 1.6 });
+    const iw = W - 0.06, id = 3.47; let cell;
+    if (art) { cell = (seg.id * 5 + 3) % 8; if (typeof window !== 'undefined' && window.SS) window.SS.bld4roomCell = cell; }
+    addBox(seg, art ? artRoomMat(cell, 'floor') : roomMat(0), X(2.035), 0.02, zc, id, 0.02, iw, { ...nc, uvTile: 1.6 });
+    addBox(seg, art ? artRoomMat(cell, 'ceil') : roomMat(1), X(2.035), RH - 0.02, zc, id, 0.02, iw, { ...nc, uvTile: 1.6 });
+    addBox(seg, art ? artRoomMat(cell, 'side') : roomMat(0), X(2.035), RH / 2, zc - W / 2 + 0.02, id, RH - 0.04, 0.02, { ...nc, uvTile: 1.6 });
+    addBox(seg, art ? artRoomMat(cell, 'side') : roomMat(0), X(2.035), RH / 2, zc + W / 2 - 0.02, id, RH - 0.04, 0.02, { ...nc, uvTile: 1.6 });
+    addBox(seg, art ? artRoomMat(cell, 'back') : roomMat(2), X(3.78), RH / 2, zc, 0.02, RH - 0.04, iw, { ...nc, uvTile: 1.6 });
     const A = (70 + seg._wrng() * 30) * Math.PI / 180;
     const leaf = addBox(seg, roomWood(), X(0.2) + side * 0.575 * Math.sin(A), 1.075, zc - 0.6 + 0.575 * Math.cos(A), 0.06, 2.15, 1.15, { collide: false, uvTile: 0.9 });
     leaf.rotation.y = side * A;
