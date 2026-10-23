@@ -221,3 +221,9 @@ Fix-only. After scores hold Immersion/Fun 4+ → winDbg → step-4 rooms/doorway
 2. Climax: while scoped/exposed, no grenade Moving-cover yank; HP can reach ~35–50; ducked + 35 floor kept
 3. Keep A25 wins (SW, climax grenade|flank, w4end size, AREA CLEAR + flee radio, quiet)
 4. Mix flank into some climaxes when prior climax used grenade
+
+## A27 (App PM Oct 23 — DONE Oct 23 ~9:05 AM ET)
+DONE: tip cbb0d67, build ss-957b1b79a3, label 'internal preview A27', preview :8850 HTTP 200. Tests PASS (logs/a27): doorway-stop Low (walkS 12.3, count 1, door:in, duck.front=0 frontShots=10, rooms=0/ultra off); a15 w4end; a15 forced; a11 Low. Earlier: winDbg Low/High. Code: afb56c5 (no climax yank in cover), e4c9c11 (preview+winDbg), 4416bc3..945f96e (4e1–4e4 rooms), f4e704d (4e5a+b doorway stop), 3530028 (4e5c enemy doorway), 28679cf+5077d8a (walk length + sticky door cover). Protects A26 wins (last-stand, climax 35 floor, flank mix, SW, w4end, AREA CLEAR, ducked muffle, no-yank-in-cover).
+Known: doorway detour walkS 12.3 (inside 11±1.5); box ~1–2 fps so doorway/a15 wall times are long. ?rooms=0 keeps rooms drawn but disables doorway stop + enemy doorway. No GH Pages / no Tester-PM ping this ship.
+Next: tester rescore A27 doorway + rooms depth.
+
