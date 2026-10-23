@@ -1746,26 +1746,41 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // own hip height (pinned Hips track, scaled rig) left the lying body 0.7-1.4 m above the floor, frozen there by stopMixer.
   // Now the posed body is measured (lowest bone) and dropped onto the floor it stood on in ~0.3 s of REAL time (so it lands
   // on the next frame at 1-2 fps); on a roof the body is turned to lie away from the street and pulled back from the edge.
+  // A23 (tester A22: '217.3s roof corpse 1.5s' -> '219.5s roof corpse 10s' and the body gone ~7 game-s after the kill):
+  // the corpse lifetime and checks were setTimeout (REAL ms) while the game ran at ~0.26x real speed. Now game time:
+  // canned corpses live 25 game-s (stepped from update), checks fire at +1.5 / +10 game-s.
+  const corpseTimers = [], cannedCorpses = [];
+  function stepCorpses() { const sim = (window.SS && window.SS.simTime) || 0;
+    for (let i = corpseTimers.length - 1; i >= 0; i--) if (sim >= corpseTimers[i].at) { const t = corpseTimers.splice(i, 1)[0]; try { t.fn(); } catch (err) { reportErr('corpse timer', err); } }
+    for (let i = cannedCorpses.length - 1; i >= 0; i--) { const c = cannedCorpses[i]; if (sim >= c.until) { if (c.model.parent) c.model.parent.remove(c.model); cannedCorpses.splice(i, 1);
+      const L = window.SS.corpseRemovals || (window.SS.corpseRemovals = []); L.push({ id: c.id, age: +(sim - c.born).toFixed(1), roof: c.roof }); if (L.length > 20) L.shift(); } } }
   const cannedDrops = []; const _cA = new THREE.Vector3(), _cB = new THREE.Vector3();
   // A22 (tester A21 pass B: a roof kill left no body on the roof): every rooftop death on the REAL path (shots, K, O/?roofkill)
   // logs the body 1.5 s and 10 s later: in the scene, visible up the chain, hips on the roof (not under it), inside the view.
   function roofCorpseCheck(e, model) { const SSx = window.SS; if (!SSx) return; const L = SSx.roofCorpseLog || (SSx.roofCorpseLog = []);
     const rec = { id: e.id, sim: +((SSx.simTime || 0)).toFixed(1), roofY: +(e._standY || 0).toFixed(2), byShot: !e._dbgKill, checks: [] }; L.push(rec); if (L.length > 20) L.shift();
-    const look = (tag) => { try { let vis = true; for (let o = model; o; o = o.parent) if (!o.visible) vis = false; let top = model; while (top.parent) top = top.parent;
+    const look = (tag) => { try { const age = +(((SSx.simTime || 0)) - rec.sim).toFixed(1); let vis = true; for (let o = model; o; o = o.parent) if (!o.visible) vis = false; let top = model; while (top.parent) top = top.parent;
       const hips = e.bones && e.bones.Hips; const hp = hips ? hips.getWorldPosition(new THREE.Vector3()) : model.getWorldPosition(new THREE.Vector3());
       camera.updateMatrixWorld(); const ndc = hp.clone().project(camera); const inView = ndc.z < 1 && Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1;
       const c = { tag, inScene: top === scene, visible: vis, hipsY: +hp.y.toFixed(2), onRoof: hp.y > rec.roofY - 0.1 && hp.y < rec.roofY + 0.7, inView, dist: +hp.distanceTo(camera.position).toFixed(1) };
-      rec.checks.push(c); rec.ok = c.inScene && c.visible && c.onRoof; slog('enemy', 'roof corpse ' + tag + ': ' + (rec.ok ? 'on roof' : 'MISSING') + ' y' + c.hipsY + (c.inView ? '' : ' (out of view)')); } catch (err) { reportErr('roofCorpseCheck', err); } };
-    setTimeout(() => look('1.5s'), 1500); setTimeout(() => look('10s'), 10000); }
+      rec.checks.push(c); rec.ok = c.inScene && c.visible && c.onRoof; c.age = age; slog('enemy', 'roof corpse ' + tag + ' (age ' + age + ' game-s): ' + (rec.ok ? 'on roof' : 'MISSING') + ' y' + c.hipsY + (c.inView ? '' : ' (out of view)')); } catch (err) { reportErr('roofCorpseCheck', err); } };
+    corpseTimers.push({ at: rec.sim + 1.5, fn: () => look('1.5s') }, { at: rec.sim + 10, fn: () => look('10s') }); } // A23: GAME time (real-time timers ran 4x ahead at 2-3 fps)
   function settleCanned(e, model) {
     const bones = Object.values(e.bones || {}).filter((x) => x && x.isObject3D); if (!bones.length) return;
     const floor = e._standY != null ? e._standY : 0; model.updateMatrixWorld(true);
     const hips = e.bones.Hips, head = e.bones.Head;
-    if (floor > 0.5 && hips && head) { // roof: lie away from the street (the edge faces the street), hips 0.4 m back from the stand point
+    // A23 (tester A22 pass B: no body seen on the roof): lying flat 0.4 m BEHIND the roof edge, a body 12 m up is hidden from the
+    // street by the roof slab itself (the eye is below the roof plane). Now the body lies with the hips at the street edge, head
+    // toward the street, and the upper body drapes over the edge (spine bent ~60 deg down) - the classic visible roof kill.
+    let drape = null;
+    if (floor > 0.5 && hips && head) {
       hips.getWorldPosition(_cA); head.getWorldPosition(_cB); const out = Math.sign(_cA.x) || 1;
-      if ((_cB.x - _cA.x) * out < 0) { // head points toward the street: turn the body 180 deg about the hips
-        const dx = model.position.x - _cA.x, dz = model.position.z - _cA.z; model.position.x = _cA.x - dx; model.position.z = _cA.z - dz; model.rotation.y += Math.PI; }
-      model.position.x += out * 0.4; model.updateMatrixWorld(true); }
+      if ((_cB.x - _cA.x) * out > 0) { // head points away from the street: turn the body 180 deg about the hips
+        const dx = model.position.x - _cA.x, dz = model.position.z - _cA.z; model.position.x = _cA.x - dx; model.position.z = _cA.z - dz; model.rotation.y += Math.PI; model.updateMatrixWorld(true); hips.getWorldPosition(_cA); }
+      const ax = e.anchor && e.anchor.type === 'roof' && e.anchor.pos ? e.anchor.pos.x : null; // roof spot = facade + 0.45 m; the cap overhangs the facade by 0.175 m
+      const edgeX = ax != null ? ax - out * 0.625 : _cA.x - out * 0.35;
+      model.position.x += (edgeX + out * 0.12) - _cA.x; model.updateMatrixWorld(true);
+      drape = { out, bone: e.bones.Spine01 || e.bones.Spine || null, edgeX }; }
     // the clip's last pose props the body on one forearm (torso joints ~0.33 m above that hand): rest the TORSO on the floor
     // (hips / spine / head joints ~0.15 m up, the propping arm tucks under the body), never more than 0.3 m below the lowest bone
     let mn = 1e9, core = 1e9; for (const bn of bones) { bn.getWorldPosition(_cA); if (_cA.y < mn) mn = _cA.y; }
@@ -1774,13 +1789,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const to = model.position.y - sink;
     const slow = window.SS && window.SS.lastRawDt > 0.15; // at < ~7 fps a 0.3 s tween is already over by the next frame: land now
     if (slow) model.position.y = to; else if (Math.abs(to - model.position.y) > 0.02) cannedDrops.push({ model, from: model.position.y, to, t0: performance.now() });
+    if (drape && drape.bone && drape.bone.parent) try { // bend the spine about the edge axis (world Z), head side down toward the street
+      const pq = drape.bone.parent.getWorldQuaternion(new THREE.Quaternion()), q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), drape.out * 1.05);
+      drape.bone.quaternion.premultiply(pq.clone().invert().multiply(q).multiply(pq)); model.updateMatrixWorld(true);
+      e.bones.Head.getWorldPosition(_cB); e._drape = { headOut: +((drape.edgeX - _cB.x) * drape.out).toFixed(2), headDrop: +((floor) - _cB.y).toFixed(2) }; } catch (err) { reportErr('roof drape', err); }
     e.fallMode = 'canned';
   }
   function stepCannedDrops() { const now = performance.now();
     for (let i = cannedDrops.length - 1; i >= 0; i--) { const d = cannedDrops[i], k = Math.min(1, (now - d.t0) / 300);
       d.model.position.y = d.from + (d.to - d.from) * k * k; if (k >= 1) cannedDrops.splice(i, 1); } }
   function stepFallers(dt) {
-    stepCannedDrops();
+    stepCannedDrops(); stepCorpses();
     for (let i = fallers.length - 1; i >= 0; i--) {
       const e = fallers[i]; e.fallT -= dt;
       // A20: the hit-reaction beat is sim time (0.12-0.35 s); at 1-2 fps or in a hitch it stood the body up for 1-2 s real -
@@ -1861,7 +1880,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       try { const model = enemy.art.root; if (HITS2 && enemy.fallRootY != null) model.position.y = enemy.fallRootY; scene.attach(model); const death = enemy.actions && enemy.actions.death;
         if (death && enemy.mixer) { enemy.mixer.stopAllAction(); death.reset().setLoop(THREE.LoopOnce, 1); death.clampWhenFinished = true; death.play(); enemy.mixer.update((death.getClip().duration || 1) * 0.99); }
         stopMixer(model, enemy.mixer); model.traverse((obj) => { if (obj.isMesh) obj.frustumCulled = false; }); // A22: the death pose leaves the bind-pose bounds (a lying roof body could be culled at the screen edge)
-        settleCanned(enemy, model); setTimeout(() => { if (model.parent) model.parent.remove(model); }, 25000);
+        settleCanned(enemy, model); { const sNow = (window.SS && window.SS.simTime) || 0; cannedCorpses.push({ model, id: enemy.id, born: sNow, until: sNow + 25, roof: (enemy._standY || 0) > 0.5 }); }
         if ((enemy._standY || 0) > 0.5) roofCorpseCheck(enemy, model); } catch (err) { reportErr('static corpse', err); } }
     enemy.group.visible = false;
     root.remove(enemy.group);

@@ -21,22 +21,36 @@ const [tier = 'low', out = 'logs/a20/doll', thr = '1', mode = 'street'] = proces
     if (mode === 'roof') { res.mode = 'roof';
       res.roof = await p.evaluate(async () => { const out = [], t00 = performance.now(); let lastK = 0;
         const hipsOf = (e) => { const h = e.bones && e.bones.Hips; if (!h) return null; h.updateWorldMatrix(true, false); return { x: h.matrixWorld.elements[12], y: h.matrixWorld.elements[13], z: h.matrixWorld.elements[14] }; };
+        // A23: render one frame from the PLAYER's position aimed at the body (head-hips midpoint), then again with the body hidden;
+        // the number of changed pixels around the body = how much of it a player can actually see (occlusion by the roof included)
+        const pixTest = (e, m) => { const R = SS.renderer, cam = SS.camera, gl = R.getContext(); const q0 = cam.quaternion.clone();
+          const B = e.bones || {}, a = new SS.THREE.Vector3(), c = new SS.THREE.Vector3(); (B.Hips || m).getWorldPosition(a); (B.Head || B.Hips || m).getWorldPosition(c); a.add(c).multiplyScalar(0.5);
+          cam.lookAt(a); cam.updateMatrixWorld(); const sz = R.getDrawingBufferSize(new SS.THREE.Vector2()), W = sz.x, H = sz.y, bw = Math.min(160, W), bh = Math.min(160, H), x0 = (W - bw) >> 1, y0b = (H - bh) >> 1;
+          const grab = () => { R.setRenderTarget(null); R.render(SS.scene, cam); const px = new Uint8Array(bw * bh * 4); gl.readPixels(x0, y0b, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+          const vis0 = m.visible; const A = grab(); const png = R.domElement.toDataURL('image/png'); m.visible = false; const Bp = grab(); m.visible = vis0;
+          let n = 0; for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - Bp[i]) + Math.abs(A[i + 1] - Bp[i + 1]) + Math.abs(A[i + 2] - Bp[i + 2]) > 24) n++;
+          cam.quaternion.copy(q0); cam.updateMatrixWorld(); return { changedPx: n, box: bw + 'x' + bh, dist: +a.distanceTo(cam.position).toFixed(1), camY: +cam.position.y.toFixed(2), png }; };
         const shown = (o) => { let n = o; while (n) { if (!n.visible) return false; if (n === SS.scene || !n.parent) return n === SS.scene || n.type === 'Scene'; n = n.parent; } return false; };
         while (out.length < 2 && performance.now() - t00 < 330000) { await new Promise((r) => setTimeout(r, 400)); SS.input.scope = false; if (SS.player.health < 40) SS.player.health = 90;
           const L = (SS.enemies.list || []).filter((e) => e.alive && !e.dying); const roofE = L.find((e) => e.group.position.y > 2 && e.engaged !== false);
           if (!roofE) { if (L.length && performance.now() - lastK > 5000) { lastK = performance.now(); SS.debugKillNearest(); } continue; }
-          const e = SS.debugKillRoof ? SS.debugKillRoof() : SS.debugKillNearest((x) => x === roofE); if (!e) continue; /* A22: the O / ?roofkill=1 path */ const y0 = e.group.position.y, t0 = performance.now(), tr = [];
-          while (performance.now() - t0 < 26500) { await new Promise((r) => setTimeout(r, 500)); const h = hipsOf(e), m = e.art && e.art.root;
-            tr.push([+((performance.now() - t0) / 1000).toFixed(1), h ? +(h.y - y0).toFixed(2) : null, m ? shown(m) : false, h ? +h.x.toFixed(1) : null]); }
-          out.push({ y0: +y0.toFixed(2), mode: e.fallMode || null, x0: +e.group.position.x.toFixed(1), trace: tr }); }
+          const e = SS.debugKillRoof ? SS.debugKillRoof() : SS.debugKillNearest((x) => x === roofE); if (!e) continue; /* A22: the O / ?roofkill=1 path */ const y0 = e.group.position.y, t0 = performance.now(), s0 = SS.simTime, tr = []; let pix = null;
+          // A23: trace in GAME seconds (corpses live 25 game-s); one pixel test >= 2 game-s after the kill
+          while (SS.simTime - s0 < 27 && performance.now() - t0 < 200000) { await new Promise((r) => setTimeout(r, 500)); const h = hipsOf(e), m = e.art && e.art.root;
+            tr.push([+(SS.simTime - s0).toFixed(1), h ? +(h.y - y0).toFixed(2) : null, m ? shown(m) : false, h ? +h.x.toFixed(1) : null]);
+            if (!pix && SS.simTime - s0 >= 2 && m) pix = pixTest(e, m); }
+          out.push({ y0: +y0.toFixed(2), mode: e.fallMode || null, x0: +e.group.position.x.toFixed(1), drape: e._drape || null, pix, trace: tr }); }
         await new Promise((r) => setTimeout(r, 1000)); return { out, log: SS.roofCorpseLog || [] }; });
-      res.roofCorpseLog = res.roof.log; res.roof = res.roof.out; // A22: the game's own roof-corpse checks (1.5 s / 10 s)
+      res.roofCorpseLog = res.roof.log; res.roof = res.roof.out;
+      for (const [k, d] of res.roof.entries()) { if (d.pix && d.pix.png) { fs.writeFileSync(out + '_' + tier + '_roof' + k + '.png', Buffer.from(d.pix.png.split(',')[1], 'base64')); d.pix.png = out + '_' + tier + '_roof' + k + '.png'; }
+        if (!d.pix) fail.push('roof kill ' + k + ': no pixel test'); else if (d.pix.changedPx < 40) fail.push('roof kill ' + k + ': body not visible from the player (' + d.pix.changedPx + ' px changed in the aimed frame, dist ' + d.pix.dist + ' m)'); } // A22: the game's own roof-corpse checks (1.5 s / 10 s)
       for (const c of res.roofCorpseLog) if (!c.ok) fail.push('roofCorpseLog ' + c.id + ': ' + JSON.stringify(c.checks));
       if (res.roof.length && !res.roofCorpseLog.length) fail.push('no roofCorpseLog entry for a roof kill');
       for (const [k, d] of res.roof.entries()) { const at1 = d.trace.find((x) => x[0] >= 1) || d.trace[0];
         if (!at1 || at1[1] == null || at1[1] > 0.3 || at1[1] < -0.3) fail.push('roof kill ' + k + ' (' + d.mode + ', roof ' + d.y0 + ' m): hips ' + (at1 && at1[1]) + ' m from the roof 1 s after the kill');
-        const gone = d.trace.find((x) => x[0] >= 1 && x[0] <= 25 && /* A21: 0-1 s is the death drop itself (pre-fall + 300 ms settle) */ (!x[2] || x[1] == null || x[1] < -0.35 || x[1] > 0.6)); if (gone) fail.push('roof kill ' + k + ': at ' + gone[0] + ' s body ' + (!gone[2] ? 'not shown' : 'at ' + gone[1] + ' m (sank / off the roof)')); }
+        const gone = d.trace.find((x) => x[0] >= 1 && x[0] <= 24.5 && /* A21: 0-1 s is the death drop itself (pre-fall + 300 ms settle) */ (!x[2] || x[1] == null || x[1] < -0.35 || x[1] > 0.6)); if (gone) fail.push('roof kill ' + k + ': at ' + gone[0] + ' s body ' + (!gone[2] ? 'not shown' : 'at ' + gone[1] + ' m (sank / off the roof)')); }
       if (!res.roof.length) fail.push('no rooftop fighter killed');
+      for (const [k, d] of res.roof.entries()) { const last = d.trace[d.trace.length - 1]; if (last && last[0] >= 26.5 && last[2]) fail.push('roof kill ' + k + ': body still shown at ' + last[0] + ' game-s (want removed at 25)'); }
     } else {
     res.dolls = await p.evaluate(async () => { const out = [], V = new THREE_V();
       function THREE_V() { return null; }

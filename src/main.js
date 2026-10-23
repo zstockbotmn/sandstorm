@@ -513,7 +513,7 @@ onLow(() => {
 });
 window.SS.gpu = rendererString(renderer.getContext());
 window.SS.THREE = THREE; window.SS.world = world; window.SS.cover = cover; // tests; A8: SS.cover was never set, so enemy cover-lip misses and the SWITCH COVER halves (input.js) never found the cover
-window.SS.camera = camera; // perf/debug probes (test/perf-bldg.js)
+window.SS.camera = camera; window.SS.scene = scene; // perf/debug probes (test/perf-bldg.js)
 window.SS.goUltra = (r) => { goLow(r || 'debug'); goUltra(r || 'debug'); }; // tests
 if ((softGL || isSoftwareRenderer(renderer.getContext())) && !EXPLICIT && !PICKED && !/[?&]start=high\b/.test(location.search)) goLow('software-gl'); // ?start=high (tests): act like a weak real GPU
 // Remember the auto-chosen tier across reloads (tester): a saved ultra-low starts as ultra-low.
