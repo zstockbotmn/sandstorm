@@ -238,3 +238,9 @@ A) ?door=1: room in ~25–40 m band; arm first post-W1 walk; wide fallback; SOUN
 B) No-yank anytime already IN COVER ducked (camping flush + climax); ?cxnade=1 suppresses flush until climax; soak grenade, cover -N + HP num flash.
 C) ?edoor=1 forces enemy doorway cover this run.
 Next: tester rescore A29; then set-piece variety → full release suite (PM).
+
+## A30 (App PM Oct 23 — DONE)
+DONE: tip TBD, build ss-22810b8d16, label 'internal preview A30', preview :8850. Tests PASS (logs/a30): doorway-stop Low (walkS 12.1, count 1, door:in, duck.front=0 frontShots=13); a30-force Low (door=1 leafOpen~2.89 roomLit+rim, aperture not leaf; cxnade climax grenade ducked yank=false; combined door+cxnade climax grenade while IN COVER · DOORWAY; campNade grenade-cover soak). Code: leaf parked clear of aperture (~166° on -z wall), free-side jamb stand, peek yaw into lit room, brighter roomLit+rim, door coverFacing down-street, cxnade synth contact / 3s due / skip set-piece defer / wider thrower. Protects Immersion/Fun; no GH Pages.
+A) ?door=1: open aperture + lit interior (not shut door face); veer→IN COVER · DOORWAY post-W1.
+B) ?cxnade=1: climax grenade fires deterministically; ducked soak / no yank; combined with door=1 still fires.
+Next: tester rescore A30.

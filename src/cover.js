@@ -138,9 +138,10 @@ export function createCover(scene, camera, world, input) {
     else { if (c.state !== 'in' && window.SS && !window.SS.firstCoverT) { window.SS.firstCoverT = performance.now(); window.SS.coverGraceUntil = performance.now() + COVER_GRACE_S * 1000; } c.state = 'in'; unstick('cover-in'); } // m1v: 1.5 s grace on first reaching cover (COVER_GRACE_S)
     if (c.reaim) reaim(dt);
     input.cover = c.state === 'in' && !input.scope; // duck unless scoping (pop out)
-    // 4e5b: doorway pop-out leans 0.35 m toward the street so the fight ahead is visible
+    // A30: ducked lean keeps a sliver of lit interior in frame; scope peeks further toward the street fight.
     if (c.kind === 'door' && c.door && c.state === 'in') {
-      const want = input.scope ? -(c.door.side || 1) * 0.35 : 0;
+      const side = c.door.side || 1;
+      const want = input.scope ? -side * 0.38 : -side * 0.12;
       c._doorLean = (c._doorLean || 0) + (want - (c._doorLean || 0)) * (1 - Math.exp(-8 * dt));
       camera.position.x = c.target.x + c._doorLean;
     } else c._doorLean = 0;
@@ -186,7 +187,9 @@ export function createCover(scene, camera, world, input) {
     c.kind = 'door';
     c.door = door;
     c._doorLean = 0;
-    c.target = new THREE.Vector3(door.x + door.side * 0.45, 0, door.jamb.max.z + PLAYER_R * 0.8);
+    // A30: stand on the free (+z) jamb — peek across the open aperture into the lit room (hinge/leaf is the other side).
+    const jz = door.jamb.min.z;
+    c.target = new THREE.Vector3(door.x + door.side * 0.45, 0, jz - PLAYER_R * 0.55);
     c.state = 'moving';
     input.cover = false;
     return true;

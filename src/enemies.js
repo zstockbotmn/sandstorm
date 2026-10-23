@@ -240,7 +240,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A24 (tester A23: W4 clear / last-enemy unreachable at box fps): ?w4end=1 or ?skip=w4end jumps straight to wave 4
   // with 1-2 enemies so the last-survivor break and AREA CLEAR payoff can be played/screenshotted. Debug/automation only.
   const W4END = (() => { try { return /[?&](?:w4end=1|skip=w4end)\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (_) { return false; } })();
-  // A28: ?cxnade=1 / ?grenadecx=1 — force W2+ climax onto the grenade path soon (~8 s after contact) for ~1 fps yank checks.
+  // A28/A30: ?cxnade=1 / ?grenadecx=1 — force W2+ climax grenade soon (~3 s after contact; synth contact; skip set-piece defer) for ~1 fps soak checks.
   const FORCE_CX_NADE = (() => { try { return /[?&](?:cxnade|grenadecx)=1\b/.test(location.search); } catch (_) { return false; } })();
   // A29: ?edoor=1 — force ≥1 enemy to use a room doorway as cover this run (Depth).
   const FORCE_EDOOR = (() => { try { return /[?&]edoor=1\b/.test(location.search); } catch (_) { return false; } })();
@@ -2181,6 +2181,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (why) { SSx.flankAborts = (SSx.flankAborts | 0) + 1; slog('enemy', 'flank aborted (' + why + ')'); const L = SSx.flankAbortLog || (SSx.flankAbortLog = []); L.push({ sim: +((SSx.simTime || 0)).toFixed(2), why, id: e.id, tell: hadTell }); if (L.length > 40) L.shift(); } }
   api.debugFlank = () => { lastFlankSim = -1e9; duckSinceSim = -1e9; flankTick(); return window.SS && window.SS.lastFlank; };
   function coverFacing(out) { const SSx = window.SS, c = camera.position, sb = SSx && SSx.cover && SSx.cover.surface; out.x = 0; out.z = -1;
+    // A30: doorway free-side jamb sits +z of the stand; surface-nearest facing would aim up-street and starve frontShots.
+    // Peek protects against the street fight: face down-street with a bias into the facade.
+    if (SSx && SSx.cover && SSx.cover.kind === 'door' && SSx.cover.door) {
+      const side = SSx.cover.door.side || 1;
+      out.x = side * 0.4; out.z = -1; const l = Math.hypot(out.x, out.z) || 1; out.x /= l; out.z /= l; return out;
+    }
     if (sb) { const qx = Math.max(sb.min.x, Math.min(sb.max.x, c.x)), qz = Math.max(sb.min.z, Math.min(sb.max.z, c.z)), l = Math.hypot(qx - c.x, qz - c.z); if (l > 0.05) { out.x = (qx - c.x) / l; out.z = (qz - c.z) / l; } }
     return out; }
   const _cf = { x: 0, z: -1 };
@@ -3039,7 +3045,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function startClimax(sim) {
     const SSx = window.SS, alive = list.filter((e) => e.alive && !e.dying), n = alive.length;
-    if (n < 2) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; cxPhase = 'idle'; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
+    if (n < (FORCE_CX_NADE ? 1 : 2)) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; cxPhase = 'idle'; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
     slog('enemy', 'climax start'); cxPhase = 'active'; cxStartSim = sim; cxEndSim = sim + 8 + Math.random() * 2; cxStamp(sim);
     const ground = alive.filter((e) => e.group.position.y < 0.5 && !(e.anchor && isElevated(e.anchor.type)) && !e._flankArr && !e._flankMove)
       .sort((a, b) => b.group.position.z - a.group.position.z);
@@ -3071,7 +3077,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (const o of alive) { if (sent.includes(o) || flankers.includes(o)) continue; o._suppressUntilSim = tier === 2 ? cxEndSim : sim + 8; o._climaxUntil = cxEndSim; } // A21: rest + rooftops suppress (A22: W4+ for the whole climax)
     // A25/A26: every climax (W2+) must include a grenade OR flanking pair inside the event — if no flankers, force a climax grenade.
     // A28: ?cxnade=1 always schedules the climax grenade (~1.2 s in).
-    cxNadeAt = (FORCE_CX_NADE || flankers.length === 0) ? sim + (FORCE_CX_NADE ? 1.2 : 2.5 + Math.random() * 1.5) : 0;
+    cxNadeAt = (FORCE_CX_NADE || flankers.length === 0) ? sim + (FORCE_CX_NADE ? 0.5 : 2.5 + Math.random() * 1.5) : 0; // A30: cxnade grenade ~0.5 s in
     lastStallSendSim = sim;
     slog('enemy', 'climax size: ' + sent.length + ' bound ~' + range + 'm, ' + flankers.length + ' flank, ' + (alive.length - sent.length - flankers.length) + ' suppress (tier ' + tier + ')');
     cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, ground: ground.length, keep, tier, bound: sent.length, range, flank: flankers.length, suppress: alive.length - sent.length - flankers.length, fallbackSim: null };
@@ -3171,28 +3177,36 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
     if (!waveActive) { resetClimax(); if (SSx) { SSx.climaxAt = null; SSx.lullUntil = null; } return; }
     if (cxWave === -1) { cxWave = Math.max(burstIndex, waveClears + 1); cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxRec = null; }
+    // A30 ?cxnade=1: if W2+ has been live ~4 s with no shot contact (doorway duck / 1 fps), synthesize contact so climax is not stuck behind "cxnade wait climax".
+    if (FORCE_CX_NADE && mwContactSim == null && cxWave >= 2 && waveActive) {
+      const age = sim - (stallWaveStart || 0);
+      if (age >= 4) { mwContactSim = sim - 3; const L = SSx.waveContactLog || (SSx.waveContactLog = []); L.push({ wave: cxWave, sim: +sim.toFixed(1), forced: true }); if (L.length > 30) L.shift(); }
+    }
     if (mwContactSim != null && !cxDue && cxWave >= 2) {
-      // A28 force: due ~8 s after contact so tester can reach a climax grenade at ~1 fps without a 40-60 s wait.
-      const T = FORCE_CX_NADE ? 8 : Math.max(40, Math.min(60, 55 - 3 * (cxWave - 2) - 10 * pressureP()));
+      // A28/A30 force: due ~3 s after contact (was 8) so doorway+cxnade combined still reaches climax grenade at ~1 fps.
+      const T = FORCE_CX_NADE ? 3 : Math.max(40, Math.min(60, 55 - 3 * (cxWave - 2) - 10 * pressureP()));
       cxDue = mwContactSim + T + (FORCE_CX_NADE ? 0 : (Math.random() * 6 - 3));
-    } // A21 / A28
+    } // A21 / A28 / A30
     SSx.climaxState = { wave: cxWave, phase: cxPhase, done: cxDone, due: cxDue ? +cxDue.toFixed(1) : null }; // A21: test hook
     if (cxDone || cxWave < 2) return;
     if (cxPhase === 'tell') { if (sim >= cxStartSim) startClimax(sim); return; }
     if (cxPhase === 'active') { if (cxNadeAt && sim >= cxNadeAt) { cxNadeAt = 0; // A25: any climax with no flankers -> grenade (ring + 'Grenade!') inside the climax
         // A23 (tester A22 pass B: no climax grenade in W4): any living fighter 6-40 m throws (settled ones first, then movers);
         // it is the climax's own grenade - never gated by the director's per-wave / 'grenade last wave' rules. Retries each tick.
-        const cand = list.filter((e) => e.alive && !e.dying).map((e) => [e, e.group.position.distanceTo(camera.position)]).filter((x) => x[1] >= 6 && x[1] <= 40)
+        let cand = list.filter((e) => e.alive && !e.dying).map((e) => [e, e.group.position.distanceTo(camera.position)]).filter((x) => x[1] >= (FORCE_CX_NADE ? 3 : 6) && x[1] <= (FORCE_CX_NADE ? 55 : 40))
           .sort((a, b) => ((a[0].phase === 'relocate') - (b[0].phase === 'relocate')) || Math.abs(a[1] - 14) - Math.abs(b[1] - 14));
+        // A30 ?cxnade=1: if nobody in band, any living fighter (doorway hold often leaves only far/close units).
+        if (!cand.length && FORCE_CX_NADE) cand = list.filter((e) => e.alive && !e.dying).map((e) => [e, e.group.position.distanceTo(camera.position)]).sort((a, b) => a[1] - b[1]);
         const th = cand[0];
-        if (th) { throwGrenade(th[0]); slog('enemy', 'climax grenade ' + Math.round(th[1]) + 'm'); if (cxRec) cxRec.nade = +sim.toFixed(1); } else { cxNadeAt = sim + 0.5; if (sim > cxEndSim - 1) { cxNadeAt = 0; slog('enemy', 'climax grenade: no thrower'); } } }
+        if (th) { throwGrenade(th[0]); slog('enemy', 'climax grenade ' + Math.round(th[1]) + 'm'); if (cxRec) cxRec.nade = +sim.toFixed(1); } else { cxNadeAt = sim + 0.4; if (sim > cxEndSim - 1) { cxNadeAt = 0; slog('enemy', 'climax grenade: no thrower'); } } }
       if (sim >= cxEndSim) endClimax(sim); return; }
     if (cxPhase !== 'idle' || !cxDue || sim < cxDue) return;
     if (spInFlight(SSx)) return; // wait out a live RPG / truck / grenade
-    const block = spBeatBlock(SSx, sim, cxWave); if (block && sim < cxDue + 15) return; // give up waiting 15 s later if nothing is mid-flight
+    // A30 ?cxnade=1: do not defer tell on set-piece spacing (RPG during doorway hold was starving climax); still wait for in-flight above.
+    if (!FORCE_CX_NADE) { const block = spBeatBlock(SSx, sim, cxWave); if (block && sim < cxDue + 15) return; }
     const n = list.filter((e) => e.alive && !e.dying).length;
-    if (n < 2) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
-    squadCall("They're rushing us!"); try { const hb = SSx.hud; if (hb && hb.rushBanner) hb.rushBanner("They're rushing us!", 2500); } catch (_) {} slog('enemy', 'climax tell'); cxPhase = 'tell'; cxTellSim = sim; cxStartSim = sim + 1.5; cxStamp(sim);
+    if (n < (FORCE_CX_NADE ? 1 : 2)) { slog('enemy', 'climax skipped (' + n + ' alive)'); cxDone = true; SSx.climaxSkips = (SSx.climaxSkips || []).concat([{ wave: cxWave, sim: +sim.toFixed(1), n }]); return; }
+    squadCall("They're rushing us!"); try { const hb = SSx.hud; if (hb && hb.rushBanner) hb.rushBanner("They're rushing us!", 2500); } catch (_) {} slog('enemy', 'climax tell'); cxPhase = 'tell'; cxTellSim = sim; cxStartSim = sim + (FORCE_CX_NADE ? 0.6 : 1.5); cxStamp(sim);
   }
 
   // Last ground fighter who has camped one cover: another wall/barrel/car/door 6-20 m away, 12-30 m ahead, clear shot.

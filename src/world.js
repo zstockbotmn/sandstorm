@@ -854,9 +854,11 @@ export function createWorld(scene, seed) {
     addBox(seg, art ? artRoomMat(cell, 'side') : roomMat(0), X(2.035), RH / 2, zc - W / 2 + 0.02, id, RH - 0.04, 0.02, { ...nc, uvTile: 1.6 });
     addBox(seg, art ? artRoomMat(cell, 'side') : roomMat(0), X(2.035), RH / 2, zc + W / 2 - 0.02, id, RH - 0.04, 0.02, { ...nc, uvTile: 1.6 });
     addBox(seg, art ? artRoomMat(cell, 'back') : roomMat(2), X(3.78), RH / 2, zc, 0.02, RH - 0.04, iw, { ...nc, uvTile: 1.6 });
-    const A = (70 + seg._wrng() * 30) * Math.PI / 180;
-    const leaf = addBox(seg, roomWood(), X(0.2) + side * 0.575 * Math.sin(A), 1.075, zc - 0.6 + 0.575 * Math.cos(A), 0.06, 2.15, 1.15, { collide: false, uvTile: 0.9 });
-    leaf.rotation.y = side * A;
+    // A30: leaf flat against the -z interior side wall — fully clear of the 1.2×2.2 aperture so IN COVER peeks into the lit room (not a shut-door face).
+    const A = Math.PI * 0.92; // ~166° parked
+    const leaf = addBox(seg, roomWood(), X(0.55), 1.075, zc - W / 2 + 0.08, 1.15, 2.15, 0.06, { collide: false, uvTile: 0.9 });
+    leaf.rotation.y = side * (Math.PI / 2);
+    leaf.name = 'doorLeaf'; leaf.userData.doorOpen = A;
     // A28: Ultra-low keeps the lit shell + door + cover point, skips table/crates/rubble/rug (cheaper than disabling rooms).
     const cS = seg._wrng() < 0.5 ? -1 : 1;
     if (!ULTRA) {
@@ -879,19 +881,24 @@ export function createWorld(scene, seed) {
       pos: new THREE.Vector3(X(1.0), 1.2, zc + 0.9), type: 'room',
       door: {
         x: facadeX, z: zc, side, w: 1.2,
+        // A30: cover jamb = +z free edge (opposite the hinged leaf) so IN COVER peeks across the open aperture into the lit room.
         jamb: new THREE.Box3(
-          new THREE.Vector3(Math.min(X(0), X(0.3)), 0, zc - W / 2),
-          new THREE.Vector3(Math.max(X(0), X(0.3)), RH, zc - 0.6)),
+          new THREE.Vector3(Math.min(X(0), X(0.3)), 0, zc + 0.6),
+          new THREE.Vector3(Math.max(X(0), X(0.3)), RH, zc + W / 2)),
+        leafOpen: A,
+        open: true,
       },
     });
-    // A29: warm interior light so the tester sees a lit room at the doorway (cheap; one per enterable room).
+    // A30: brighter warm fill + doorway rim so the open hole reads as a lit interior (not a dark shut face).
     {
-      const pl = new THREE.PointLight(0xffd6a0, FORCE_DOOR ? 1.35 : 0.85, 7.5, 2);
+      const pl = new THREE.PointLight(0xffd6a0, FORCE_DOOR ? 2.1 : 1.35, 9, 2);
       pl.position.set(X(2.0), 2.4, zc); pl.name = 'roomLit'; seg.group.add(pl);
+      const rim = new THREE.PointLight(0xffe2b0, FORCE_DOOR ? 1.1 : 0.7, 4.5, 2);
+      rim.position.set(X(0.55), 1.6, zc); rim.name = 'roomLitRim'; seg.group.add(rim);
     }
     if (typeof window !== 'undefined' && window.SS) window.SS.bld4rooms = (window.SS.bld4rooms | 0) + 1;
     if (art) {
-      const x0 = facadeX - side * 0.08, x1 = facadeX + side * 3.85;
+      const x0 = facadeX - side * 0.28, x1 = facadeX + side * 3.85; // A30: clip further street-side so art facade door mesh is discarded
       ROOMS.set(seg.id, { min: new THREE.Vector3(Math.min(x0, x1), -0.1, zc - W / 2 + 0.01), max: new THREE.Vector3(Math.max(x0, x1), RH - 0.01, zc + W / 2 - 0.01) });
       syncRoomClip();
       let removed = 0;

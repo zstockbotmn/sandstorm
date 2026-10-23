@@ -3,6 +3,7 @@ import * as THREE from 'three';
 // Once per run (A28: default on; ?bld=0 or ?rooms=0 off) the walk curves into one doorway and holds for the next wave.
 // Control points are fixed; inLen/outLen are the precomputed sample lengths (no runtime tuning).
 // ?door=1 / ?doorstop=1: A29 forces a room in the 25–40 m band + arms on first post-W1 walk (wide fallback); SOUND logs door arm / veer / held.
+// A30: free-side stand + peek yaw into lit open aperture (not shut door face).
 const SPEED = 3;
 const BLD4 = !/[?&]bld=0\b/.test(location.search);
 const ROOMS0 = /[?&]rooms=0\b/.test(location.search);
@@ -64,7 +65,8 @@ function poseAt(path, dist) {
 }
 
 function standOf(door) {
-  return { x: door.x + door.side * 0.45, z: door.z - 0.6 + 0.45 };
+  // A30: free (+z) jamb — opposite hinged leaf — so the open lit aperture sits in the cover-side FOV.
+  return { x: door.x + door.side * 0.45, z: door.z + 0.6 - 0.35 };
 }
 
 function xzDist(x, z, b) {
@@ -230,7 +232,8 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if ((performance.now() - (input.aimMovedT || 0)) <= 400) return;
     const pose = poseAt(path, Math.min(s, path.len));
     const street = path.kind === 'in' && path.len > 0 && s >= path.len * 0.8;
-    const target = street ? Math.atan2(-door.side * 0.5, 1) : Math.atan2(pose.tx, -pose.tz);
+    // A30: late veer / hold peeks down-street WITH a bias into the room so the lit open interior is visible (was -side = away from room → shut-door face).
+    const target = street ? Math.atan2((door.side || 1) * 0.55, 1) : Math.atan2(pose.tx, -pose.tz);
     const d = Math.atan2(Math.sin(target - input.yaw), Math.cos(target - input.yaw));
     input.yaw += d * (1 - Math.exp(-3 * dt));
   }
@@ -260,6 +263,10 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if (!rec.duck) rec.duck = { front: 0, flank: 0, frontShots: 0 };
     if (enemies.waveNow) enemies.waveNow();
     if (cover && cover.takeDoor) cover.takeDoor(path.door);
+    // A30: snap peek yaw so the open lit room is in frame on arrive (tester A29: faced a shut door).
+    if (path.door && (performance.now() - (input.aimMovedT || 0)) > 400) {
+      input.yaw = Math.atan2((path.door.side || 1) * 0.55, 1);
+    }
     dlog('IN COVER · DOORWAY', 'sim ' + (S.simTime || 0).toFixed(1));
   }
 
