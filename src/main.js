@@ -556,6 +556,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
   // A22 (tester A21 pass B: K at 54 s left no roof body, but K takes the NEAREST fighter, maybe not the roof one): O / ?roofkill=1
   // kills the nearest ROOF fighter through the same takeHit -> fall path as a real shot; ?roofkill=1 repeats every ~20 s.
   // R is reload, so the key is O. Result: SS.roofCorpseLog / log 'roof corpse 1.5s: on roof'.
+  window.SS.debugW4End = () => { const e = window.SS.enemies; return e && e.debugW4End ? e.debugW4End() : null; }; // A24
   window.SS.debugKillRoof = () => { const e = window.SS.debugKillNearest((x) => x.group.position.y > 2); try { audio.log('debug', e ? 'roofkill: ' + e.id + ' at y' + e.group.position.y.toFixed(1) : 'roofkill: no roof enemy'); } catch (_) {} window.SS.roofKills = (window.SS.roofKills | 0) + (e ? 1 : 0); return e; };
   if (/[?&]roofkill=1\b/.test(location.search)) { let rkNext = 0; setInterval(() => { const SSm = window.SS; if (!SSm.running) return; if ((SSm.simTime || 0) >= rkNext && SSm.debugKillRoof()) rkNext = (SSm.simTime || 0) + 20; }, 500); }
   // A2 tester: legs hidden behind a cart could not be hit, so the limp/clutch couldn't be checked. Forced, non-lethal hits on the

@@ -233,10 +233,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Tunable: ?contact=<s> (debug/test builds only) overrides FIRST_CONTACT_S.
   // Debug-only (?debug or automation): ?enemies=1 -> every wave is a single fighter (tester: reach the last-enemy case at 0.7 fps).
   const WAVE_ONE = (() => { try { return /[?&]enemies=1\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (_) { return false; } })();
+  // A24 (tester A23: W4 clear / last-enemy unreachable at box fps): ?w4end=1 or ?skip=w4end jumps straight to wave 4
+  // with 1-2 enemies so the last-survivor break and AREA CLEAR payoff can be played/screenshotted. Debug/automation only.
+  const W4END = (() => { try { return /[?&](?:w4end=1|skip=w4end)\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (_) { return false; } })();
   const FIRST_CONTACT_S = (() => { try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) return +m[1]; } catch (_) {} return 11; })(); // App PM (bundle): the opening walk was 24 s, Zack found it long
   const RADIO_WARN_S = 5, APPROACH_S = 3; // build-up from ~3 s, radio at ~6 s (11 - 5); the radio line still holds >= 6 s real / 5 frames, so at low fps it may overlap contact
   let quietRunT = 0, quietRealAt = 0, radioWarned = false;
-  api.FIRST_CONTACT_S = FIRST_CONTACT_S; api.RADIO_WARN_S = RADIO_WARN_S;
+  api.FIRST_CONTACT_S = FIRST_CONTACT_S; api.RADIO_WARN_S = RADIO_WARN_S; api.W4END = W4END;
   let waveSpawned = 0, waveTotal = 0; // hard cap: every wave has a fixed total, truck included
   let burstCap = 3, burstSpawned = 0, waveActive = false, roofWave = false;
   let spawnCd = 1.2;
@@ -251,6 +254,23 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const x = (waveClears - 2) / 8;
     return x < 0 ? 0 : x > 1 ? 1 : x;
   }
+  let w4endArmed = false;
+  function armW4End(why) {
+    // Jump to the verge of wave 4: 3 clears behind us, opening quiet skipped, next burst is W4 with 2 fighters (no truck).
+    waveClears = 3; if (window.SS) window.SS.waveClears = 3;
+    burstIndex = 3; quietRunT = Math.max(quietRunT, FIRST_CONTACT_S + 1); radioWarned = true;
+    breatherTo = (window.SS && window.SS.distance != null) ? window.SS.distance : 0;
+    calmUntil = -1e9; payoffUntil = 0; phase = 'quiet'; phaseT = 0; waveActive = false; waveOpen = false;
+    burstCap = 2; burstSpawned = 0; waveSpawned = 0; waveTotal = 2; truckPending = 0;
+    w4endArmed = true;
+    try { killAll(); } catch (_) {}
+    if (window.SS) {
+      window.SS.w4end = { armed: true, why: why || 'flag', sim: +((window.SS.simTime) || 0).toFixed(1) };
+      try { if (window.SS.audio) window.SS.audio.log('debug', 'w4end armed (' + (why || 'flag') + ')'); } catch (_) {}
+    }
+    return window.SS && window.SS.w4end;
+  }
+  api.debugW4End = () => armW4End('harness');
   let calmUntil = -1e9; // A11: game-time floor for the post-wave calm
   let breatherTo = 6;          // no spawns until the player has walked this far (breather after WAVE CLEARED)
   let prevHold = false;       // edge-detect walk resume -> WAVE CLEARED
@@ -3479,6 +3499,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function update(dt) {
+    if (W4END && window.SS && window.SS.running && !w4endArmed) armW4End('url');
     if (window.SS) window.SS.pressureP = +pressureP().toFixed(2);
     if (HITS2) { try { if (window.SS) window.SS.hitZones = hitZones; } catch (_) {} }
     updateGrenades(dt); updateTruck(dt); if (REPOS) stallPush(); midWaveBeat(); waveClimax(); try { lastStand(); } catch (err) { reportErr('lastStand', err); }
@@ -3515,9 +3536,12 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const pW = pressureP();
         burstCap = burstIndex <= 2 ? 2 : burstIndex <= 4 ? 3 : ((pW >= 0.5 && !truckWave) ? /* 5e: bigger waves later, never on a reinforcement-truck wave (the set-piece truck is once, at wave 3, p = 0) */ (Math.random() < 0.5 + 0.4 * pW ? 4 : 3) : (Math.random() < 0.5 ? 4 : 3));
         if (WAVE_ONE) burstCap = 1;
+        // A24 w4end: wave 4 with 1-2 fighters, never the every-4th truck
+        if (w4endArmed && burstIndex === 4) { burstCap = 2; }
+        const truckGo = truckWave && !(w4endArmed && burstIndex === 4);
         waveOpen = true; waveSpawned = 0;
-        waveTotal = burstCap + (truckWave ? 2 : 0); if (window.SS) window.SS.waveTotal = waveTotal;
-        if (truckWave) startTruck();
+        waveTotal = burstCap + (truckGo ? 2 : 0); if (window.SS) window.SS.waveTotal = waveTotal;
+        if (truckGo) startTruck();
         burstSpawned = 0; roofWave = Math.random() < 0.5;
         phaseT = 8 + Math.random() * 6;
         spawnCd = 0.25;
@@ -3789,7 +3813,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     burstCap = 3; burstSpawned = 0; waveActive = false; runSpawns = 0; firstKill = false;
     spawnCd = 1.2;
     stallT = standT = graceT = runT = pressure = 0; lastProg = 0; noProgT = 0; anySeen = false;
-    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; }
+    mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; } w4endArmed = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
