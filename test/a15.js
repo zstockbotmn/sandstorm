@@ -112,8 +112,8 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       for (const a of res.assaults || []) if (a.sim > l.start + 0.05 && a.sim < l.end - 0.05) fail.push('W' + l.wave + ' assault at ' + a.sim + ' inside the lull ' + l.start + '-' + l.end);
       for (const a of (res.push || []).filter((x) => !/^(fallback|flees)/.test(x.kind || ''))) if (a.sim > l.start + 0.05 && a.sim < l.end - 0.05) fail.push('W' + l.wave + ' stall push at ' + a.sim + ' inside the lull ' + l.start + '-' + l.end);
       for (const t of res.tells || []) if (t.tellSim > l.start + 0.05 && t.tellSim < l.end - 0.05) fail.push('W' + l.wave + ' flank tell at ' + t.tellSim + ' inside the lull'); }
-    // A23: one AREA CLEAR payoff per wave clear
-    if ((res.areaClear || []).length < Math.min(res.clearCount | 0, 30)) fail.push((res.areaClear || []).length + ' AREA CLEAR beats for ' + res.clearCount + ' clears');
+    // A23: one AREA CLEAR payoff per wave clear (w4end jumps clearCount to 3 without logging prior beats)
+    if (!(mode === 'w4end' || process.env.A15_W4END) && (res.areaClear || []).length < Math.min(res.clearCount | 0, 30)) fail.push((res.areaClear || []).length + ' AREA CLEAR beats for ' + res.clearCount + ' clears');
     for (const c of res.areaClear || []) if (c.heldMs != null && c.heldMs < 3500) fail.push('AREA CLEAR W' + c.wave + ' heldMs ' + c.heldMs + ' (want >= 3500)');
     res.clearLines = (res.areaClear || []).map((x) => x.line);
     // A24: ?w4end=1 / harness - land on W4 with 1-2 enemies, then AREA CLEAR + a last-survivor break
@@ -146,7 +146,8 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
     if (res.climax.length) for (const k of ['climax tell', 'climax start', 'climax end']) if (!res.cxLines.some((x) => x.d === k)) fail.push("no '" + k + "' line in the sound log");
     if (res.climax.some((c) => c.fallbackSim != null) && !res.cxLines.some((x) => /^fallback/.test(x.d))) fail.push("no 'fallback' line in the sound log");
     // A18: from wave 2 on, one mid-wave beat 18-28 s after contact (waves that last that long); no 'stall push none'
-    for (const c of res.contacts || []) { if (c.wave < 2) continue; const w = res.waves.find((x) => x.n === c.wave), nx = res.waves.find((x) => x.n === c.wave + 1);
+    // A24 w4end: abbreviated W4 skip — mid-wave / set-piece spacing is for full waves
+    if (!(mode === 'w4end' || process.env.A15_W4END)) for (const c of res.contacts || []) { if (c.wave < 2) continue; const w = res.waves.find((x) => x.n === c.wave), nx = res.waves.find((x) => x.n === c.wave + 1);
       const end = (res.waveEnds || []).find((t) => t > c.sim) || (nx && nx.start) || res.sim; const mb = (res.mid || []).filter((m) => m.wave === c.wave);
       if (end - c.sim < 28.5) { if (mb.length > 1) fail.push('wave ' + c.wave + ': ' + mb.length + ' mid-wave beats'); continue; }
       if (mb.length !== 1) fail.push('wave ' + c.wave + ': ' + mb.length + ' mid-wave beats (want 1; contact ' + c.sim + ', end ' + end + ')');
