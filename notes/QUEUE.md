@@ -198,3 +198,11 @@ Then: window-table tuning, 4e1-4e4, 4e5.
 - A24 scores (pA24, ~1:08 AM Oct 23): Immersion 4 · Fun 4 · Graphics 4 · Ease 4 · Depth 3 (held). Cover/quiet/AREA CLEAR/last-stand timing PASS; climax grenade|flank in-event PARTIAL; camera unstick NOT OBSERVED; w4end grows via mid-wave push; first load stale SW until site data cleared.
 - Tester ranked: (1) climax always grenade|flank in-event (2) fairer last-stand shootable (3) w4end suppress mid-wave (4) bust SW on preview deploy (5) camera unstick debug hook.
 - WAITING App PM: thin A25 for 1–4 vs resume winDbg + step4-runs + Grok 4e1–4e5 / doorway-stop. Dev rec: A25 first (depth still needs interiors track later).
+
+## A25 (App PM Oct 23 ~1:09 AM ET — IN PROGRESS)
+Thin polish, no new systems. After scores hold 4+ → winDbg → step-4 rooms / doorway stop (depth).
+1. Every climax always grenade OR flanking pair (in-event; no bound+suppress-only)
+2. Fairer last-stand hit target; keep ~5 s exposed window; kill-clear common
+3. w4end: suppress mid-wave reinforcements (stay ~1–2)
+4. Bust SW cache on every preview deploy
+5. Optional cheap camera-unstick debug hook only if free
