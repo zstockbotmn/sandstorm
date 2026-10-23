@@ -13,9 +13,16 @@ export function createPlayer(camera, input, hud) {
 
   player.damage = function damage(amount, fromPosition, source) {
     if (!player.alive) return;
-    const dmg = Math.max(0, amount || 0);
+    let dmg = Math.max(0, amount || 0);
     const hp0 = player.health;
+    // A26: during an active climax, never take HP below 35 if it was already >= 35 (rifle / grenade / RPG / truck / any source).
+    const cx = window.SS && window.SS.climaxState;
+    if (cx && cx.phase === 'active' && hp0 >= 35) {
+      const cap = Math.max(0, hp0 - 35);
+      if (dmg > cap) { dmg = cap; window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; }
+    }
     player.health = Math.max(0, player.health - dmg); if (player.health < 1) player.health = 0; // m1y: < 1 hp is dead (an 'empty' bar that stayed alive)
+    if (cx && cx.phase === 'active' && hp0 >= 35 && player.health < 35) player.health = 35; // re-clamp after apply
     if (dmg >= 20 && window.SS && window.SS.scoreSys && window.SS.scoreSys.breakStreak) window.SS.scoreSys.breakStreak();
     if (window.SS) window.SS.health = player.health;
     if (hud) {

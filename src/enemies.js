@@ -2306,7 +2306,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (hit && !flankHit && !playerSees(enemy)) { hit = false; enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; }
     const dmgAmt = dmgAmt0, dmgCost = lowHp ? Math.min(dmgAmt, Math.max(1, player.health)) : dmgAmt;
     if (dmgBudget(nowS, simS) < dmgCost - 1e-6 && hit) { hit = false; if (window.SS) window.SS.dmgCapBlocked = (window.SS.dmgCapBlocked | 0) + 1; } // m1w: incoming damage-per-second cap
-    if (hit && cxPhase === 'active' && player.health >= 35 && player.health - dmgAmt < 35) { hit = false; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; } // A21: a climax never takes HP below 35 (unless already below)
+    // A26: clamp climax rifle dmg to the 35 floor (was cancel-to-miss; cancel + grenade/other could still dip below). player.damage also clamps.
+    let dmgClamped = dmgAmt;
+    if (hit && cxPhase === 'active' && player.health >= 35) {
+      const cap = Math.max(0, player.health - 35);
+      if (dmgClamped > cap) { dmgClamped = cap; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; }
+      if (!(dmgClamped > 0)) hit = false;
+    }
     if (flankHit && !hit) enemy._flankBlock = 'blocked (spacing / damage cap)';
     // A17 (tester A16: FLANKED 150.3 -> a hit 0.8 s later): a fighter with a FLANKED tell younger than 1.5 s lands nothing at all
     // A19 (tester A18: FLANKED 149.9 -> a '(rifle)' hit 1.3 s later -> 'flank aborted' 154.5): the grenade at 149.7 moved the
@@ -2354,7 +2360,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       enemy.rounds = 0;
     }
     if (hit) {
-      const amount = dmgAmt; // m1v: softer first wave (opening only); cover softening (x0.6) included
+      const amount = dmgClamped; // A26: climax-clamped; m1v softer first wave / cover x0.6 already in dmgAmt
       // final gate AT the moment damage lands: the shooter must be visibly on screen now (nothing queued from earlier frames)
       if (!flankHit && !playerSees(enemy)) { enemy.blindHitsBlocked = (enemy.blindHitsBlocked | 0) + 1; if (window.SS) window.SS.blindHitsBlocked = (window.SS.blindHitsBlocked | 0) + 1; return; }
       if (flankHit && enemy._flankRec && enemy._flankRec.firstHitSim == null) enemy._flankRec.firstHitSim = +(simS).toFixed(2);
@@ -3517,8 +3523,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const cv = window.SS && window.SS.cover, at = (cv && cv.state === 'moving' && cv.target) ? cv.target : camera.position;
         const d = Math.hypot(n.m.position.x - at.x, n.m.position.z - at.z), hp0 = player.health;
         let dmg = d < 3 ? Math.max(0, Math.min(34 * (1 - d / 3.2), 30, hp0 - 5)) : 0;
-        // A26: climax 35 floor applies to grenade too when we keep the player exposed (no Moving-cover yank)
-        if (dmg > 0 && cxPhase === 'active' && hp0 >= 35 && hp0 - dmg < 35) { dmg = hp0 - 35; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; }
+        // A26: climax 35 floor — clamp grenade (exposed stay); player.damage also re-clamps all sources
+        if (dmg > 0 && cxPhase === 'active' && hp0 >= 35) { const cap = Math.max(0, hp0 - 35); if (dmg > cap) { dmg = cap; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; } }
         if (dmg > 0) player.damage(dmg, n.m.position, 'grenade');
         if (window.SS) window.SS.lastGrenade = { d: +d.toFixed(2), dmg: +dmg.toFixed(1), hpBefore: +hp0.toFixed(1), escaped: d >= 3, moving: !!(cv && cv.state === 'moving') };
         if (window.SS && window.SS.fx) window.SS.fx.blast(n.m.position);
