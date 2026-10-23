@@ -33,6 +33,10 @@ const _supRc = new THREE.Raycaster(), _supD = new THREE.Vector3(), _supN = new T
 const _fwd = new THREE.Vector3();
 const _wA = new THREE.Vector3();
 const _wB = new THREE.Vector3();
+// A28: grenade cover soak (RPG-cover parity in setpiece.js)
+const _gcHead = new THREE.Vector3(), _gcDir = new THREE.Vector3(), _gcHp = new THREE.Vector3();
+const _gcFwdN = new THREE.Vector3(0, 0.3, -1).normalize(), _gcRay = new THREE.Ray(), _gcBox = new THREE.Box3();
+const _gcTmp = new THREE.Vector3(), _gcUp = new THREE.Vector3(0, 1, 0);
 
 const ENEMY_SCALE = 1.2; // ~20% larger; adult silhouette ~1.85–2.1 m
 const HB_TORSO_W = 1.12, HB_HEAD = 1.2, HB_Q_LIMB = 0.65, HB_Q_TORSO = 0.65, HB_Q_HEAD = 0.75; // fit percentiles: below the max so hip/shoulder vertices skinned to limb bones do not inflate the boxes (aim-reg: 92% silhouette cover, <= 36% spill) // m1w item 6: hit volumes fitted to the visible skinned body (test/aim-reg.js coverage)
@@ -236,6 +240,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // A24 (tester A23: W4 clear / last-enemy unreachable at box fps): ?w4end=1 or ?skip=w4end jumps straight to wave 4
   // with 1-2 enemies so the last-survivor break and AREA CLEAR payoff can be played/screenshotted. Debug/automation only.
   const W4END = (() => { try { return /[?&](?:w4end=1|skip=w4end)\b/.test(location.search) && (navigator.webdriver === true || /[?&]debug\b/.test(location.search)); } catch (_) { return false; } })();
+  // A28: ?cxnade=1 / ?grenadecx=1 — force W2+ climax onto the grenade path soon (~8 s after contact) for ~1 fps yank checks.
+  const FORCE_CX_NADE = (() => { try { return /[?&](?:cxnade|grenadecx)=1\b/.test(location.search); } catch (_) { return false; } })();
   const FIRST_CONTACT_S = (() => { try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) return +m[1]; } catch (_) {} return 11; })(); // App PM (bundle): the opening walk was 24 s, Zack found it long
   const RADIO_WARN_S = 5, APPROACH_S = 3; // build-up from ~3 s, radio at ~6 s (11 - 5); the radio line still holds >= 6 s real / 5 frames, so at low fps it may overlap contact
   let quietRunT = 0, quietRealAt = 0, radioWarned = false;
@@ -2497,9 +2503,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     if (occupiedBy(pick.pos, null)) return null;
     // 4e5c: at most one fighter per wave may take another room's doorway (not the player's door)
-    const bld4 = typeof location !== 'undefined' && /[?&]bld=4/.test(location.search);
+    // A28: doorway enemy cover follows release-default rooms (not ?bld=4 / Low-only); stays on ultra-low.
+    const bld4 = typeof location === 'undefined' || !/[?&]bld=0\b/.test(location.search);
     const roomsOff = typeof location !== 'undefined' && /[?&]rooms=0\b/.test(location.search);
-    if (bld4 && !roomsOff && qName() !== 'ultra-low' && !roofOnly && roll !== 'flanker' && Math.random() < 0.35) {
+    if (bld4 && !roomsOff && !roofOnly && roll !== 'flanker' && Math.random() < 0.35) {
       const liveDoor = list.some((e) => e.alive && e.anchor && e.anchor.type === 'room' && e.anchor.door);
       if (!liveDoor) {
         const playerDoorZ = (window.SS && window.SS.doorStop && window.SS.doorStop.room) ? window.SS.doorStop.room[1] : null;
@@ -3034,7 +3041,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // plus a flanking pair, heavier suppression and a bigger damage budget / exposed hit floor (HP floor 35 always holds).
     const pP = pressureP(), tier = cxWave >= 4 || (cxWave === 3 && pP > 0.6) ? 2 : cxWave === 3 ? 1 : 0; cxTier = tier;
     // A26: if the previous climax used a grenade, prefer a flanking pair this time (when fighters allow) so it is not grenade-only forever.
-    const preferFlank = !!cxPrevHadNade && flankHitsWave < FLANK_CAP_WAVE && ground.length >= 2;
+    // A28: ?cxnade=1 always takes the grenade path (no flank mix).
+    const preferFlank = !FORCE_CX_NADE && !!cxPrevHadNade && flankHitsWave < FLANK_CAP_WAVE && ground.length >= 2;
     const want = tier === 2 ? 3 + ((ground.length >= 5 || Math.random() < 0.5 + 0.4 * pP) ? 1 : 0) : tier === 1 ? 3 : 2;
     const keep = alive.some((e) => !ground.includes(e)) ? 0 : 1; // someone has to lay fire: a roof shooter, else one ground fighter
     // Bound first (keeps W4 size assert); when mixing, reserve spare ground for flankers without dropping below the tier floor.
@@ -3045,7 +3053,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     for (const e of ground) { if (k >= nBound) break; const c = climaxBoundSpot(e, range + (Math.random() * 2 - 1), sent); if (!c) continue;
       stallSend(e, c, 'assault', camera.position.z - e.group.position.z); e._suppressUntilSim = -1; e._suppressOnArrive = 8; e._assault = true; e._climaxUntil = cxEndSim; e._cxTo = c.pos; sent.push(e); k++; }
     const flankers = [];
-    const tryFlank = (preferFlank || tier === 2) && flankHitsWave < FLANK_CAP_WAVE;
+    const tryFlank = !FORCE_CX_NADE && (preferFlank || tier === 2) && flankHitsWave < FLANK_CAP_WAVE;
     if (tryFlank) for (const e of ground) { if (flankers.length >= 2) break; if (sent.includes(e)) continue;
       // keep one shooter laying fire when every alive fighter is ground; a roof already covers keep===0
       if (keep > 0 && alive.length - sent.length - flankers.length - 1 < 1) break;
@@ -3055,7 +3063,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (flankers.length) { lastFlankSim = sim; SSx.flankMoves = (SSx.flankMoves | 0) + flankers.length; slog('enemy', 'climax flank pair (' + flankers.length + ')' + (preferFlank ? ' (mix)' : '')); }
     for (const o of alive) { if (sent.includes(o) || flankers.includes(o)) continue; o._suppressUntilSim = tier === 2 ? cxEndSim : sim + 8; o._climaxUntil = cxEndSim; } // A21: rest + rooftops suppress (A22: W4+ for the whole climax)
     // A25/A26: every climax (W2+) must include a grenade OR flanking pair inside the event — if no flankers, force a climax grenade.
-    cxNadeAt = flankers.length === 0 ? sim + 2.5 + Math.random() * 1.5 : 0;
+    // A28: ?cxnade=1 always schedules the climax grenade (~1.2 s in).
+    cxNadeAt = (FORCE_CX_NADE || flankers.length === 0) ? sim + (FORCE_CX_NADE ? 1.2 : 2.5 + Math.random() * 1.5) : 0;
     lastStallSendSim = sim;
     slog('enemy', 'climax size: ' + sent.length + ' bound ~' + range + 'm, ' + flankers.length + ' flank, ' + (alive.length - sent.length - flankers.length) + ' suppress (tier ' + tier + ')');
     cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, ground: ground.length, keep, tier, bound: sent.length, range, flank: flankers.length, suppress: alive.length - sent.length - flankers.length, fallbackSim: null };
@@ -3155,7 +3164,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const SSx = window.SS; if (!SSx || !SSx.running) return; const sim = SSx.simTime || 0;
     if (!waveActive) { resetClimax(); if (SSx) { SSx.climaxAt = null; SSx.lullUntil = null; } return; }
     if (cxWave === -1) { cxWave = Math.max(burstIndex, waveClears + 1); cxDue = 0; cxPhase = 'idle'; cxDone = false; cxLull = false; cxRec = null; }
-    if (mwContactSim != null && !cxDue && cxWave >= 2) { const T = Math.max(40, Math.min(60, 55 - 3 * (cxWave - 2) - 10 * pressureP())); cxDue = mwContactSim + T + (Math.random() * 6 - 3); } // A21
+    if (mwContactSim != null && !cxDue && cxWave >= 2) {
+      // A28 force: due ~8 s after contact so tester can reach a climax grenade at ~1 fps without a 40-60 s wait.
+      const T = FORCE_CX_NADE ? 8 : Math.max(40, Math.min(60, 55 - 3 * (cxWave - 2) - 10 * pressureP()));
+      cxDue = mwContactSim + T + (FORCE_CX_NADE ? 0 : (Math.random() * 6 - 3));
+    } // A21 / A28
     SSx.climaxState = { wave: cxWave, phase: cxPhase, done: cxDone, due: cxDue ? +cxDue.toFixed(1) : null }; // A21: test hook
     if (cxDone || cxWave < 2) return;
     if (cxPhase === 'tell') { if (sim >= cxStartSim) startClimax(sim); return; }
@@ -3581,9 +3594,25 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const cv = window.SS && window.SS.cover, at = (cv && cv.state === 'moving' && cv.target) ? cv.target : camera.position;
         const d = Math.hypot(n.m.position.x - at.x, n.m.position.z - at.z), hp0 = player.health;
         let dmg = d < 3 ? Math.max(0, Math.min(34 * (1 - d / 3.2), 30, hp0 - 5)) : 0;
+        // A28 (PM: RPG-cover parity): IN COVER + ducked/shielded soaks to ~40-50%; dust+debris off cover; src grenade-cover.
+        // Not while moving away / exposed / scoped — those stay full grenade (or escape by distance). Cap 30 + 5 HP floor already in dmg.
+        let gSrc = 'grenade';
+        if (dmg > 0 && cv && cv.state === 'in' && cv.surface) {
+          const sf = cv.surface, blast = n.m.position; let shielded = false;
+          _gcHead.copy(camera.position); _gcBox.copy(sf).expandByScalar(0.05); _gcDir.subVectors(_gcHead, blast); const len = _gcDir.length();
+          if (len > 1e-3) { _gcRay.set(blast, _gcDir.multiplyScalar(1 / len)); const hit = _gcBox.containsPoint(blast) || _gcRay.intersectBox(_gcBox, _gcHp); shielded = !!hit && (_gcBox.containsPoint(blast) || blast.distanceTo(_gcHp) < len); }
+          if (!shielded && window.SS.input && window.SS.input.cover && blast.z <= sf.max.z + 0.1 && blast.x > sf.min.x - 1.5 && blast.x < sf.max.x + 1.5) shielded = true;
+          if (shielded) {
+            dmg *= 0.4 + Math.random() * 0.1; dmg = Math.max(0, Math.min(dmg, 30, hp0 - 5)); gSrc = 'grenade-cover';
+            const f = window.SS && window.SS.fx;
+            if (f && f.dust) { _gcTmp.set(Math.max(sf.min.x, Math.min(sf.max.x, blast.x)), sf.max.y + 0.05, Math.max(sf.min.z, Math.min(sf.max.z, blast.z))); f.dust(_gcTmp.clone(), _gcUp, 10, 0x8a7a62);
+              _gcTmp.z = sf.min.z - 0.05; _gcTmp.y = (sf.min.y + sf.max.y) * 0.5; f.dust(_gcTmp.clone(), _gcFwdN, 8, 0x8a7a62); }
+            if (f && f.debris) { _gcTmp.set(Math.max(sf.min.x, Math.min(sf.max.x, blast.x)), sf.max.y, (sf.min.z + sf.max.z) * 0.5); f.debris(_gcTmp.clone(), _gcUp, 8); _gcTmp.z = sf.min.z - 0.05; f.debris(_gcTmp.clone(), _gcFwdN, 5); }
+          }
+        }
         // A26: climax 35 floor — clamp grenade (exposed stay); player.damage also re-clamps all sources
         if (dmg > 0 && cxPhase === 'active' && hp0 >= 35) { const cap = Math.max(0, hp0 - 35); if (dmg > cap) { dmg = cap; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; } }
-        if (dmg > 0) player.damage(dmg, n.m.position, 'grenade');
+        if (dmg > 0) player.damage(dmg, n.m.position, gSrc);
         if (window.SS) window.SS.lastGrenade = { d: +d.toFixed(2), dmg: +dmg.toFixed(1), hpBefore: +hp0.toFixed(1), escaped: d >= 3, moving: !!(cv && cv.state === 'moving') };
         if (window.SS && window.SS.fx) window.SS.fx.blast(n.m.position);
         if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);

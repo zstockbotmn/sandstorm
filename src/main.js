@@ -579,7 +579,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
     const p = new THREE.Vector3(camera.position.x + Math.sin(yaw) * 2, 0, camera.position.z - Math.cos(yaw) * 2); stakes.drop('health', p);
     try { audio.log('debug', 'medtest: hurt -> ' + Math.round(pl.health) + ', medkit dropped 2m'); } catch (_) {} window.SS.medTests = (window.SS.medTests | 0) + 1; return pl.health; };
   if (/[?&]medtest=1\b/.test(location.search)) { let mtNext = 8; setInterval(() => { const SSm = window.SS; if (!SSm.running || !SSm.player || !SSm.player.alive) return; if ((SSm.simTime || 0) >= mtNext) { mtNext = (SSm.simTime || 0) + 20; SSm.debugMedTest(); } }, 500); }
-  // A13 (tester could not reach a walk-in room): G / ?room=1 (needs bld=4) clears the fight, jumps the walk to the nearest
+  // A13 (tester could not reach a walk-in room): G / ?room=1 (A28: rooms on by default; ?bld=0 / ?rooms=0 off) clears the fight, jumps the nearest
   // 'room' cover point ahead (else the nearest one), stands on the rail 2.5 m short of the doorway facing it and holds the
   // walk until G is pressed again (or 25 s pass). SS.lastRoomJump records it.
   let roomHoldT = 0;
@@ -602,7 +602,7 @@ if (/[?&]debug\b/.test(location.search) || navigator.webdriver === true) {
   window.SS.debugToRoom = () => {
     let best = null, bd = 1e9; const cz = camera.position.z;
     for (const s of (world.segments || [])) for (const c of s.coverPoints || []) if (c.type === 'room' && c !== roomLast) { const ahead = c.pos.z < cz + 2; const d = Math.abs(c.pos.z - cz) + (ahead ? 0 : 1000); if (d < bd) { bd = d; best = c; } }
-    if (!best) { window.SS.lastRoomJump = { ok: false, why: 'no room (rooms need ?bld=4 and not Ultra-low)' }; if (hud.hint) hud.hint('No room nearby (needs bld=4, Low/High)'); return null; }
+    if (!best) { window.SS.lastRoomJump = { ok: false, why: 'no room (rooms need default bld4 / not ?bld=0 / not ?rooms=0)' }; if (hud.hint) hud.hint('No room nearby (use bld default, or check ?rooms=0)'); return null; }
     roomHoldEnd('G next');
     enemies.reset(); // debug only: clears enemies, nades, truck and the wave count (a clean street at the room)
     cover.reset();

@@ -1,16 +1,16 @@
-// 4e5 DRAFT (not run yet; run after 4e5a+4e5b are in): doorway cover stop.
-// Checks (bld=4 Low): the stop happens exactly once (SS.doorStop.count === 1, state 'done' by the end); the player is IN
-// COVER at the frame (SS.cover.kind 'door', state 'in', input.cover) while held; front-arc hits while ducked at the door
-// = 0 with front-arc shots > 0; detour walk inWalkS + outWalkS = 11 +- 1.5 s; screenshot at the frame.
-// Absent: bld=4&rooms=0 (Low) and bld=4 Ultra-low: count stays 0 for ~150 m / 3 waves (Ultra-low: no room points at all).
-// Usage: node test/doorway-stop.js [low] [outPrefix]   (tools/run.sh 1500 node test/doorway-stop.js low logs/4e5/door)
+// A28 doorway cover stop (HOLD full run until parent says tester browser closed / :8850 free).
+// Checks (default Low — no ?bld=4 needed): stop exactly once; IN COVER·DOORWAY while held; front-arc hits while ducked = 0
+// with front-arc shots > 0; detour walk 11 +- 1.5 s; screenshot.
+// Absent: ?rooms=0 and ?bld=0. Ultra-low NOW keeps rooms+doorway (A28; cheaper furniture).
+// Force: ?door=1 / ?doorstop=1 arms early (see test/a28-force.js).
+// Usage: node test/doorway-stop.js [low] [outPrefix]
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const D = path.resolve(__dirname, '../dist'); const PORT = 8848;
 const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.json': 'application/json', '.hdr': 'application/octet-stream' };
 const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': T[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); }).listen(PORT);
 const [tier = 'low', out = 'logs/4e5/door'] = process.argv.slice(2); fs.mkdirSync(path.dirname(out), { recursive: true });
-const BASE = '/?seed=7&loco=2&hits=2&repos=1&fx=3&bld=4&debug';
+const BASE = '/?seed=7&loco=2&hits=2&repos=1&fx=3&debug'; // A28: rooms/doorway default ON (no ?bld=4)
 // page-side driver: stays ducked (no scope); outside the door kills the nearest fighter every ~2 s game; at the door waits
 // 10 s game (so the front arc gets to shoot) before killing; keeps HP >= 40 through the regen path only (no heals).
 const DRIVE = async ({ maxSim, stopWhenDone, maxDist }) => {
@@ -41,9 +41,8 @@ const DRIVE = async ({ maxSim, stopWhenDone, maxDist }) => {
       const r = await p.evaluate(DRIVE, opts); if (errs.length) r.errs = errs.slice(0, 5); await ctx.close(); return r;
     } catch (e) { await ctx.close().catch(() => {}); return { exception: e.message, errs }; } };
   try {
-    // 1) bld=4 Low: the stop
+    // 1) default Low (release/iPhone path): the stop — no ?bld=4
     const a = res.on = await run('on', '&q=' + tier, { maxSim: 240, stopWhenDone: true, maxDist: 0 }, true);
-    // keep going after 'done' until 420 s game so a 2nd stop would show; stopWhenDone false on purpose
     if (a.exception) fail.push('on: ' + a.exception); else {
       const ds = a.doorStop || {};
       if ((ds.count | 0) !== 1 || a.maxCount !== 1) fail.push('doorway stop count ' + ds.count + ' (max ' + a.maxCount + ', want exactly 1)');
@@ -52,13 +51,20 @@ const DRIVE = async ({ maxSim, stopWhenDone, maxDist }) => {
       const duck = ds.duck || {}; if ((duck.front | 0) !== 0) fail.push('front-arc hits while ducked at the door: ' + duck.front);
       if (!((duck.frontShots | 0) > 0)) fail.push('no front-arc shots at the door (0 hits proves nothing)');
       const walk = (ds.inWalkS || 0) + (ds.outWalkS || 0); res.walkS = +walk.toFixed(1); if (Math.abs(walk - 11) > 1.5) fail.push('detour walk ' + walk.toFixed(1) + ' s (want 11 +- 1.5)');
-      if (a.died != null) fail.push('player died at ' + a.died + ' s'); if (a.errs) fail.push('on: page errors'); if (!res.shot) fail.push('no frame screenshot'); }
+      if (!(a.roomPoints > 0)) fail.push('default: no room points'); if (a.died != null) fail.push('player died at ' + a.died + ' s'); if (a.errs) fail.push('on: page errors'); if (!res.shot) fail.push('no frame screenshot'); }
     // 2) rooms=0: absent
     const z = res.rooms0 = await run('rooms0', '&rooms=0&q=' + tier, { maxSim: 240, maxDist: 120 });
     if (z.exception) fail.push('rooms0: ' + z.exception); else { if (z.maxCount !== 0 || (z.doorStop && z.doorStop.count)) fail.push('rooms=0: doorway stop happened'); if (z.errs) fail.push('rooms0: page errors'); }
-    // 3) Ultra-low: absent, and no rooms
-    const u = res.ultra = await run('ultra', '&q=ultra-low', { maxSim: 240, maxDist: 120 });
-    if (u.exception) fail.push('ultra: ' + u.exception); else { if (u.maxCount !== 0 || (u.doorStop && u.doorStop.count)) fail.push('ultra-low: doorway stop happened'); if (u.roomPoints) fail.push('ultra-low: ' + u.roomPoints + ' room points'); if (u.errs) fail.push('ultra: page errors'); }
+    // 3) bld=0: absent (opt-out)
+    const b0 = res.bld0 = await run('bld0', '&bld=0&q=' + tier, { maxSim: 180, maxDist: 100 });
+    if (b0.exception) fail.push('bld0: ' + b0.exception); else { if (b0.maxCount !== 0 || (b0.doorStop && b0.doorStop.count)) fail.push('bld=0: doorway stop happened'); if (b0.roomPoints) fail.push('bld=0: ' + b0.roomPoints + ' room points'); if (b0.errs) fail.push('bld0: page errors'); }
+    // 4) Ultra-low: A28 keeps rooms + doorway (cheaper furniture)
+    const u = res.ultra = await run('ultra', '&q=ultra-low', { maxSim: 240, stopWhenDone: true, maxDist: 0 }, false);
+    if (u.exception) fail.push('ultra: ' + u.exception); else {
+      if (!(u.roomPoints > 0)) fail.push('ultra-low: no room points (A28 should keep rooms)');
+      if ((u.maxCount | 0) < 1 && !(u.doorStop && u.doorStop.count)) fail.push('ultra-low: doorway stop missing (A28 should keep doorway)');
+      if (u.errs) fail.push('ultra: page errors');
+    }
   } catch (e) { fail.push('exception ' + e.message); }
   await b.close(); srv.close(); res.fail = fail; fs.writeFileSync(out + '_' + tier + '.json', JSON.stringify(res, null, 1));
   console.log(JSON.stringify(res).slice(0, 4000)); console.log(fail.length ? 'DOORWAY FAIL ' + fail.join(' ; ') : 'DOORWAY PASS'); process.exit(fail.length ? 1 : 0);
