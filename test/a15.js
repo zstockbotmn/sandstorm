@@ -114,6 +114,7 @@ function unmatchedHits(hits, tells) { const used = new Set(), bad = [];
       for (const t of res.tells || []) if (t.tellSim > l.start + 0.05 && t.tellSim < l.end - 0.05) fail.push('W' + l.wave + ' flank tell at ' + t.tellSim + ' inside the lull'); }
     // A23: one AREA CLEAR payoff per wave clear
     if ((res.areaClear || []).length < Math.min(res.clearCount | 0, 30)) fail.push((res.areaClear || []).length + ' AREA CLEAR beats for ' + res.clearCount + ' clears');
+    for (const c of res.areaClear || []) if (c.heldMs != null && c.heldMs < 3500) fail.push('AREA CLEAR W' + c.wave + ' heldMs ' + c.heldMs + ' (want >= 3500)');
     res.clearLines = (res.areaClear || []).map((x) => x.line);
     // A24: ?w4end=1 / harness - land on W4 with 1-2 enemies, then AREA CLEAR + a last-survivor break
     if (mode === 'w4end' || process.env.A15_W4END) {
