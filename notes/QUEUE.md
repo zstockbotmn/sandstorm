@@ -228,17 +228,6 @@ Known: doorway detour walkS 12.3 (inside 11±1.5); box ~1–2 fps so doorway/a15
 Next: tester rescore A27 doorway + rooms depth.
 
 
-## A28 (App PM Oct 23 ~9:20 AM ET — CODE on branch a28-doorway-default; NOT previewed yet)
-Fix-only on worktree `/workspace/sandstorm-a28` branch `a28-doorway-default` (from tip 3b6dc76). Do NOT touch :8850 / step1-movement until tester finishes A27.
-Root causes (confirmed):
-1. Rooms + doorway required `?bld=4` URL — release/iPhone default never got enterable rooms.
-2. `doorstop.on()` and room spawn also required `quality !== 'ultra-low'` / `!ULTRA` — box auto-drop to ultra-low mid-run killed the feature even with bld=4.
-3. Art buildings always win (`rng()<1.01`) + 35% room rate + originZ<-30 + tight 15.5–17.5 m arm window made natural doorway rare at ~1 fps.
-4. Climax grenade for yank check needs ~40–60 s after W2 contact — never reached in A27 session.
-Code:
-- BLD4 default ON; opt out `?bld=0`. `?rooms=0` still kills enterable rooms + doorway stop (+ enemy doorway).
-- Rooms + doorway stay on ultra-low (cheaper furniture: no table/crates/rubble/rug). Early-force ≥1 room in first ~60–150 m.
-- Doorstop arm window 14–22 m (was 15.5–17.5); no ultra-low gate.
-- Force: `?door=1` / `?doorstop=1` (early doorway); `?cxnade=1` / `?grenadecx=1` (W2+ climax grenade ~8 s after contact).
-- Tests written, NOT run (hold): updated `test/doorway-stop.js`, new `test/a28-force.js`. `node --check` only until :8850 free.
-Ship: parent merges to step1-movement, preview A28 on 8850, hand to tester when browser free.
+## A28 (App PM Oct 23 — DONE Oct 23 ~10:05 AM ET)
+DONE: tip PLACEHOLDER_TIP, build PLACEHOLDER_BUILD, label 'internal preview A28', preview :8850. Tests PASS (logs/a28): doorway-stop Low (walkS 12.2, count 1, door:in, duck.front=0 frontShots=10, rooms=0/bld=0 absent, ultra keeps rooms+doorway roomPoints=3); a28-force (door=1 held door ducked; cxnade=1 W2 climax grenade ducked in cover, yank=false, coverAfter state=in). Code: 6711bb0 rooms+doorway default; 4cd6789 tests; ec3f03c climax/ducked grenade cover soak (~40-50%, src grenade-cover, RPG-cover parity); merge 452b628. Protects Immersion/Fun 4s + climax Moving-cover skip + last-stand + 35 HP floor.
+Next A29: denser exposed climax HP / enemy doorway GPU pass (soak already in A28).
