@@ -231,3 +231,10 @@ Next: tester rescore A27 doorway + rooms depth.
 ## A28 (App PM Oct 23 — DONE Oct 23 ~10:05 AM ET)
 DONE: tip 8eac252, build ss-8048102562, label 'internal preview A28', preview :8850. Tests PASS (logs/a28): doorway-stop Low (walkS 12.2, count 1, door:in, duck.front=0 frontShots=10, rooms=0/bld=0 absent, ultra keeps rooms+doorway roomPoints=3); a28-force (door=1 held door ducked; cxnade=1 W2 climax grenade ducked in cover, yank=false, coverAfter state=in). Code: 6711bb0 rooms+doorway default; 4cd6789 tests; ec3f03c climax/ducked grenade cover soak (~40-50%, src grenade-cover, RPG-cover parity); merge 452b628. Protects Immersion/Fun 4s + climax Moving-cover skip + last-stand + 35 HP floor.
 Next A29: denser exposed climax HP / enemy doorway GPU pass (soak already in A28).
+
+## A29 (App PM Oct 23 — DONE)
+DONE: tip 9dfd6b1, build ss-3377153740, label 'internal preview A29', preview :8850. Tests PASS (logs/a29): doorway-stop Low (walkS 12.2, count 1, door:in, rooms=0/bld=0 absent, ultra keeps rooms+doorway); a29-force Low (door=1 post-W1 held door z≈-31 aheadFromSpawn 34.8m, door arm/veer/IN COVER logs; cxnade=1 climax grenade ducked yank=false flushBeforeCx=0; campNade grenade-cover soak ~10–11, hint GRENADE!, HP drop). Code: 9dfd6b1. Protects Immersion/Fun; no GH Pages.
+A) ?door=1: room in ~25–40 m band; arm first post-W1 walk; wide fallback; SOUND door arm / veer start / IN COVER · DOORWAY; lit PointLight.
+B) No-yank anytime already IN COVER ducked (camping flush + climax); ?cxnade=1 suppresses flush until climax; soak grenade, cover -N + HP num flash.
+C) ?edoor=1 forces enemy doorway cover this run.
+Next: tester rescore A29; then set-piece variety → full release suite (PM).
