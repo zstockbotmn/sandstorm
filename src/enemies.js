@@ -2297,7 +2297,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // rifle hit now logs why it landed ('hit why'). Hard guard on the LIVE cover state as well as input.cover: in cover (cover state 'in', not scoped) an unflanked front round is a near miss;
     // only a told flank shot (flankHit, or the flanker's own hit >= 1.5 s after its tell) lands.
     const ownTold = !!(pendTells && pendTells.includes(enemy) && typeof enemy._flankTellSim === 'number' && simS - enemy._flankTellSim >= FLANK_TELL_S);
-    { const SSg = window.SS, cv = SSg && SSg.cover, liveIn = !!(cv && cv.state === 'in' && !(SSg.input && SSg.input.scope));
+    { const SSg = window.SS, cv = SSg && SSg.cover, liveIn = SSg.coverStanceNow ? SSg.coverStanceNow() === 'ducked' : !!(cv && cv.state === 'in' && !(SSg.input && SSg.input.scope)); /* A23: the HUD badge's own stance */
       if (hit && !flankHit && !ownTold && (liveIn || duckedA8)) { hit = false; SSg.coverGuardBlocked = (SSg.coverGuardBlocked | 0) + 1; const GL = SSg.coverGuardLog || (SSg.coverGuardLog = []); GL.push({ sim: +simS.toFixed(2), id: enemy.id, stale: liveIn !== duckedA8, elev: !!(enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.5 }); if (GL.length > 40) GL.shift(); } }
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
@@ -2337,7 +2337,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       dmgBucket -= Math.min(amount, dmgCost); player.damage(amount, _muzzle, (flankHit || own) ? 'flank' : 'gun');
       { const SSg = window.SS, cv = SSg && SSg.cover, st = cv ? cv.state : '?', sc = !!(SSg.input && SSg.input.scope), walking = !!SSg.walking; // A22: why a rifle hit landed (tester + a15)
         const why = (flankHit || own) ? 'flank tell' : walking ? 'exposed: walking' : st === 'moving' ? 'exposed: moving to cover' : sc ? 'exposed: scoped' : st === 'in' ? 'IN COVER (leak)' : 'exposed: ' + st;
-        const HL = SSg.rifleHitLog || (SSg.rifleHitLog = []); HL.push({ sim: +simS.toFixed(2), id: enemy.id, why, flank: !!(flankHit || own), ducked: duckedA8, coverState: st, scope: sc, elev: !!(enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.5 }); if (HL.length > 80) HL.shift();
+        const HL = SSg.rifleHitLog || (SSg.rifleHitLog = []); HL.push({ sim: +simS.toFixed(2), id: enemy.id, why, flank: !!(flankHit || own), ducked: duckedA8, coverState: st, scope: sc, stance: SSg.coverStanceNow ? SSg.coverStanceNow() : null, elev: !!(enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.5 }); if (HL.length > 80) HL.shift();
         if (SSg.audio && SSg.audio.log) SSg.audio.log('hit why', why); }
       if (!flankHit && pendTells && pendTells.length && window.SS) { const SSx = window.SS;
         for (const f of pendTells) { if (typeof f._flankTellSim !== 'number') continue; const age = +(simS - f._flankTellSim).toFixed(2);

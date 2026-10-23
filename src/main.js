@@ -181,6 +181,17 @@ function applyCamera(dt) {
   camera.updateMatrixWorld();
 }
 
+// A23 (tester A22: '-19 hit, why: exposed: moving to cover' while the badge read IN COVER): ONE live stance, used by the HUD
+// badge AND the damage guard (enemies.js): 'ducked' only when settled in cover and not scoped. A frame runs several sim
+// substeps at low fps, so the badge shows the WORST stance seen in any substep and holds a non-ducked one >= 0.8 s real
+// and >= 2 frames (a short cover hop no longer hides under IN COVER).
+window.SS.coverStanceNow = () => { const S = window.SS; if (!S.running || !player.alive) return '';
+  const st = cover.state, sc = !!input.scope, walk = !!S.walking;
+  if (st === 'in') return sc ? 'exposed' : walk ? 'moving' : 'ducked';
+  if (st === 'moving') return 'moving';
+  return (S.engaged > 0 || st !== 'none') ? (walk ? 'moving' : 'exposed') : ''; };
+const STANCE_RANK = { '': 0, ducked: 1, exposed: 2, moving: 3 }; let stanceWorst = '', stanceHold = null;
+function noteStance() { const k = window.SS.coverStanceNow(); if (STANCE_RANK[k] > STANCE_RANK[stanceWorst]) stanceWorst = k; }
 function simStep(dt) {
   if (fx && !window.__freezeCam) clearFxPos(); // walk and cover read the unshaken body position
   if (fx) fx.update(dt || 0);
@@ -254,11 +265,15 @@ function frame(now) { window.SS.frameN = (window.SS.frameN | 0) + 1;
   const dt = raw > 0 ? Math.min(0.05, raw / steps) : 0;
   const slow = (window.SS.slowmoUntil || 0) > performance.now() ? 0.3 : 1; window.SS.timeScale = slow;
   window.SS.lastRawDt = raw; window.SS.lastSimDt = dt * slow * steps; // tests: this frame's total sim time (a tracking aim leads by about this much)
-  try { for (let i = 0; i < steps; i++) { window.SS.subStep = i; simStep(dt * slow); } window.SS.subStep = 0; }
+  try { stanceWorst = ''; noteStance(); for (let i = 0; i < steps; i++) { window.SS.subStep = i; simStep(dt * slow); noteStance(); } window.SS.subStep = 0; }
   catch (err) { // never freeze HUD/render on a sim error; report once per message
     const k = String(err && err.message); if (!frameErrs.has(k)) { frameErrs.add(k); console.error('[sandstorm] sim step failed:', err && (err.stack || err)); (window.SS.errors = window.SS.errors || []).push('sim:' + k); } }
   { const sw = document.getElementById('switch-cover'); if (sw) sw.classList.toggle('on', cover.state !== 'none' && player.alive && window.SS.running); }
-  if (hud.setStance) hud.setStance(window.SS.running && player.alive && cover.state !== 'none' ? (input.cover ? 'ducked' : 'exposed') : (window.SS.running && player.alive && window.SS.engaged > 0 ? 'exposed' : '')); // A8 ducked / exposed indicator
+  if (hud.setStance) { const now = performance.now(); let k = stanceWorst; // A8 ducked / exposed indicator (A23: live stance, worst of the frame, held)
+    if (k === 'moving' || k === 'exposed') stanceHold = { k, until: now + 800, frames: 2 };
+    else if (stanceHold && k && (now < stanceHold.until || stanceHold.frames > 0)) k = stanceHold.k;
+    if (stanceHold) { stanceHold.frames--; if (now >= stanceHold.until && stanceHold.frames <= 0) stanceHold = null; }
+    hud.setStance(k); window.SS.stanceShown = k; }
   hud.onTarget(weapon.onTarget); hud.setScope(!!input.scope && player.alive && window.SS.running);
   hud.update({
     distance: window.SS.distance,
