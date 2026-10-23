@@ -246,5 +246,5 @@ B) ?cxnade=1: climax grenade fires deterministically; ducked soak / no yank; com
 Next: tester rescore A30.
 
 ## A31 (App PM Oct 23 — DONE)
-DONE: tip PLACEHOLDER, build ss-197968570b, label 'internal preview A31', preview :8850. Tests PASS (logs/a31): doorway-stop Low; a30-force Low (door/cxnade/combined/camp); a31-variety Low (kinds grenade+truck+rpg, calm×2, spacing OK w/ grenade-rearm 12s, unstick 67/1004 logged). Code: director weights + early truck/RPG bias; doorway long-camp +15s; bigBeatCalm after RPG/truck; unstick rate-limit; brighter roomLit + roomWindow/roomShaft. Protects Immersion/Fun; no GH Pages.
+DONE: tip 3d0682f, build ss-197968570b, label 'internal preview A31', preview :8850. Tests PASS (logs/a31): doorway-stop Low; a30-force Low (door/cxnade/combined/camp); a31-variety Low (kinds grenade+truck+rpg, calm×2, spacing OK w/ grenade-rearm 12s, unstick 67/1004 logged). Code: director weights + early truck/RPG bias; doorway long-camp +15s; bigBeatCalm after RPG/truck; unstick rate-limit; brighter roomLit + roomWindow/roomShaft. Protects Immersion/Fun; no GH Pages.
 
