@@ -1443,6 +1443,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function standPos(anchor) {
+    // 4e5c: room doorway stand = inside beside the +z jamb (W2)
+    if (anchor && anchor.type === 'room' && anchor.door) {
+      const d = anchor.door; return new THREE.Vector3(d.x + d.side * 0.6, 0, d.z + 0.45);
+    }
     const elevated = anchor.type === 'window' || anchor.type === 'roof';
     // Feet on the parapet top (h+0.55) for roofs; at the sill for windows (front of the facade, never inside it).
     const y = anchor.type === 'roof' ? anchor.pos.y - 0.15 : elevated ? Math.max(0, anchor.pos.y - 1.2) : 0;
@@ -1456,11 +1460,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // Cars/barrels shield along the street axis: crouch on the FAR side (away from the player, -z), and lean out past the
   // street-side edge to fire. Walls run along the street, so for them tuck outward in x (old behaviour).
   const FAR = { car: 2.75, barrel: 0.75 }, EDGE = { car: 1.3, barrel: 0.6 };
-  function farHide(anchor) { const a = anchor.pos, side = Math.sign(a.x) || 1; return new THREE.Vector3(a.x + side * 0.15, 0, a.z - FAR[anchor.type]); }
-  function edgePeek(anchor) { const a = anchor.pos, side = Math.sign(a.x) || 1; return new THREE.Vector3(a.x - side * EDGE[anchor.type], 0, a.z - FAR[anchor.type] + 0.25); }
+  function farHide(anchor) {
+    if (anchor && anchor.type === 'room' && anchor.door) { const d = anchor.door; return new THREE.Vector3(d.x + d.side * 0.6, 0, d.z + 0.45); }
+    const a = anchor.pos, side = Math.sign(a.x) || 1; return new THREE.Vector3(a.x + side * 0.15, 0, a.z - FAR[anchor.type]);
+  }
+  function edgePeek(anchor) {
+    if (anchor && anchor.type === 'room' && anchor.door) { const d = anchor.door; return new THREE.Vector3(d.x + d.side * 0.15, 0, d.z + 0.2); }
+    const a = anchor.pos, side = Math.sign(a.x) || 1; return new THREE.Vector3(a.x - side * EDGE[anchor.type], 0, a.z - FAR[anchor.type] + 0.25);
+  }
   // Behind ground cover, away from the street center. Feet stay on y=0.
   function tuckOf(home, anchor) {
-    if (anchor && FAR[anchor.type]) return farHide(anchor);
+    if (anchor && (FAR[anchor.type] || (anchor.type === 'room' && anchor.door))) return farHide(anchor);
     const side = Math.sign(home.x) || 1;
     return new THREE.Vector3(side * Math.min(Math.abs(home.x) + 0.7, 6.5), 0, home.z);
   }
@@ -2486,7 +2496,33 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const cr = crowdAt(tryP.pos, null); if (cr < bestCrowd) { bestCrowd = cr; pick = tryP; } if (cr === 0) break;
     }
     if (occupiedBy(pick.pos, null)) return null;
+    // 4e5c: at most one fighter per wave may take another room's doorway (not the player's door)
+    const bld4 = typeof location !== 'undefined' && /[?&]bld=4/.test(location.search);
+    const roomsOff = typeof location !== 'undefined' && /[?&]rooms=0\b/.test(location.search);
+    if (bld4 && !roomsOff && qName() !== 'ultra-low' && !roofOnly && roll !== 'flanker' && Math.random() < 0.35) {
+      const liveDoor = list.some((e) => e.alive && e.anchor && e.anchor.type === 'room' && e.anchor.door);
+      if (!liveDoor) {
+        const playerDoorZ = (window.SS && window.SS.doorStop && window.SS.doorStop.room) ? window.SS.doorStop.room[1] : null;
+        const rooms = coverPool(['room'], [10, 40]).filter((p) => p && p.door && !occupiedBy(p.pos, null)
+          && (playerDoorZ == null || Math.abs(p.door.z - playerDoorZ) > 2));
+        if (rooms.length) pick = rooms[(Math.random() * rooms.length) | 0];
+      }
+    }
     const enemy = buildEnemy(roll, pick);
+    if (pick && pick.type === 'room' && pick.door) {
+      const d = pick.door;
+      const w2 = new THREE.Vector3(d.x + d.side * 0.6, 0, d.z + 0.45);
+      // Never spawn inside: start on the street 4 m toward the player from W1
+      const spawn = new THREE.Vector3(d.x - d.side * 1.5, 0, d.z + 4);
+      enemy.group.position.copy(spawn);
+      enemy.path = pathOnto(enemy, pick); enemy.pathI = 0; enemy.goal = enemy.path[0];
+      enemy.phase = 'approach'; enemy.moveKind = 'walk'; enemy.exposed = true;
+      enemy._doorRoom = true;
+      const de = (window.SS.doorEnemy = window.SS.doorEnemy || { count: 0, last: null });
+      de.count = (de.count | 0) + 1;
+      de.last = { id: enemy.id, room: [d.x, d.z], reachedSim: null, peeks: 0 };
+      enemy._doorEnemyRec = de.last;
+    }
     if (roll === 'flanker') {
       const side = Math.sign(pick.pos.x) || (Math.random() < 0.5 ? -1 : 1);
       enemy.flankFrom.copy(enemy.home);
@@ -2661,11 +2697,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.moving = false;
     enemy.exposed = false;
     enemy.goal = null;
+    if (enemy._doorEnemyRec && enemy._doorEnemyRec.reachedSim == null && window.SS)
+      enemy._doorEnemyRec.reachedSim = +((window.SS.simTime) || 0).toFixed(1);
   }
 
   function firePoint(enemy) {
     if (isElevated(enemy.anchor.type)) return enemy.home.clone();
-    if (FAR[enemy.anchor.type]) return edgePeek(enemy.anchor);
+    if (FAR[enemy.anchor.type] || (enemy.anchor && enemy.anchor.type === 'room' && enemy.anchor.door)) return edgePeek(enemy.anchor);
     const p = enemy.home.clone();
     p.y = 0;
     return p;
@@ -2702,6 +2740,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.pathI = 0;
     enemy.exposed = true;
     enemy.goal = enemy.path[0];
+    if (enemy._doorEnemyRec) enemy._doorEnemyRec.peeks = (enemy._doorEnemyRec.peeks | 0) + 1;
   }
 
   function startHide(enemy) {
@@ -2715,6 +2754,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
 
   function pathOnto(enemy, anchor) {
+    // 4e5c: room doorway — street approach (W1) then inside beside +z jamb (W2); walk the last stretch
+    if (anchor && anchor.type === 'room' && anchor.door) {
+      const d = anchor.door;
+      const w1 = new THREE.Vector3(d.x - d.side * 1.5, 0, d.z);
+      const w2 = new THREE.Vector3(d.x + d.side * 0.6, 0, d.z + 0.45);
+      const here = enemy.group.position;
+      const pts = [];
+      if (Math.hypot(here.x - w1.x, here.z - w1.z) > 0.8) pts.push(w1);
+      pts.push(w2);
+      return pts;
+    }
     const home = standPos(anchor);
     const here = enemy.group.position;
     const pts = [];
@@ -3892,7 +3942,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
     waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
-    if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; }
+    if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; window.SS.doorEnemy = { count: 0, last: null }; }
     if (window.SS) window.SS.bursting = false;
     if (HITS2 && hitZones) {
       hitZones.armL = hitZones.armR = hitZones.legL = hitZones.legR = hitZones.torso = 0;
