@@ -9,10 +9,13 @@ import { pbrMaterial, worldBox, triplanarDetail } from './texlib.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createInteriorAtlas, createInteriorMaterial, createInteriorFallback, buildWindowMesh, ROOM_WALLS, ROOM_FLOORS } from './interior.js';
 
-const BLD4 = typeof location !== 'undefined' && /[?&]bld=4/.test(location.search);
-const BLD4P = BLD4 && /[?&]bld=4p\b/.test(location.search);
+// A28: bld4 (interiors + enterable rooms) ON by default for release/iPhone. Opt out: ?bld=0. Legacy ?bld=4 still on.
+// ?bld=4p = procedural buildings only. ?rooms=0 kills enterable rooms + doorway stop (windows/interiors stay).
+const BLD4 = typeof location === 'undefined' || !/[?&]bld=0\b/.test(location.search);
+const BLD4P = typeof location !== 'undefined' && /[?&]bld=4p\b/.test(location.search);
 const ROOMS_OFF = typeof location !== 'undefined' && /[?&]rooms=0\b/.test(location.search);
-if (typeof window !== 'undefined' && window.SS) window.SS.bld4roomsOff = ROOMS_OFF;
+if (typeof window !== 'undefined' && window.SS) { window.SS.bld4roomsOff = ROOMS_OFF; window.SS.bld4Default = BLD4; }
+let _roomsPlaced = 0; // A28: guarantee ≥1 room in the first ~60 m so doorway stop can fire after W1
 let winMat = null;
 function windowMaterial() {
   if (!winMat) {
@@ -630,14 +633,17 @@ export function createWorld(scene, seed) {
       const wallIn = Math.min(depthAll * 0.6, Math.max(0, d[Math.floor(d.length * 0.5)] - 0.05));
       const front = fx0 + side * wallIn, back = side < 0 ? box.min.x : box.max.x;
       const top = roofEarly ? Math.min(box.max.y, roofEarly.y - 0.17) : box.max.y;
-      const artRoom = BLD4 && !ULTRA && seg.originZ < -30 && !seg._roomDone && (box.max.z - box.min.z) >= 7 && seg._wrng() < 0.35 && !ROOMS_OFF;
+      // A28: rooms stay on ultra-low (cheaper furniture in addRoom); force first room by ~60 m; originZ < -20 (was -30).
+      const spanOk = (box.max.z - box.min.z) >= 7;
+      const earlyForce = BLD4 && !ROOMS_OFF && !_roomsPlaced && seg.originZ < -20 && seg.originZ > -150 && !seg._roomDone && spanOk;
+      const artRoom = BLD4 && !ROOMS_OFF && seg.originZ < -20 && !seg._roomDone && spanOk && (earlyForce || seg._wrng() < 0.35);
       if (artRoom) pending = { front, back, top, z0: box.min.z, z1: box.max.z };
       else { const col = addInvisibleBox(seg, (front + back) * 0.5, (box.min.y + top) * 0.5, (box.min.z + box.max.z) * 0.5, Math.abs(back - front), top - box.min.y, box.max.z - box.min.z); col.name = 'building'; col.userData.building = true; }
     }
     const spanZ = Math.max(0.5, box.max.z - box.min.z);
     const doorZ = box.min.z + (0.12 + rng() * 0.76) * spanZ;
     doors.push(doorZ);
-    if (pending) { if (addRoom(seg, side, 0, 0, 0, 0, 0, pending.front, doorZ, pending)) seg._roomDone = true; else { const col = addInvisibleBox(seg, (pending.front + pending.back) * 0.5, (box.min.y + pending.top) * 0.5, (pending.z0 + pending.z1) * 0.5, Math.abs(pending.back - pending.front), pending.top - box.min.y, pending.z1 - pending.z0); col.name = 'building'; col.userData.building = true; } }
+    if (pending) { if (addRoom(seg, side, 0, 0, 0, 0, 0, pending.front, doorZ, pending)) { seg._roomDone = true; _roomsPlaced++; } else { const col = addInvisibleBox(seg, (pending.front + pending.back) * 0.5, (box.min.y + pending.top) * 0.5, (pending.z0 + pending.z1) * 0.5, Math.abs(pending.back - pending.front), pending.top - box.min.y, pending.z1 - pending.z0); col.name = 'building'; col.userData.building = true; } }
     if (seg._wins && WIN_TABLE && WIN_TABLE[name] && Array.isArray(WIN_TABLE[name].windows)) {
       const spec = WIN_TABLE[name];
       const f = spec.face;
@@ -841,19 +847,23 @@ export function createWorld(scene, seed) {
     const A = (70 + seg._wrng() * 30) * Math.PI / 180;
     const leaf = addBox(seg, roomWood(), X(0.2) + side * 0.575 * Math.sin(A), 1.075, zc - 0.6 + 0.575 * Math.cos(A), 0.06, 2.15, 1.15, { collide: false, uvTile: 0.9 });
     leaf.rotation.y = side * A;
-    // A16d (tester A15: table a plain brown slab): CC0 wood_table_001 top + four legs (no block base), world-tiled UVs, and a
-    // CC0 fabric_pattern_07 runner across it; diffuse maps on every tier (pbrMaterial).
-    { const tw = tableWood(); addBox(seg, tw, X(2.2), 0.76, zc, 1.2, 0.05, 0.8, { uvTile: 0.7 });
-      for (const lx of [-0.52, 0.52]) for (const lz of [-0.33, 0.33]) addBox(seg, tw, X(2.2 + lx), 0.37, zc + lz, 0.06, 0.74, 0.06, { uvTile: 0.7, cast: false, collide: false });
-      addBox(seg, clothMat(), X(2.2), 0.79, zc, 0.36, 0.01, 0.86, { collide: false, cast: false, uvTile: 0.35 });
-      addInvisibleBox(seg, X(2.2), 0.38, zc, 1.1, 0.76, 0.7); }
-    const nC = 2 + Math.floor(seg._wrng() * 2), cS = seg._wrng() < 0.5 ? -1 : 1;
-    for (let i = 0; i < nC; i++) addBox(seg, roomWood(), X(3.4), 0.3 + i * 0.6, zc + cS * (W / 2 - 0.4), 0.6, 0.6, 0.6, { uvTile: 0.9 });
-    addBox(seg, roomWood(), X(3.58), 0.9, zc, 0.35, 1.8, 1.6, { uvTile: 0.9 });
-    addBox(seg, rugMat(), X(1.35), 0.03, zc, 1.6, 0.02, 1.0, { collide: false });
-    for (let i = 0, n = 3 + Math.floor(seg._wrng() * 3); i < n; i++) {
-      const rs = 0.15 + seg._wrng() * 0.2;
-      addBox(seg, matPlaster, X(0.9 + seg._wrng() * 1.8), rs / 2, zc - cS * (W / 2 - 0.45) + (seg._wrng() - 0.5) * 0.4, rs, rs, rs, nc);
+    // A28: Ultra-low keeps the lit shell + door + cover point, skips table/crates/rubble/rug (cheaper than disabling rooms).
+    const cS = seg._wrng() < 0.5 ? -1 : 1;
+    if (!ULTRA) {
+      // A16d (tester A15: table a plain brown slab): CC0 wood_table_001 top + four legs (no block base), world-tiled UVs, and a
+      // CC0 fabric_pattern_07 runner across it; diffuse maps on every tier (pbrMaterial).
+      { const tw = tableWood(); addBox(seg, tw, X(2.2), 0.76, zc, 1.2, 0.05, 0.8, { uvTile: 0.7 });
+        for (const lx of [-0.52, 0.52]) for (const lz of [-0.33, 0.33]) addBox(seg, tw, X(2.2 + lx), 0.37, zc + lz, 0.06, 0.74, 0.06, { uvTile: 0.7, cast: false, collide: false });
+        addBox(seg, clothMat(), X(2.2), 0.79, zc, 0.36, 0.01, 0.86, { collide: false, cast: false, uvTile: 0.35 });
+        addInvisibleBox(seg, X(2.2), 0.38, zc, 1.1, 0.76, 0.7); }
+      const nC = 2 + Math.floor(seg._wrng() * 2);
+      for (let i = 0; i < nC; i++) addBox(seg, roomWood(), X(3.4), 0.3 + i * 0.6, zc + cS * (W / 2 - 0.4), 0.6, 0.6, 0.6, { uvTile: 0.9 });
+      addBox(seg, roomWood(), X(3.58), 0.9, zc, 0.35, 1.8, 1.6, { uvTile: 0.9 });
+      addBox(seg, rugMat(), X(1.35), 0.03, zc, 1.6, 0.02, 1.0, { collide: false });
+      for (let i = 0, n = 3 + Math.floor(seg._wrng() * 3); i < n; i++) {
+        const rs = 0.15 + seg._wrng() * 0.2;
+        addBox(seg, matPlaster, X(0.9 + seg._wrng() * 1.8), rs / 2, zc - cS * (W / 2 - 0.45) + (seg._wrng() - 0.5) * 0.4, rs, rs, rs, nc);
+      }
     }
     seg.coverPoints.push({
       pos: new THREE.Vector3(X(1.0), 1.2, zc + 0.9), type: 'room',
@@ -931,8 +941,9 @@ export function createWorld(scene, seed) {
       const h = floors * 3.15;
       const cx = side * (6.2 + depth * 0.5);
       const cz = z - lot * 0.5;
-      const room = BLD4 && !ULTRA && seg.originZ < -30 && !seg._roomDone && lot >= 7 && depth >= 6 && seg._wrng() < 0.35 && !ROOMS_OFF;
-      if (room) seg._roomDone = true;
+      const earlyForce = BLD4 && !ROOMS_OFF && !_roomsPlaced && seg.originZ < -20 && seg.originZ > -150 && !seg._roomDone && lot >= 7 && depth >= 6;
+      const room = BLD4 && !ROOMS_OFF && seg.originZ < -20 && !seg._roomDone && lot >= 7 && depth >= 6 && (earlyForce || seg._wrng() < 0.35);
+      if (room) { seg._roomDone = true; _roomsPlaced++; }
       if (!room) addBox(seg, matPlaster, cx, h * 0.5, cz, depth, h, lot - 0.35);
       addBox(seg, matPlaster, cx, h + 0.28, cz, depth + 0.35, 0.55, lot, { collide: false });
       const facadeX = cx - side * (depth * 0.5);
@@ -1049,6 +1060,7 @@ export function createWorld(scene, seed) {
   }
 
   function reset(playerZ) {
+    _roomsPlaced = 0; // A28: re-guarantee an early room on a fresh run
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
       seg.gen = 0;

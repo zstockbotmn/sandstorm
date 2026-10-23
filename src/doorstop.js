@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 
-// Once per run (?bld=4, not Ultra-low, not ?rooms=0) the walk curves into one doorway and holds for the next wave.
+// Once per run (A28: default on; ?bld=0 or ?rooms=0 off) the walk curves into one doorway and holds for the next wave.
 // Control points are fixed; inLen/outLen are the precomputed sample lengths (no runtime tuning).
+// ?door=1 / ?doorstop=1 forces an early stop for ~1 fps tester (bypasses waveClears + tight distance window).
 const SPEED = 3;
-const BLD4 = /[?&]bld=4/.test(location.search);
+const BLD4 = !/[?&]bld=0\b/.test(location.search);
 const ROOMS0 = /[?&]rooms=0\b/.test(location.search);
+const FORCE_DOOR = /[?&](?:door|doorstop)=1\b/.test(location.search);
 const N = 64;
 
 function freshRec() {
@@ -92,7 +94,8 @@ export function createDoorStop(camera, world, input, enemies, cover) {
 
   function on() {
     const S = window.SS;
-    return !!(BLD4 && S && S.quality !== 'ultra-low' && !ROOMS0);
+    // A28: stay armed even if fps drops to ultra-low mid-run; only ?rooms=0 / ?bld=0 kill it.
+    return !!(BLD4 && S && !ROOMS0);
   }
 
   function makeIn(door) {
@@ -175,15 +178,16 @@ export function createDoorStop(camera, world, input, enemies, cover) {
 
   function candidates() {
     const cz = camera.position.z, found = [], segs = world.segments || [];
+    // A28: slightly wider arm window (was 15.5-17.5) so ~1 fps catch-up does not skip the door; force uses 4-55 m.
+    const lo = FORCE_DOOR ? 4 : 14, hi = FORCE_DOOR ? 55 : 22;
     for (let i = 0; i < segs.length; i++) {
       const pts = segs[i].coverPoints || [];
       for (let j = 0; j < pts.length; j++) {
         const p = pts[j];
         if (!p || p.type !== 'room' || !p.door) continue;
         const ahead = cz - p.door.z;
-        // Start the veer only when the door is ~16-20 m ahead so inLen≈16-20 m (in+out walk ~11 s at 3 m/s).
-        // Wider look-ahead would lock a 35-40 m Bezier and blow the 11 s budget.
-        if (ahead >= 15.5 && ahead <= 17.5) found.push(p.door);
+        // Normal: start the veer ~14-22 m ahead so in+out walk stays near ~11 s at 3 m/s.
+        if (ahead >= lo && ahead <= hi) found.push(p.door);
       }
     }
     found.sort((a, b) => (cz - a.z) - (cz - b.z));
@@ -195,7 +199,8 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     for (let i = 0; i < doors.length; i++) {
       const door = doors[i];
       const built = makeIn(door);
-      if (blocked(door, built)) continue;
+      // A28 force: accept even if path grazes a collider (tester at ~1 fps needs a guaranteed stop).
+      if (!FORCE_DOOR && blocked(door, built)) continue;
       rec.count = 1;
       rec.state = 'veer';
       rec.inLen = built.len;
@@ -279,7 +284,9 @@ export function createDoorStop(camera, world, input, enemies, cover) {
     if (!S || !on() || !S.running) return false;
     dt = dt || 0;
     if (rec.state === 'idle') {
-      if (rec.count === 0 && (S.waveClears | 0) >= 1 && walking) begin(S);
+      // A28: force arms as soon as walking after start (or after first clear); normal still waits for waveClears >= 1.
+      const clearsOk = FORCE_DOOR ? (S.waveClears | 0) >= 0 : (S.waveClears | 0) >= 1;
+      if (rec.count === 0 && clearsOk && walking) begin(S);
       if (rec.state !== 'veer') return false;
     } else if (rec.state === 'done') {
       return false;
