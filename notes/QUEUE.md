@@ -191,3 +191,10 @@ Then: window-table tuning, 4e1-4e4, 4e5.
 - 4 grenade re-arm: <= 2/wave, camp timer restarts at a throw, 2nd needs the full 'certain' time; gren: lines continue ('cap 2/wave').
 - 5 set-piece spacing 15 s (RPG / truck / grenade; starved-grenade 3 s exception removed). SS.spLog for checks.
 - Check: test/a15.js (random + forced). Risk: a11's forced-flags grenade case may now wait longer (15 s gap).
+
+## A23 → A24 (Oct 22–23 ET)
+- A23 tip 8c9bd95 / ss-4aa357a708: Immersion 4 · Fun 4 · Graphics 4 · Ease 4 · Depth 3 (first Fun 4).
+- A24 tip 935bfdb / ss-c9bf0052be "internal preview A24" on 8850: last-stand ~4–6s stand before flee; AREA CLEAR sole banner ~3.8s + clear radio always; camera AABB unstick; ?w4end=1; a15/a11 Low PASS.
+- A24 scores (pA24, ~1:08 AM Oct 23): Immersion 4 · Fun 4 · Graphics 4 · Ease 4 · Depth 3 (held). Cover/quiet/AREA CLEAR/last-stand timing PASS; climax grenade|flank in-event PARTIAL; camera unstick NOT OBSERVED; w4end grows via mid-wave push; first load stale SW until site data cleared.
+- Tester ranked: (1) climax always grenade|flank in-event (2) fairer last-stand shootable (3) w4end suppress mid-wave (4) bust SW on preview deploy (5) camera unstick debug hook.
+- WAITING App PM: thin A25 for 1–4 vs resume winDbg + step4-runs + Grok 4e1–4e5 / doorway-stop. Dev rec: A25 first (depth still needs interiors track later).
