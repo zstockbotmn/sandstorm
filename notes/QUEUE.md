@@ -214,7 +214,8 @@ PASS: SW bust, climax in-event grenade, w4end no mid-wave, AREA CLEAR + flee rad
 FAIL: last-stand charge→stand missing (straight flee ~26s alone); exposed climax HP bottom 63 (Moving cover / auto-cover after 1 hit).
 Rec A26: restore rush→stand 4–6s; sustain climax exposure for HP 35–50; keep A25 wins. Then re-score before winDbg/step-4.
 
-## A26 (App PM Oct 23 ~3:53 AM ET — IN PROGRESS)
+## A26 (App PM Oct 23 ~3:53 AM ET — DONE Oct 23 ~6:20 AM ET)
+DONE: tip 093e3c8, build ss-251ae99e75, label 'internal preview A26', preview :8850 HTTP 200. Tests PASS (logs/a26): a15 expose (cxHp W2=42 W3=36 W4=35); a15 w4end (rush→stand 5.8s, aliveMax 2); a15 forced; a15 random; a11 Low. Code: 595d709, 0890ef5, 093e3c8. Next: tester rescore, then winDbg → step-4 rooms/doorway.
 Fix-only. After scores hold Immersion/Fun 4+ → winDbg → step-4 rooms/doorway (depth).
 1. Restore last-stand charge → open stand ~4–6s before flee; force rush on w4end
 2. Climax: while scoped/exposed, no grenade Moving-cover yank; HP can reach ~35–50; ducked + 35 floor kept
