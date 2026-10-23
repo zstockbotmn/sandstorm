@@ -3516,7 +3516,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
         // the player is running TO (cover target), so a move that will clear the radius is not punished mid-run.
         const cv = window.SS && window.SS.cover, at = (cv && cv.state === 'moving' && cv.target) ? cv.target : camera.position;
         const d = Math.hypot(n.m.position.x - at.x, n.m.position.z - at.z), hp0 = player.health;
-        const dmg = d < 3 ? Math.max(0, Math.min(34 * (1 - d / 3.2), 30, hp0 - 5)) : 0; if (dmg > 0) player.damage(dmg, n.m.position, 'grenade');
+        let dmg = d < 3 ? Math.max(0, Math.min(34 * (1 - d / 3.2), 30, hp0 - 5)) : 0;
+        // A26: climax 35 floor applies to grenade too when we keep the player exposed (no Moving-cover yank)
+        if (dmg > 0 && cxPhase === 'active' && hp0 >= 35 && hp0 - dmg < 35) { dmg = hp0 - 35; if (window.SS) window.SS.climaxHpFloor = (window.SS.climaxHpFloor | 0) + 1; }
+        if (dmg > 0) player.damage(dmg, n.m.position, 'grenade');
         if (window.SS) window.SS.lastGrenade = { d: +d.toFixed(2), dmg: +dmg.toFixed(1), hpBefore: +hp0.toFixed(1), escaped: d >= 3, moving: !!(cv && cv.state === 'moving') };
         if (window.SS && window.SS.fx) window.SS.fx.blast(n.m.position);
         if (window.SS && window.SS.audio && window.SS.audio.enemyShot) window.SS.audio.enemyShot(n.m.position);
