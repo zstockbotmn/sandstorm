@@ -18,7 +18,6 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
       window.__aim = setInterval(() => { const bm = SS.weapon.targets.find((m) => m.userData.enemy === e && m.userData.part === 'body'); const v = e.group.position.clone(); v.y += 1.25; if (bm) bm.getWorldPosition(v); v.sub(SS.camera.position); SS.input.scope = false; SS.input.yaw = Math.atan2(v.x, -v.z); SS.input.pitch = -Math.atan2(v.y, Math.hypot(v.x, v.z)); SS.walking = false; }, 100);
       window.__pp = { hit: 0, kill: 0, dir: 0 }; const m = document.getElementById('hit-marker'), d = document.getElementById('dmg-dir');
       const f = () => { if (m.classList.contains('show')) { if (/kill/.test(m.className)) window.__pp.kill++; else window.__pp.hit++; } if (d.classList.contains('show')) window.__pp.dir++; const fz = window.__freezeAt; if (fz && !SS.hudFreeze && window.__pp[fz] >= 2) SS.hudFreeze = true; requestAnimationFrame(f); }; requestAnimationFrame(f); });
-    await p.evaluate(() => { window.__slowMs = 180; }); res.settle1 = await settle();
     // A38 (App PM: state waits, not fixed ms): before each shot the view must have landed on the fighter (camera forward
     // within 0.3 deg of the eye->body-volume ray and still, 2 painted frames running) and its pose settled (< 1 cm / frame).
     const settle = () => p.evaluate(async () => { const V = SS.THREE.Vector3, e = window.__e, t0 = performance.now(); let n0 = SS.frameN | 0, ok = 0, pv = null, pf = null, last = null;
@@ -28,6 +27,7 @@ const srv = http.createServer((q, r) => { let f = path.join(D, decodeURIComponen
         const still = pv ? v.distanceTo(pv) < 0.01 && f.angleTo(pf) * 180 / Math.PI < 0.05 : false; pv = v; pf = f; last = { off: +off.toFixed(3), still };
         if (off < 0.3 && still) ok++; else ok = 0; if (ok >= 2) return Object.assign({ ms: Math.round(performance.now() - t0) }, last); }
       return Object.assign({ timeout: true }, last); });
+    await p.evaluate(() => { window.__slowMs = 180; }); res.settle1 = await settle();
     const waitFor = async (expr, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await p.evaluate(expr)) return true; await p.waitForTimeout(40); } return false; };
     // 1) plain hit
     const m0 = await p.evaluate(() => { window.__freezeAt = 'hit'; return SS.hud.markerCount | 0; });
