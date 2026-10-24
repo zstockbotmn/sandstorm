@@ -264,6 +264,17 @@ Root cause: A35 streetYaw aimed at a fixed street point (1.2 m off the rail, 14 
 Fix: world doorFront (art room front flush with the outermost art surface across the aperture: 7.75 -> 6.59); doorstop yaw derived from the opening (sweep normal->down-street, first clear centre ray through the aperture + 7 deg, min 21 deg; here 28 deg; recenter still only on room drift, 2 s grace); doorway pressure flanker spot must be visible from the held eye and within 32 deg of the peek centre. a35-yaw stricter: real FIX4 W1-relative placement, centre ray must reach the street, pressure flanker visible/on screen/<=35 deg (FAILS on the A36 build).
 Tests PASS (logs/a37, Low): a35-yaw (28 deg out, sight clear, flanker -10.7 deg visible, aheadW1 32.1), doorway-stop, a30-force (door/cxnade/combined/campNade), a34-smoke. 12-run triage plan (pA37/rerun-plan.sh) NOT run yet. No GH Pages, no publish.
 
+## A38 (App PM Oct 24 — DONE, internal preview only)
+DONE: tip 7f610a9, build ss-b8e705d7e4, label 'internal preview A38', preview :8850. Tester A37 B2/B3 + PM Fun option A.
+Superseded cancel: lane re-entry cleared the FLANKED tell without an outcome, so the next tell logged it 'superseded'. Fix: the visit's tell closes as 'lane end'; a started lane visit (go/hold) is locked - flank retire, stall push, climax fallback and hit-duck are refused; only leaving the doorway or death ends it (12 s go timeout). 'no shot' 78.5/94.9 was a second duck-flanker that could not shoot past the jamb: no new duck-flank while the doorway is held and a lane flanker lives.
+'0 flank': the lane flanker was counted as 'suppress'; the climax log/record now count it as '+N doorway lane' (gameplay unchanged; A33 lets pressure stay through the climax).
+Fun (PM option A): first lane visit holds 3.5 s, later 2.2-2.9 s, fires while exposed, no duck on hit, one tell per visit, no visit inside the big-beat calm; no aim assist; bigbeat/RPG damage unchanged. Kill confirm stamped per frame (same frame as the kill in test).
+Climax 34 s vs 65 s: basis difference (a37-full 65.65 = absolute sim; doorway->climax nade ~38 s vs Tester 33.9 s) = variance.
+Tests PASS (logs/a38, Low, one at a time, idle box): a37-flanker-lane (holds 3.5/2.62, first-visit fire 2, kc delta 0), a35-yaw, doorway-stop, a30-force (4 legs), a34-smoke, a37-full.
+Triage tip vs A32 (logs/a38, solo): aim-reg FAIL Low+High on BOTH builds; hitvol-margin FAIL both builds (pool 5, so no fresh-fighter fix); feedback-shots Low PASS both, High FAIL a38 / PASS a32 (view not on target at shot 1).
+Test fixes: aim-reg + feedback-shots use state waits (pose landed / view settled, frame-capped) instead of fixed ms - no thresholds changed. aim-reg Low after: only ground 65 m still 1/8 body shot null.
+PENDING (pre-existing, pending PM; block release, not this handoff): aim-reg 65 m null body shot (ray 6 mm from aim point); hitvol arm-kill aim point lands on body volume (2 hits, spec 3); hitvol crouch head 14 cm (> 13) on Low; feedback-shots state-wait version (TDZ fixed c8795fb) runs on High/Low AFTER Tester's scores. Fast/visual legs after Tester. No GH Pages, no publish.
+
 ## A37b/c (App PM Oct 24 — DONE, internal preview only)
 DONE: tip cd1e937, build ss-ce06e59ff6, label 'internal preview A37', preview :8850. Tester A37 follow-up (flanker partial, feedback 3/5, "HP 163", truck->RPG ~23 s).
 HP 163: not HP - the bare #score (distance 63 + 100 kill pts) sits directly above the HP bar; every HP write clamps to 100. Fix: 'SCORE' label (CSS ::before, text unchanged); a34-smoke + a37-full assert HP <= 100.
