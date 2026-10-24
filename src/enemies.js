@@ -1663,10 +1663,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
       const b = blood[i];
       if (b.life > 0) continue;
       b.life = 0.22 + Math.random() * 0.13; // never outlives the hit marker (fix 3)
+      // A37 (tester A36 W1: hits at 20-35 m read as nothing): the puff keeps a minimum on-screen size (~0.9-1.6 deg, ~5-9 px on
+      // a 390 px-tall view; it was 0.12-0.24 m = 1-2 px at 30 m) and stays for >= 2 painted frames / 260 ms real time
+      b.untilR = performance.now() + 260; b.frame0 = (window.SS && window.SS.frameN) | 0;
       b.sprite.visible = true;
       b.sprite.position.copy(point);
       b.sprite.material.opacity = 0.9;
-      b.sprite.scale.setScalar(0.12 + Math.random() * 0.12);
+      { const dc = camera.position.distanceTo(point); b.sprite.scale.setScalar(Math.max(0.12 + Math.random() * 0.12, dc * (0.016 + Math.random() * 0.012))); }
       b.vel.set((Math.random() - 0.5) * 2.4, 1.2 + Math.random() * 2.2, (Math.random() - 0.5) * 2.4);
       spawned += 1;
     }
@@ -1935,6 +1938,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const SSx = window.SS || {};
     if (SSx.hud && SSx.hud.hitMarker) SSx.hud.hitMarker(part === 'head' ? 'headkill' : 'kill');
     if (SSx.audio && SSx.audio.kill) SSx.audio.kill();
+    if (SSx.hud && SSx.hud.killConfirm) SSx.hud.killConfirm(part === 'head', aliveCount()); // A37: readable kill confirm (falls behind cover are often unseen)
     if (part === 'head') { const hp = (point || origin.clone().setY(origin.y + 1.6)); spray(hp); spray(hp); spray(hp); }
     // Drops (tester: none in a whole run, ammo dead-ended): 50% per kill, guaranteed after 2 dry kills or 20 s (pity);
     // the kind follows need (low reserve -> ammo, low health -> health).
@@ -2182,6 +2186,70 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (S.doorHold || (S.doorStop && S.doorStop.state === 'held')) return true;
     return !!(S.cover && S.cover.kind === 'door' && S.input && S.input.cover);
   }
+  // A37b (App PM item 2; tester A36: the pressure flankers stayed markers behind walls, one stepped out ~118.7 s and was gone
+  // before the aim settled). The in-view pressure flanker now works a LANE: it runs (loco, feet planted) to the spot the held
+  // doorway look sees, stands there exposed and fires for LANE_HOLD_S game time (and >= LANE_MIN_FRAMES painted frames, so
+  // a 1 fps player gets to aim), runs back to a spot the doorway cannot see, waits LANE_WAIT_S, and comes again. While in the
+  // lane it is the flanker (FLANKED tell, flank hits by the usual A14-A17 rules); at the fallback it is not.
+  // SS.doorLane = { id, state, holds, log: [{ in, out, x, z }] }.
+  const LANE_HOLD_S = [2.2, 2.9], LANE_MIN_FRAMES = 6, LANE_WAIT_S = [3.5, 5.5];
+  function laneRec(e) { const SSx = window.SS; if (!SSx || !e._lane) return; const L = e._lane; SSx.doorLane = { id: e.id, state: L.state, holds: L.holds, log: L.log, at: [+L.at.x.toFixed(2), +L.at.z.toFixed(2)], back: L.back ? [+L.back.x.toFixed(2), +L.back.z.toFixed(2)] : null }; }
+  function laneArrive(e) {
+    const L = e._lane, SSx = window.SS, sim = (SSx && SSx.simTime) || 0, gp = e.group.position;
+    if (L.state === 'go') {
+      if (Math.hypot(gp.x - L.at.x, gp.z - L.at.z) > 1.2) { L.state = 'wait'; L.until = sim + 1.5; laneRec(e); return; } // moved elsewhere by another system
+      L.state = 'hold'; L.until = sim + LANE_HOLD_S[0] + Math.random() * (LANE_HOLD_S[1] - LANE_HOLD_S[0]); L.f0 = (SSx && SSx.frameN) | 0; L.pos = gp.clone();
+      L.log.push({ in: +sim.toFixed(2), out: null, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2) }); if (L.log.length > 8) L.log.shift();
+      // standing fire from the lane: no crouch rise / side-step (it arrives on its feet), a short beat before the first round
+      e._peekArm = false; e._peekFired = true; e.settleT = 0; e.peekKind = null; e.peekHigh = true; e._sideStep = false; if (e._stepVec) { e._stepVec.x = 0; e._stepVec.z = 0; }
+      e.phase = 'fire'; e.phaseT = 0.4; e.posture = 'lean'; e.exposed = true; e.moving = false; e.shootCd = Math.min(e.shootCd || 0.6, 0.35 + Math.random() * 0.25);
+      slog('door', 'pressure flanker in lane'); laneRec(e); return;
+    }
+    if (L.state === 'back') { L.state = 'wait'; L.until = sim + LANE_WAIT_S[0] + Math.random() * (LANE_WAIT_S[1] - LANE_WAIT_S[0]); laneRec(e); }
+  }
+  function laneBackSpot(e, L) {
+    const door = window.SS && window.SS.cover && window.SS.cover.door; if (!door) return null;
+    const gp = e.group.position; let best = null, bd = 1e9;
+    for (const r of [2.5, 3.5, 4.5, 6]) for (let k = 0; k < 12; k++) {
+      const a = k * Math.PI / 6, px = gp.x + Math.sin(a) * r, pz = gp.z - Math.cos(a) * r;
+      if (Math.abs(px) > 5.6) continue;
+      const anchor = { pos: new THREE.Vector3(px, 0, pz), type: 'wall', open: true };
+      let at = anchor.pos; try { at = tuckOf(standPos(anchor), anchor); } catch (_) {}
+      if (Math.abs(at.x) > 5.8 || Math.hypot(at.x - camera.position.x, at.z - camera.position.z) < 3.3 || occupiedBy(at, e)) continue;
+      const d = Math.hypot(at.x - gp.x, at.z - gp.z); if (d >= bd) continue;
+      if (doorSightClear(door, { x: at.x, y: 1.25, z: at.z }) || doorSightClear(door, { x: at.x, y: 0.9, z: at.z })) continue;
+      best = anchor; bd = d;
+    }
+    return best;
+  }
+  function laneTick(e, dt, diff) {
+    const L = e._lane, SSx = window.SS, sim = (SSx && SSx.simTime) || 0;
+    if (!e.alive || e.dying) { e._lane = null; return false; }
+    if (!doorHeldNow()) { if (L.state === 'hold') { e.phaseT = 0; } e._lane = null; if (SSx && SSx.doorLane) SSx.doorLane.state = 'off'; return false; } // left the doorway: plain cover AI
+    if (L.state === 'hold') {
+      if (e.phase !== 'fire' || e._repositioning) { L.state = 'wait'; L.until = sim + 2; laneRec(e); return false; } // pulled away (stall push, last stand)
+      e.group.position.x = L.pos.x; e.group.position.z = L.pos.z; e._sideStep = false; if (e._stepVec) { e._stepVec.x = 0; e._stepVec.z = 0; }
+      e.phaseT = Math.max(e.phaseT || 0, 0.3); e._suppressUntilSim = -1;
+      tickFire(e, dt, diff); e.phase = 'fire'; e.exposed = true;
+      const frames = (((SSx && SSx.frameN) | 0) - (L.f0 | 0));
+      if (sim >= L.until && frames >= LANE_MIN_FRAMES) {
+        const lg = L.log[L.log.length - 1]; if (lg) lg.out = +sim.toFixed(2); L.holds += 1;
+        const back = laneBackSpot(e, L);
+        L.back = back ? back.pos.clone() : null; e._flankMove = false;
+        if (back) { try { parkCoverStep(e); } catch (_) {} startReposition(e, back); e._reposWhy = 'lane-back'; e.moveKind = 'run'; L.state = 'back'; slog('door', 'pressure flanker falls back'); }
+        else { L.state = 'wait'; L.until = sim + LANE_WAIT_S[0]; e.phaseT = 0; }
+        laneRec(e);
+      }
+      return true;
+    }
+    if (L.state === 'wait' && sim >= L.until && e.phase !== 'relocate' && !e._repositioning && !(e.staggerT > 0)) {
+      try { parkCoverStep(e); } catch (_) {}
+      startReposition(e, L.spot); e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; e._flankTellSim = null; // a new lane visit = a new flank attempt (new tell)
+      const end = e.path && e.path[e.path.length - 1]; if (end) L.at.set(end.x, 0, end.z);
+      L.state = 'go'; laneRec(e);
+    }
+    return false;
+  }
   function doorPressureTick() {
     const SSx = window.SS; if (!SSx || !SSx.running) return;
     const sim = SSx.simTime || 0;
@@ -2244,6 +2312,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     startReposition(e, spot);
     e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run';
     doorPressId = e.id; doorPressN += 1; doorPressArmAt = 0;
+    // A37b: an in-view pressure move becomes a lane cycle (see laneTick): hold exposed and fire 2-3 s, fall back, come again
+    if (inView) { const end = e.path && e.path[e.path.length - 1]; e._lane = { state: 'go', at: (end || spot.pos).clone().setY(0), spot, holds: 0, log: [] }; }
     SSx.doorPressure = { sim: +sim.toFixed(2), id: e.id, side: street > 0 ? 1 : -1, armed: true, to: [+spot.pos.x.toFixed(1), +spot.pos.z.toFixed(1)], inView };
     slog('door', 'doorway pressure flank');
   }
@@ -2817,6 +2887,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     enemy.goal = null;
     if (enemy._doorEnemyRec && enemy._doorEnemyRec.reachedSim == null && window.SS)
       enemy._doorEnemyRec.reachedSim = +((window.SS.simTime) || 0).toFixed(1);
+    if (enemy._lane) laneArrive(enemy);
   }
 
   function firePoint(enemy) {
@@ -3617,6 +3688,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       return;
     } // hit stagger: frozen, exposed
     if (enemy.debugHold) { enemy.moving = false; if (LOCO2) steerFacing(enemy, dt); return; } // test hook (loco-facing): AI frozen in place, facing still steered
+    if (enemy._lane && laneTick(enemy, dt, diff)) { if (LOCO2) steerFacing(enemy, dt); return; }
     if (enemy.behavior === 'flanker') updateFlanker(enemy, dt, diff);
     else updateCover(enemy, dt, diff);
     if (LOCO2) steerFacing(enemy, dt);
@@ -4083,7 +4155,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
         b.vel.x *= 0.6;
         b.vel.z *= 0.6;
       }
-      b.sprite.material.opacity = Math.max(0, b.life * 2);
+      const holdB = performance.now() < (b.untilR || 0) || (((window.SS && window.SS.frameN) | 0) < (b.frame0 | 0) + 2);
+      if (b.life <= 0 && holdB) b.life = 0.02; // A37: shown on >= 2 painted frames at low fps
+      b.sprite.material.opacity = holdB ? Math.max(0.6, b.life * 2) : Math.max(0, b.life * 2);
       if (b.life <= 0) b.sprite.visible = false;
     }
     // Kill pools fade out after ~8 s, so a later enemy standing on an old spot doesn't look bloodied without a hit (fix 3).

@@ -142,7 +142,10 @@ export function createWeapon(camera, world, scene) {
     slot.sprite.position.copy(point);
     if (normal) slot.sprite.position.addScaledVector(normal, 0.06);
     slot.sprite.material.opacity = 0.75;
-    slot.sprite.scale.setScalar(0.12);
+    // A37: a round into cover near a fighter 20-35 m out drew a 0.12-0.4 m puff (1-4 px): the puff now keeps a minimum
+    // on-screen size and >= 2 painted frames / 260 ms real time, so 'hit the cover' reads at range and low fps
+    slot.k = Math.max(1, camera.position.distanceTo(point) * 0.016 / 0.12); slot.untilR = performance.now() + 260; slot.frame0 = (window.SS && window.SS.frameN) | 0;
+    slot.sprite.scale.setScalar(0.12 * slot.k);
   }
 
   let recoil = 0, recT0 = 0, recDur = 200, recTot = 0, recDone = 0, drP = 0, drY = 0, drDone = 0;
@@ -284,9 +287,10 @@ export function createWeapon(camera, world, scene) {
       const p = puffs[i];
       if (p.life <= 0) continue;
       p.life -= dt;
+      if (p.life <= 0 && (performance.now() < (p.untilR || 0) || ((window.SS && window.SS.frameN) | 0) < (p.frame0 | 0) + 2)) p.life = 0.02;
       const u = Math.max(0, p.life / p.max);
-      p.sprite.material.opacity = 0.75 * u;
-      p.sprite.scale.setScalar(0.12 + (1 - u) * 0.28);
+      p.sprite.material.opacity = Math.max(0.75 * u, performance.now() < (p.untilR || 0) ? 0.5 : 0);
+      p.sprite.scale.setScalar((0.12 + (1 - u) * 0.28) * (p.k || 1));
       if (p.life <= 0) p.sprite.visible = false;
     }
 

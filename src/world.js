@@ -812,15 +812,21 @@ export function createWorld(scene, seed) {
         art.fitToBox(drum, 0.62, 0.9, 0.62, { keepAspect: true, alignLong: true });
         drum.position.x += x;
         drum.position.z += z;
+        // A37 (W1 probe, Low: 4 of 1315 rounds at visible fighter points stopped on a barrel with no drum drawn there): the fixed
+        // 0.9 m-tall proxy stood above / outside the fitted drum. The proxy now takes the drum's own fitted box (just inside it).
+        drum.updateMatrixWorld(true); const db = new THREE.Box3().setFromObject(drum), dsz = db.getSize(new THREE.Vector3());
         seg.group.add(drum);
-        m = new THREE.Mesh(barrelGeo, matInvisible); m.scale.set(0.88, 1, 0.88); // proxy inside the drum silhouette
+        m = new THREE.Mesh(barrelGeo, matInvisible);
+        const hy = dsz.y > 0.2 ? Math.min(0.9, dsz.y * 0.97) : 0.9, rr = Math.min(dsz.x, dsz.z) / 2;
+        const sxz = rr > 0.1 ? Math.min(0.88, (rr * 0.96) / 0.36) : 0.88; // barrelGeo bottom radius 0.36
+        m.scale.set(sxz, hy / 0.9, sxz); m.userData.py = (dsz.y > 0.2 ? db.min.y : 0) + hy / 2;
         m.castShadow = false;
         m.visible = true;
       } else {
         m = new THREE.Mesh(barrelGeo, matBarrel);
         m.castShadow = true;
       }
-      m.position.set(x, 0.45, z); m.name = 'barrel';
+      m.position.set(x, m.userData.py != null ? m.userData.py : 0.45, z); m.name = 'barrel';
       m.receiveShadow = true;
       m.userData.segId = seg.id;
       seg.group.add(m);

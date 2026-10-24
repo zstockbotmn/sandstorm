@@ -199,6 +199,19 @@ export function createHud() {
   const scopeEl = document.createElement('div'); scopeEl.id = 'scope-overlay';
   scopeEl.innerHTML = '<div class="lens"></div><div class="rh"></div><div class="rv"></div><div class="rd"></div>'; root.prepend(scopeEl); // first child: HUD text (ammo, ENEMIES) stays on top
   function setScope(on) { if (scopeEl.classList.contains('on') !== !!on) { scopeEl.classList.toggle('on', !!on); cross.style.visibility = on ? 'hidden' : ''; dot.style.visibility = on ? 'hidden' : ''; } }
+  // A37 (tester A36: ~25 rounds at W1, one hit marker, no kill seen): a kill behind cover can end in a fall the player never sees,
+  // so every kill also prints a confirm under the crosshair ("ENEMY DOWN" / "HEADSHOT", + how many are left), held >= 1.3 s real
+  // time AND >= 3 painted frames (readable at ~1 fps). hud.killConfirms counts them for tests.
+  const kc = document.createElement('div'); kc.id = 'kill-confirm'; root.appendChild(kc);
+  let kcHideAt = 0, kcFrames = 0, kcRaf = 0;
+  function kcTick() { if (window.SS && window.SS.hudFreeze) { kcRaf = requestAnimationFrame(kcTick); return; } kcFrames -= 1;
+    if (kcFrames <= 0 && performance.now() >= kcHideAt) { kc.classList.remove('show'); kcRaf = 0; return; } kcRaf = requestAnimationFrame(kcTick); }
+  function killConfirm(head, left) {
+    kc.textContent = (head ? 'HEADSHOT' : 'ENEMY DOWN') + (left > 0 ? ' \u00b7 ' + left + ' LEFT' : '');
+    kc.classList.toggle('head', !!head); kc.classList.remove('show'); void kc.offsetWidth; kc.classList.add('show');
+    kcHideAt = performance.now() + 1300; kcFrames = 3; hud.killConfirms = (hud.killConfirms | 0) + 1; hud.lastKillConfirm = kc.textContent;
+    if (!kcRaf) kcRaf = requestAnimationFrame(kcTick);
+  }
   const bannerEl = document.createElement('div'); bannerEl.id = 'wave-banner'; root.appendChild(bannerEl); let bannerTimer = 0;
   function banner(text) { bannerEl.textContent = text; bannerEl.classList.remove('show'); void bannerEl.offsetWidth; bannerEl.classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => bannerEl.classList.remove('show'), 1300); }
   const hintEl = document.createElement('div'); hintEl.id = 'aim-hint'; root.appendChild(hintEl); let hintTimer = 0;
@@ -333,6 +346,7 @@ export function createHud() {
     flashHealthNum,
     setScore,
     headshotFlash,
+    killConfirm,
     callout,
     radio,
     banner, rushBanner, areaClear,
