@@ -3784,9 +3784,17 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const alive = aliveCount();
     try { flankTick(); } catch (err) { reportErr('flankTick', err); }
     try { doorPressureTick(); } catch (err) { reportErr('doorPressure', err); }
-    const dNow = window.SS ? window.SS.distance : 0;
+    let dNow = window.SS ? window.SS.distance : 0;
     if (burstIndex === 0 && window.SS && window.SS.running) { // m1x: opening quiet walk (real time, capped per frame)
       const nr = performance.now(); quietRunT += quietRealAt ? Math.min(2.0, (nr - quietRealAt) / 1000) : 0; /* m1z: cap 2 s/frame (was 0.5: at 0.6 fps the then-24 s quiet walk took ~77 s of wall time) - a tab switch still cannot skip it */ quietRealAt = nr;
+      // A36 (restart m1r: first-wave distance varied 8.7-12.8 m on Low, 33 m on fast): the opening walk is timed in real time
+      // (quietRunT) but the walk advanced in sim time (<= 0.2 s per frame), so the contact spot depended on fps. During the
+      // opening quiet walk only, the walk catches up to the same real-time clock, clamped at the contact distance, so every
+      // run and tier meets the first wave ~SPEED x FIRST_CONTACT_S down the street (the A19 tester's ~11 s walk).
+      if (window.SS.walking && !window.SS.roomHold && !window.SS.doorHold && FIRST_CONTACT_S > 0) {
+        const sp = window.SS.walkSpeed || 3, dT = Math.min(quietRunT, FIRST_CONTACT_S) * sp, dC = window.SS.distance || 0;
+        if (dT > dC + 1e-3) { const k = dT - dC; camera.position.z -= k; window.SS.distance = dC + k; window.SS.openWalkCatchup = +((window.SS.openWalkCatchup || 0) + k).toFixed(2); dNow = window.SS.distance; }
+      }
       const k = FIRST_CONTACT_S > APPROACH_S ? Math.max(0, Math.min(1, (quietRunT - APPROACH_S) / (FIRST_CONTACT_S - APPROACH_S))) : 1;
       window.SS.approach = window.SS.approachForce != null ? window.SS.approachForce : quietRunT >= APPROACH_S ? k : 0; // approachForce: test hook (fx3 skyline) window.SS.quietRunT = quietRunT;
       if (!radioWarned && FIRST_CONTACT_S > 0 && quietRunT >= FIRST_CONTACT_S - RADIO_WARN_S) { radioWarned = true; window.SS.radioWarnAt = performance.now();
@@ -4011,7 +4019,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const SSx = window.SS, sNow = SSx.simTime || 0, lines = ['Clear!', 'Contact down, moving on.', 'Good work, keep moving.', 'Area secure. Moving up.', 'That\'s the last of them. Move out.'];
         let li = Math.floor(Math.random() * lines.length); if (li === lastClearLine) li = (li + 1) % lines.length; lastClearLine = li;
         const fleeClear = !!(SSx.lastFled && SSx._fledWave === waveClears);
-        payoffUntil = sNow + 4.0; SSx.walking = false; SSx.areaClearAt = sNow;
+        payoffUntil = sNow + 4.0; SSx.payoffUntil = payoffUntil; /* A36: exposed for m1 game-time softlock check */ SSx.walking = false; SSx.areaClearAt = sNow;
         try { if (SSx.hud.areaClear) SSx.hud.areaClear('AREA CLEAR', 3800); } catch (_) {}
         try { squadCall(lines[li]); } catch (_) {}
         const L = SSx.areaClearLog || (SSx.areaClearLog = []); L.push({ wave: waveClears, sim: +sNow.toFixed(1), line: lines[li], heldMs: 3800, fleeClear }); if (L.length > 30) L.shift(); } // tester m1q: clear cue when the walk resumes
