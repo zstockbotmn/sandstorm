@@ -2038,6 +2038,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
   let _seenShot = null;
   function forceDuck(enemy, shot) {
     if (!enemy || !enemy.alive || enemy.dying || enemy.pinned) return;
+    if (laneLocked(enemy) && enemy._lane.state === 'hold') { laneGuard(enemy, 'duck'); return; } // A38: stays in the open for the visit (flinch springs still play)
     const peeking = enemy.phase === 'peek' || enemy.phase === 'fire' || (enemy.peekT || 0) > 0.18 || (enemy._peekPh || 0) > 0.18;
     if (!peeking) return;
     if (shot && enemy._duckShot === shot) { enemy.duckT = Math.max(enemy.duckT || 0, 0.8); return; }
@@ -2156,6 +2157,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (flankHitsWave >= FLANK_CAP_WAVE) return; // A15: the wave's flank budget is spent
     if (Math.max(burstIndex, waveClears + 1) <= 1) { SSx.flankW1Blocked = (SSx.flankW1Blocked | 0) + 1; return; } // A15b: wave 1 is quiet - front-arc fire and near misses only, no flank moves
     if (list.some((f) => f.alive && f._flankMove && f.phase === 'relocate')) return;
+    if (doorHeldNow() && list.some((f) => f.alive && !f.dying && f._lane)) { SSx.flankDoorLaneBlocked = (SSx.flankDoorLaneBlocked | 0) + 1; return; } // A38 (Tester A37 B2): in a doorway hold the lane is the flank; a second duck-flank's tell could never shoot past the jamb and ended 'no shot' 4.6 s later
     let e = null, bd = 1e9; const cam = camera.position;
     for (const f of list) {
       if (!f.alive || f.dying || f.pinned || f._doorPressure || f.group.position.y > 0.05 || f.phase === 'relocate' || !f.anchor || isElevated(f.anchor.type)) continue;
@@ -2195,6 +2197,18 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // lane it is the flanker (FLANKED tell, flank hits by the usual A14-A17 rules); at the fallback it is not.
   // SS.doorLane = { id, state, holds, log: [{ in, out, x, z }] }.
   const LANE_HOLD_S = [2.2, 2.9], LANE_MIN_FRAMES = 6, LANE_WAIT_S = [3.5, 5.5];
+  // A38 (App PM Fun ruling, option A): the FIRST visit of a doorway lane holds LANE_FIRST_S game time; later visits 2.2-2.9 s.
+  const LANE_FIRST_S = 3.5;
+  // A38 (Tester A37 B2: lane visits 'cancelled' as they start): a started visit (go / hold) is locked - other systems'
+  // moves (flank retire, stall push, climax fallback, hit duck) are refused until it ends; only leaving the doorway or
+  // death ends it early. e._laneMoving marks the lane's own moves. SS.laneGuard = { refused, retire, duck } counts.
+  function laneLocked(e) { const L = e && e._lane; return !!(L && (L.state === 'go' || L.state === 'hold') && e.alive && !e.dying && doorHeldNow()); }
+  function laneGuard(e, what) { const S = window.SS; if (!S) return; const G = S.laneGuard || (S.laneGuard = { refused: 0, retire: 0, duck: 0, log: [] }); G[what] = (G[what] | 0) + 1; G.log.push({ sim: +((S.simTime || 0)).toFixed(2), id: e.id, what, why: e._reposWhy || null, state: e._lane && e._lane.state }); if (G.log.length > 30) G.log.shift(); }
+  // the visit's own FLANKED tell gets one outcome when the visit ends without a hit ('lane end'), so the next visit's tell is
+  // not logged as 'flank aborted (superseded)'
+  function laneCloseTell(e) { const S = window.SS, r = e._flankRec; if (r && !r.outcome) { r.outcome = 'lane end'; r.outSim = +(((S && S.simTime) || 0)).toFixed(2); if (S) S.laneEndNoHit = (S.laneEndNoHit | 0) + 1; } }
+  function laneCalm(sim) { const S = window.SS; return !!(S && S.bigBeatCalmUntil != null && sim < S.bigBeatCalmUntil - 1); } // no damaging rounds then: a visit would not fire
+
   // A37c pacing (Tester A37: truck->RPG 23 s, climax past 152 s). A lane flank hit landing in the last seconds before the
   // RPG's gates open adds the A14 6 s flank lull to the RPG (and the 12 s cxnade spacing to the climax after it). The lane
   // does not START a visit while an RPG is pending and its gates open within LANE_BEAT_S (or already have).
@@ -2207,8 +2221,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const L = e._lane, SSx = window.SS, sim = (SSx && SSx.simTime) || 0, gp = e.group.position;
     if (L.state === 'go') {
       if (Math.hypot(gp.x - L.at.x, gp.z - L.at.z) > 1.2) { L.state = 'wait'; L.until = sim + 1.5; laneRec(e); return; } // moved elsewhere by another system
-      L.state = 'hold'; L.until = sim + LANE_HOLD_S[0] + Math.random() * (LANE_HOLD_S[1] - LANE_HOLD_S[0]); L.f0 = (SSx && SSx.frameN) | 0; L.pos = gp.clone();
-      L.log.push({ in: +sim.toFixed(2), out: null, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2) }); if (L.log.length > 8) L.log.shift();
+      L.state = 'hold'; L.until = sim + (L.holds === 0 ? LANE_FIRST_S : LANE_HOLD_S[0] + Math.random() * (LANE_HOLD_S[1] - LANE_HOLD_S[0])); L.first = L.holds === 0; L.f0 = (SSx && SSx.frameN) | 0; L.pos = gp.clone();
+      L.log.push({ in: +sim.toFixed(2), out: null, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2), want: +(L.until - sim).toFixed(2), first: !!L.first }); if (L.log.length > 8) L.log.shift();
       // standing fire from the lane: no crouch rise / side-step (it arrives on its feet), a short beat before the first round
       e._peekArm = false; e._peekFired = true; e.settleT = 0; e.peekKind = null; e.peekHigh = true; e._sideStep = false; if (e._stepVec) { e._stepVec.x = 0; e._stepVec.z = 0; }
       e.phase = 'fire'; e.phaseT = 0.4; e.posture = 'lean'; e.exposed = true; e.moving = false; e.shootCd = Math.min(e.shootCd || 0.6, 0.35 + Math.random() * 0.25);
@@ -2236,7 +2250,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!e.alive || e.dying) { e._lane = null; return false; }
     if (!doorHeldNow()) { if (L.state === 'hold') { e.phaseT = 0; } e._lane = null; if (SSx && SSx.doorLane) SSx.doorLane.state = 'off'; return false; } // left the doorway: plain cover AI
     if (L.state === 'hold') {
-      if (e.phase !== 'fire' || e._repositioning) { L.state = 'wait'; L.until = sim + 2; laneRec(e); return false; } // pulled away (stall push, last stand)
+      if (e._repositioning) { L.state = 'wait'; L.until = sim + 2; L.cut = (L.cut | 0) + 1; laneRec(e); return false; } // should not happen (startReposition refuses while locked)
+      if (e.phase !== 'fire') { laneGuard(e, 'phase:' + e.phase); e.phase = 'fire'; e.posture = 'lean'; }
+      e.duckT = 0;
       e.group.position.x = L.pos.x; e.group.position.z = L.pos.z; e._sideStep = false; if (e._stepVec) { e._stepVec.x = 0; e._stepVec.z = 0; }
       e.phaseT = Math.max(e.phaseT || 0, 0.3); e._suppressUntilSim = -1;
       tickFire(e, dt, diff); e.phase = 'fire'; e.exposed = true;
@@ -2245,7 +2261,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
         const lg = L.log[L.log.length - 1]; if (lg) lg.out = +sim.toFixed(2); L.holds += 1;
         const back = laneBackSpot(e, L);
         L.back = back ? back.pos.clone() : null; e._flankMove = false;
-        if (back) { try { parkCoverStep(e); } catch (_) {} startReposition(e, back); e._reposWhy = 'lane-back'; e.moveKind = 'run'; L.state = 'back'; slog('door', 'pressure flanker falls back'); }
+        laneCloseTell(e); L.state = 'back';
+        if (back) { try { parkCoverStep(e); } catch (_) {} e._laneMoving = true; startReposition(e, back); e._laneMoving = false; e._reposWhy = 'lane-back'; e.moveKind = 'run'; L.state = 'back'; slog('door', 'pressure flanker falls back'); }
         else { L.state = 'wait'; L.until = sim + LANE_WAIT_S[0]; e.phaseT = 0; }
         laneRec(e);
       }
@@ -2253,11 +2270,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     if (L.state === 'wait' && sim >= L.until && e.phase !== 'relocate' && !e._repositioning && !(e.staggerT > 0)) {
       if (laneBeatSoon(sim)) { L.until = sim + 1; L.beatWaits = (L.beatWaits | 0) + 1; if (SSx) SSx.laneBeatWaits = (SSx.laneBeatWaits | 0) + 1; return false; }
+      if (laneCalm(sim)) { L.until = sim + 1; return false; }
       try { parkCoverStep(e); } catch (_) {}
-      startReposition(e, L.spot); e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; e._flankTellSim = null; // a new lane visit = a new flank attempt (new tell)
+      L.tellDone = false; laneCloseTell(e); e._laneMoving = true; L.state = 'go'; startReposition(e, L.spot); e._laneMoving = false; e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; e._flankTellSim = null; // a new lane visit = a new flank attempt (new tell)
       const end = e.path && e.path[e.path.length - 1]; if (end) L.at.set(end.x, 0, end.z);
-      L.state = 'go'; laneRec(e);
+      L.state = 'go'; L.goAt = sim; laneRec(e);
     }
+    if (L.state === 'go' && sim - (L.goAt == null ? sim : L.goAt) > 12 && !e._repositioning) { L.state = 'wait'; L.until = sim + 1.5; laneRec(e); } // A38: a go that never arrives unlocks
     return false;
   }
   // A37c (Tester A37: markers drawn over the pillar; App PM: NO marker over the pillar/doorframe, dim elsewhere). Per enemy,
@@ -2312,7 +2331,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (cxPhase === 'tell' || cxPhase === 'active') return;
     if (!doorPressArmAt) { doorPressArmAt = sim + 3 + Math.random() * 3; return; }
     if (sim < doorPressArmAt) return;
-    if (laneBeatSoon(sim)) { doorPressArmAt = sim + 1; SSx.laneBeatWaits = (SSx.laneBeatWaits | 0) + 1; return; }
+    if (laneBeatSoon(sim) || laneCalm(sim)) { doorPressArmAt = sim + 1; SSx.laneBeatWaits = (SSx.laneBeatWaits | 0) + 1; return; }
     const cam = camera.position;
     const door = SSx.cover && SSx.cover.door;
     const side = (door && door.side) || (cam.x >= 0 ? 1 : -1);
@@ -2361,11 +2380,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!e) { doorPressArmAt = sim + 2; return; }
     e.pinned = false; e.staggerT = 0; e._doorPressure = true;
     try { parkCoverStep(e); } catch (_) {}
-    startReposition(e, spot);
+    e._laneMoving = true; startReposition(e, spot); e._laneMoving = false;
     e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run';
     doorPressId = e.id; doorPressN += 1; doorPressArmAt = 0;
     // A37b: an in-view pressure move becomes a lane cycle (see laneTick): hold exposed and fire 2-3 s, fall back, come again
-    if (inView) { const end = e.path && e.path[e.path.length - 1]; e._lane = { state: 'go', at: (end || spot.pos).clone().setY(0), spot, holds: 0, log: [] }; }
+    if (inView) { const end = e.path && e.path[e.path.length - 1]; e._lane = { state: 'go', at: (end || spot.pos).clone().setY(0), spot, holds: 0, log: [], goAt: sim }; }
     SSx.doorPressure = { sim: +sim.toFixed(2), id: e.id, side: street > 0 ? 1 : -1, armed: true, to: [+spot.pos.x.toFixed(1), +spot.pos.z.toFixed(1)], inView };
     slog('door', 'doorway pressure flank');
   }
@@ -2376,7 +2395,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (!e._doorPressure && (e._flankHitsN >= FLANK_HITS_PER_FLANKER || flankHitsWave >= FLANK_CAP_WAVE)) retireFlanker(e, null);
     if (flankHitsWave >= FLANK_CAP_WAVE) for (const f of list) if (f !== e && f.alive && !f._doorPressure && (f._flankArr || f._flankMove)) retireFlanker(f, 'cap'); }
   // A16: a flanker leaves its flank spot for front-arc cover (visible reposition); why != null logs 'flank aborted (why)'
-  function retireFlanker(e, why) { const hadTell = typeof e._flankTellSim === 'number' ? +e._flankTellSim.toFixed(2) : null; if (hadTell != null && e._flankRec && !e._flankRec.outcome) { e._flankRec.outcome = why ? 'abort' : 'hit'; e._flankRec.outSim = +((window.SS && window.SS.simTime) || 0).toFixed(2); } e._flankArr = null; e._flankMove = false; e._flankHitsN = 0; e._flankTellSim = null; e._flankBlock = null;
+  function retireFlanker(e, why) { if (laneLocked(e)) { laneGuard(e, 'retire'); const r = e._flankRec; if (r && !r.outcome) { r.outcome = why ? 'abort' : 'hit'; r.outSim = +(((window.SS && window.SS.simTime) || 0)).toFixed(2); } e._flankTellSim = null; e._flankHitsN = 0; e._flankBlock = null; if (why) slog('enemy', 'flank tell closed (' + why + '), lane visit continues'); return; } const hadTell = typeof e._flankTellSim === 'number' ? +e._flankTellSim.toFixed(2) : null; if (hadTell != null && e._flankRec && !e._flankRec.outcome) { e._flankRec.outcome = why ? 'abort' : 'hit'; e._flankRec.outSim = +((window.SS && window.SS.simTime) || 0).toFixed(2); } e._flankArr = null; e._flankMove = false; e._flankHitsN = 0; e._flankTellSim = null; e._flankBlock = null;
     let best = null, bd = 1e9; for (const c of coverPool(['wall', 'barrel', 'car', 'door'], [8, 32])) { if (!c.pos || !inFrontArc(c.pos) || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(e.group.position); if (d < bd) { bd = d; best = c; } }
     if (best && !e.pinned && !e.dying && e.alive) { parkCoverStep(e); startReposition(e, best); e._reposWhy = why ? 'flank-abort' : 'flank-done'; e.moveKind = 'run'; }
     const SSx = window.SS; if (!SSx) return; SSx.flankRetired = (SSx.flankRetired | 0) + 1;
@@ -2467,7 +2486,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       // is aborted ('flank aborted (why)') and the flanker moves back to the front arc; a fresh tell only for a fresh attempt.
       if (typeof enemy._flankTellSim === 'number' && tAge >= FLANK_ABORT_S && !enemy._doorPressure) { retireFlanker(enemy, enemy._flankBlock || 'no shot'); flankShot = false; }
       else if (!(typeof enemy._flankTellSim === 'number')) {
-        if (!(enemy._doorPressure && flankHitsWave >= FLANK_CAP_WAVE)) { enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
+        if (!(enemy._doorPressure && flankHitsWave >= FLANK_CAP_WAVE) && !(enemy._lane && enemy._lane.tellDone)) { if (enemy._lane) enemy._lane.tellDone = true; enemy._flankTellSim = fS; enemy._flankTellR = fR; flankCue(enemy); if (window.SS) window.SS.flankTells = (window.SS.flankTells | 0) + 1; }
       }
       enemy._flankLastSim = fS;
       if (typeof enemy._flankTellSim === 'number') { const tS = fS - enemy._flankTellSim, tR = fR - (enemy._flankTellR || fR);
@@ -3090,6 +3109,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (c === e.anchor || occupiedBy(c.pos, e)) continue; const d = c.pos.distanceToSquared(here); if (d < minMove * minMove) continue; if (d < bd) { bd = d; best = c; } }
     return best; }
   function stallSend(e, c, kind, from) { const SSx = window.SS, sim = SSx.simTime || 0, pz = camera.position.z;
+    if (laneLocked(e)) { laneGuard(e, 'refused'); return false; } // A38: no stall push / fallback out of a started lane visit
     if (lullOn(sim) && !/^(fallback|flees)/.test(kind)) { lullNote('blocked send: ' + kind); return false; } // A23: nothing advances in the post-climax quiet
     if (LOCO2 && e.phase !== 'relocate') { parkCoverStep(e); startReposition(e, c); }
     else { e._relocAt = sim; e.anchor = c; e.home = standPos(c); e.path = pathOnto(e, c); e.pathI = 0; e.phase = 'relocate'; e.posture = 'idle'; e.exposed = true; e.goal = e.path[0]; }
@@ -3301,8 +3321,9 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // A28: ?cxnade=1 always schedules the climax grenade (~1.2 s in).
     cxNadeAt = (FORCE_CX_NADE || flankers.length === 0) ? sim + (FORCE_CX_NADE ? 0.5 : 2.5 + Math.random() * 1.5) : 0; // A30: cxnade grenade ~0.5 s in
     lastStallSendSim = sim;
-    slog('enemy', 'climax size: ' + sent.length + ' bound ~' + range + 'm, ' + flankers.length + ' flank, ' + (alive.length - sent.length - flankers.length) + ' suppress (tier ' + tier + ')');
-    cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, ground: ground.length, keep, tier, bound: sent.length, range, flank: flankers.length, suppress: alive.length - sent.length - flankers.length, fallbackSim: null };
+    const laneN = alive.filter((o) => o._lane && !sent.includes(o) && !flankers.includes(o)).length; // A38: the doorway lane flanker keeps working through the climax (A33 pressure stays put)
+    slog('enemy', 'climax size: ' + sent.length + ' bound ~' + range + 'm, ' + flankers.length + ' flank' + (laneN ? ' (+' + laneN + ' doorway lane)' : '') + ', ' + (alive.length - sent.length - flankers.length - laneN) + ' suppress (tier ' + tier + ')');
+    cxRec = { wave: cxWave, tellSim: +cxTellSim.toFixed(1), startSim: +sim.toFixed(1), endSim: +cxEndSim.toFixed(1), n, ground: ground.length, keep, tier, bound: sent.length, range, flank: flankers.length, lane: laneN, suppress: alive.length - sent.length - flankers.length - laneN, fallbackSim: null };
     SSx.climaxLog = (SSx.climaxLog || []).concat([cxRec]).slice(-20);
   }
   function climaxBoundSpot(e, range, sent) { const c0 = assaultSpot(e, range); if (c0) return c0; // A22 (a15: W5/W6 got 1-2 bounders of 3-4): a wider open-street grid
@@ -3327,7 +3348,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (cxRec) cxRec.fallbackSim = +sim.toFixed(1);
     cxPrevHadNade = !!(cxRec && cxRec.nade != null); // A26: next climax prefers flank when this one was a grenade
     let nFb = 0, nRet = 0;
-    for (const e of list) { if (!e.alive || e.dying) continue; if (e._flankMove || e._flankArr) { if (typeof e._flankTellSim === 'number') retireFlanker(e, 'fallback'); e._flankMove = false; e._flankArr = null; } e._cxFlankTo = null; // A22: climax flankers fall back too (an open tell ends as 'flank aborted (fallback)')
+    for (const e of list) { if (!e.alive || e.dying) continue; if (laneLocked(e)) { laneGuard(e, 'fallback'); continue; } if (e._flankMove || e._flankArr) { if (typeof e._flankTellSim === 'number') retireFlanker(e, 'fallback'); e._flankMove = false; e._flankArr = null; } e._cxFlankTo = null; // A22: climax flankers fall back too (an open tell ends as 'flank aborted (fallback)')
       e._climaxUntil = -1; e._lullUntil = sim + LULL_S; e._suppressOnArrive = 0; e._assault = false; e._suppressUntilSim = Math.min(e._suppressUntilSim || 0, sim);
       const c = stallCoverFor(e, 22, 35, 2);
       if (c) { const az = camera.position.z - c.pos.z + (c.open ? 0 : (FAR[c.type] || 0)); stallSend(e, c, 'fallback', az); nFb++; }
@@ -3516,6 +3537,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   // Hand the run to the existing relocate path. Rise overlaps the first steps. No teleport.
   function startReposition(e, c) {
+    if (laneLocked(e) && !e._laneMoving) { laneGuard(e, 'refused'); return false; } // A38: a started lane visit runs to completion
     e._relocAt = (window.SS && window.SS.simTime) || 0; // A17: a move stuck > 10 s no longer blocks stall pushes
     if (e._stallRec) { e._stallRec.cancelled = 'moved again (' + (e._reposWhy || '?') + ')'; e._stallRec = null; } // A16b
     e._flankArr = null; // A14: a new move ends flanker status (a flank move re-earns it on arrival)

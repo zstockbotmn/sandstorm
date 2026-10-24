@@ -209,7 +209,7 @@ export function createHud() {
   function killConfirm(head, left) {
     kc.textContent = (head ? 'HEADSHOT' : 'ENEMY DOWN') + (left > 0 ? ' \u00b7 ' + left + ' LEFT' : '');
     kc.classList.toggle('head', !!head); kc.classList.remove('show'); void kc.offsetWidth; kc.classList.add('show');
-    kcHideAt = performance.now() + 1300; kcFrames = 3; hud.killConfirms = (hud.killConfirms | 0) + 1; hud.lastKillConfirm = kc.textContent;
+    kcHideAt = performance.now() + 1300; kcFrames = 3; hud.killConfirms = (hud.killConfirms | 0) + 1; hud.lastKillConfirm = kc.textContent; hud.lastKillConfirmFrame = (window.SS && window.SS.frameN) | 0; hud.lastKillConfirmSim = (window.SS && window.SS.simTime) || 0;
     if (!kcRaf) kcRaf = requestAnimationFrame(kcTick);
   }
   const bannerEl = document.createElement('div'); bannerEl.id = 'wave-banner'; root.appendChild(bannerEl); let bannerTimer = 0;
