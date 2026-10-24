@@ -80,7 +80,9 @@ const res = {};
     const engagedGrew = samples.some((s, i) => i > 0 && s[0] > 0 && samples[i - 1][0] > 0 && s[1] > samples[i - 1][1] + 0.01);
     const clearsBeforeKill = (SS.waveClears || 0) - w0;
     e.takeHit('head', e.group.position.clone()); e.alive && e.takeHit('head', e.group.position.clone());
-    await new Promise(r => setTimeout(r, 2500));
+    // A36 (App PM): game-time wait - the A24 4 game-s AREA CLEAR hold (payoffUntil) + ~1 game-s; hard 20 s real cap so a true softlock still fails
+    { const tk = performance.now(); await new Promise(r => setTimeout(r, 300));
+      while (performance.now() - tk < 20000 && !(SS.payoffUntil != null && (SS.simTime || 0) >= SS.payoffUntil + 1 && SS.walking)) await new Promise(r => setTimeout(r, 200)); }
     return { spawned: true, relocated, alive: e.alive, haltHeld, engagedGrew, clearsBeforeKill, clearsAfterKill: (SS.waveClears || 0) - w0, kills: SS.scoreSys.state.kills - k0, walking: SS.walking, secs: (performance.now() - t0) / 1000 }; });
   res.score = await p.evaluate(() => JSON.parse(JSON.stringify(SS.score && (SS.score.value ?? SS.score.score ?? SS.score))));
   // real progress: distance past 30 m, and shoot a real enemy dead (pinned exposed flanker; Space held; no debug kill)
