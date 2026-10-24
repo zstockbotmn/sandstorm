@@ -244,8 +244,9 @@ export function createAudio() {
   }
 
   function hit() {
+    if (window.SS) window.SS.hitTicks = (window.SS.hitTicks | 0) + 1; // A37c: enemy hits only (misses never call this)
     if (!ctx) return;
-    tone(1800, 0.04, 0.12, 'square');
+    tone(1800, 0.04, 0.16, 'square'); setTimeout(() => tone(2900, 0.035, 0.12, 'square'), 45); // A37c: double 'tick-tick' = hit
     tone(95, 0.11, 0.32, 'sine'); burst(0.05, 0.3, 380, 0.8, 'lowpass'); // m1w: body-hit thud under the tick
   }
 

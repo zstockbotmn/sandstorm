@@ -236,6 +236,7 @@ canvas {
   font: 700 22px system-ui, sans-serif;
 }
 
+#score::before { content: 'SCORE '; font-size: 12px; opacity: 0.75; letter-spacing: 0.06em; } /* A37c: Tester read the bare score above the HP bar as HP 163 */
 #score {
   top: calc(40px + env(safe-area-inset-top));
   left: calc(14px + env(safe-area-inset-left));

@@ -2,6 +2,10 @@
 // DEFAULT street view and hold there >= 2 s (on screen, inside the street view, a clear ray from the eye to its hit volume -
 // drawn meshes AND the shot colliders), fire while exposed, move with feet on the ground (no pops), then fall back; and a
 // scripted shot at it (real fire path: red crosshair on the drawn frame -> input.pendingShots) must register a hit.
+// A37c (Tester A37 + App PM): the >= 2 s must come from the DEFAULT yaw with no aim input, on the street side of the pillar
+// (bearing past doorstop's first clear ray + 3 deg) and near centre (|ndc x| <= 0.7); no enemy marker may sit on drawn
+// geometry within 3.5 m of the eye (pillar / doorframe) while held; a hit = hit tick + body flash + flinch, a miss into
+// cover = dust puff and NO tick.
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const D = path.resolve(__dirname, '../dist'); const PORT = 8856;
 const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.json': 'application/json', '.hdr': 'application/octet-stream', '.jpg': 'image/jpeg', '.png': 'image/png' };
@@ -30,6 +34,9 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
         if (sim - lastKill > 2 && SS.debugKillNearest) { SS.debugKillNearest(); lastKill = sim; } if (!SS.player.alive || sim > 220) break; await sleep(200); }
       if (!held()) return Object.assign(out, { noHold: true, sim: SS.simTime });
       out.doorYaw = SS.doorYaw || null; out.holdSim = +(SS.simTime || 0).toFixed(1);
+      await frame(2); const yaw0 = SS.input.yaw, sideOut = -((SS.cover.door && SS.cover.door.side) || 1); out.yaw0 = +yaw0.toFixed(4); out.yawDrift = 0;
+      const dY = SS.doorYaw || {}, pillarEdge = (dY.firstClearDeg != null ? dY.firstClearDeg : 21) - (dY.deg != null ? dY.deg : 28) + 3; out.streetMinRel = +pillarEdge.toFixed(1);
+      out.markers = { checks: 0, overNear: 0, worst: null, dim: 0, shown: 0 };
       const meshes = []; for (const sg of W.segments) sg.group.traverseVisible((o) => { if (!o.isMesh) return; const m = Array.isArray(o.material) ? o.material[0] : o.material; if (!m || m.transparent || m.visible === false) return; meshes.push(o); });
       const clip = (h) => { if (!(W.inRoomClip && W.inRoomClip(h.point))) return false; const m = Array.isArray(h.object.material) ? h.object.material[0] : h.object.material; return !!(m && m.userData && m.userData.roomClip); };
       const rc = new T3.Raycaster();
@@ -40,17 +47,28 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
           if (!(pr.z > -1 && pr.z < 1 && Math.abs(pr.x) <= 0.94 && Math.abs(pr.y) <= 0.94)) { why = 'off screen ndc ' + pr.x.toFixed(2); continue; }
           const yw = SS.input.yaw, ang = Math.atan2(Math.sin(Math.atan2(v.x - c.x, -(v.z - c.z)) - yw), Math.cos(Math.atan2(v.x - c.x, -(v.z - c.z)) - yw)) * 180 / Math.PI;
           if (Math.abs(ang) > 35) { why = 'outside street view ' + ang.toFixed(1) + 'deg'; continue; }
+          const rel = ang * sideOut; if (rel < pillarEdge) { why = 'pillar side rel ' + rel.toFixed(1) + ' < ' + pillarEdge.toFixed(1); continue; }
+          if (Math.abs(pr.x) > 0.7) { why = 'not near centre ndc ' + pr.x.toFixed(2); continue; }
           const dv = v.clone().sub(c), dT = dv.length(); dv.normalize(); rc.set(c, dv); rc.far = dT;
           let vh = null; for (const h of rc.intersectObjects(meshes, false)) { if (clip(h)) continue; vh = h; break; }
           if (vh && vh.distance < dT - 0.12) { why = 'drawn block ' + (vh.object.name || vh.object.type); continue; }
           const sh = wt.firstHit(c, dv); if (!(sh && sh.object.userData && sh.object.userData.enemy === e)) { why = 'shot block ' + (sh ? (sh.object.name || sh.object.type) : 'none'); continue; }
-          okVol = { part: m.userData.part, ang: +ang.toFixed(1), dist: +dT.toFixed(1), ndc: [+pr.x.toFixed(2), +pr.y.toFixed(2)] }; break; }
+          okVol = { part: m.userData.part, ang: +ang.toFixed(1), rel: +rel.toFixed(1), dist: +dT.toFixed(1), ndc: [+pr.x.toFixed(2), +pr.y.toFixed(2)], px: Math.round(Math.abs(pr.x) * innerWidth / 2) }; break; }
         return okVol || { no: why };
       };
+      const markerCheck = () => { const c = SS.camera.position.clone(); SS.camera.updateMatrixWorld(); const right = new T3.Vector3(1, 0, 0).applyQuaternion(SS.camera.quaternion);
+        for (const e of SS.enemies.list) { const m = e.marker; if (!m || !m.visible || !e.alive) continue; let vis = true; for (let o = m; o; o = o.parent) if (!o.visible) { vis = false; break; } if (!vis) continue;
+          out.markers.shown++; if (m.material && m.material.opacity < 0.5) out.markers.dim++;
+          const mp = new T3.Vector3(); m.getWorldPosition(mp); const pr = mp.clone().project(SS.camera); if (!(pr.z > -1 && pr.z < 1 && Math.abs(pr.x) <= 1 && Math.abs(pr.y) <= 1)) continue;
+          out.markers.checks++; const w = mp.distanceTo(c) * 0.03;
+          for (const k of [0, -1, 1]) { const q = mp.clone().addScaledVector(right, k * w), dv = q.clone().sub(c), dT = dv.length(); dv.normalize(); rc.set(c, dv); rc.far = dT;
+            let vh = null; for (const h of rc.intersectObjects(meshes, false)) { if (clip(h)) continue; vh = h; break; }
+            if (vh && vh.distance < 3.5) { out.markers.overNear++; if (!out.markers.worst) out.markers.worst = { id: e.id, d: +vh.distance.toFixed(2), obj: vh.object.name || vh.object.type, ndc: [+pr.x.toFixed(2), +pr.y.toFixed(2)], sim: +(SS.simTime || 0).toFixed(1) }; break; } } } };
       // 2) default view only (no aim input): watch the pressure flanker's lane visits
       let runStart = null, prev = null, pe = null, shots0 = null, shot = null; const tW = SS.simTime || 0;
       while ((SS.simTime || 0) - tW < 70 && performance.now() - t0 < REAL && SS.player.alive) {
         SS.input.aimMovedT = 0; SS.input.scope = false; SS.input.cover = true; if (SS.player.health < 60) SS.player.health = 100;
+        if (!shot) out.yawDrift = Math.max(out.yawDrift, +(Math.abs(SS.input.yaw - yaw0) * 180 / Math.PI).toFixed(2)); if (held()) markerCheck();
         const L = SS.doorLane; const pid = L ? L.id : (SS.doorPressure && SS.doorPressure.id);
         pe = pid != null ? SS.enemies.list.find((e) => e.id === pid) : null;
         if (pe && pe.alive) {
@@ -66,19 +84,29 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
           if (L && L.state !== 'hold' && shots0 != null && out.firedInHold == null) out.firedInHold = (pe.shotsTaken | 0) - shots0;
           // 3) scripted shot: once a >= 2 s visible hold has been seen, on a hold with time left
           if (out.best >= 2 && !shot && L && L.state === 'hold') {
-            const vol = wt.targets.find((m) => m.userData.enemy === pe && m.userData.part === 'body'); const h0 = pe.health;
+            const vol = wt.targets.find((m) => m.userData.enemy === pe && m.userData.part === 'body'); const h0 = pe.health; const tk0 = SS.hitTicks | 0, fl0 = SS.hitFlashes | 0, pf0 = SS.missPuffs | 0;
             for (let k = 0; k < 6 && !shot; k++) { const v = new T3.Vector3(); vol.getWorldPosition(v); const dv = v.sub(SS.camera.position).normalize();
               SS.input.yaw = Math.atan2(dv.x, -dv.z); SS.input.pitch = -Math.asin(dv.y); SS.input.aimMovedT = performance.now(); await frame(1);
               if (!wt.onTarget) continue; const before = wt.lastShot; SS.input.pendingShots = 1; await frame(1);
-              if (wt.lastShot !== before) shot = { hit: !!(wt.lastShot.hit && wt.lastShot.hit.enemy), part: wt.lastShot.hit && wt.lastShot.hit.part, name: wt.lastShot.hit && wt.lastShot.hit.name, dmg: h0 - pe.health, alive: pe.alive, sim: +(SS.simTime || 0).toFixed(2), lane: SS.doorLane && SS.doorLane.state }; }
+              if (wt.lastShot !== before) shot = { hit: !!(wt.lastShot.hit && wt.lastShot.hit.enemy), part: wt.lastShot.hit && wt.lastShot.hit.part, name: wt.lastShot.hit && wt.lastShot.hit.name, dmg: h0 - pe.health, alive: pe.alive, sim: +(SS.simTime || 0).toFixed(2), lane: SS.doorLane && SS.doorLane.state, ticks: (SS.hitTicks | 0) - tk0, flashes: (SS.hitFlashes | 0) - fl0, puffs: (SS.missPuffs | 0) - pf0, flashOn: !!pe._flash, flinch: !!(pe.lastHitT != null && (SS.simTime || 0) - pe.lastHitT < 1.5) }; }
             if (!shot) shot = { hit: false, why: 'no red crosshair in 6 frames' };
-            out.shot = shot; break;
+            out.shot = shot;
+            // 4) a miss into cover: aim at drawn/shot world geometry beside the doorway (no enemy on the ray) and fire once
+            for (const pd of [0, -0.12, 0.12, -0.25]) for (const off of [-12, -18, -24, -30, -8, 40]) { if (out.miss) break;
+              const yw = yaw0 + off * sideOut * Math.PI / 180, dv = new T3.Vector3(Math.sin(yw) * Math.cos(pd), Math.sin(pd), -Math.cos(yw) * Math.cos(pd)).normalize(); const fh = wt.firstHit(SS.camera.position.clone(), dv);
+              if (!fh || (fh.object.userData && fh.object.userData.enemy) || fh.distance > 25) continue;
+              SS.input.yaw = yw; SS.input.pitch = pd; SS.input.aimMovedT = performance.now(); await frame(2);
+              const tk = SS.hitTicks | 0, pf = SS.missPuffs | 0, before = wt.lastShot; SS.input.pendingShots = 1; await frame(2);
+              if (wt.lastShot === before) continue; const eh = !!(wt.lastShot.hit && wt.lastShot.hit.enemy);
+              out.miss = { off, pitch: pd, dist: +fh.distance.toFixed(1), obj: fh.object.name || fh.object.type, enemyHit: eh, ticks: (SS.hitTicks | 0) - tk, puffs: (SS.missPuffs | 0) - pf }; }
+            break;
           }
         } else if (pe && !pe.alive) { out.flankerDied = +(SS.simTime || 0).toFixed(1); break; }
         await sleep(100);
       }
       if (runStart != null) out.runs.push([+runStart.toFixed(2), +(SS.simTime || 0).toFixed(2)]);
       if (out.firedInHold == null && pe && shots0 != null) out.firedInHold = (pe.shotsTaken | 0) - shots0;
+      out.markerStats = SS.markerStats || null; out.laneSpot = SS.doorLaneSpot || null; out.laneBeatWaits = SS.laneBeatWaits | 0;
       out.lane = SS.doorLane || null; out.press = SS.doorPressure || null; out.flankTells = SS.flankTells | 0; out.flankHits = SS.flankHits | 0;
       out.sim = +(SS.simTime || 0).toFixed(1); out.died = !SS.player.alive; out.fps = SS.fps;
       return out;
@@ -94,12 +122,17 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
       if (R.moves.maxY > 0.08) fail.push('flanker feet off the ground y=' + R.moves.maxY);
       if (!R.shot) fail.push('no scripted shot taken');
       else if (!R.shot.hit) fail.push('scripted shot did not register a hit: ' + JSON.stringify(R.shot));
+      else { if (!(R.shot.ticks >= 1)) fail.push('hit without a hit tick'); if (!(R.shot.flashes >= 1)) fail.push('hit without a body flash'); if (!R.shot.flinch && R.shot.alive) fail.push('hit without a flinch'); }
+      if (!(R.yawDrift <= 0.5)) fail.push('view moved off the default yaw by ' + R.yawDrift + ' deg before the scripted shot (no-drag rule)');
+      if (R.markers.overNear > 0) fail.push('enemy marker drawn over the pillar/doorframe x' + R.markers.overNear + ' ' + JSON.stringify(R.markers.worst));
+      if (!R.miss) fail.push('no miss-into-cover shot taken');
+      else { if (R.miss.enemyHit) fail.push('miss shot hit an enemy'); if (R.miss.ticks !== 0) fail.push('miss into cover played a hit tick'); if (!(R.miss.puffs >= 1)) fail.push('miss into cover made no dust puff'); }
     }
     if (R.died) fail.push('player died');
     if (R.errs.length) fail.push('pageerr ' + R.errs[0]);
   } catch (e) { fail.push(String(e && e.message || e)); }
   R.fail = fail; fs.writeFileSync(out, JSON.stringify(R, null, 1));
-  console.log(fail.length ? 'A37 FLANKER-LANE FAIL ' + fail.join(' | ') : 'A37 FLANKER-LANE PASS visible ' + R.best + ' s, fired ' + R.firedInHold + ', shot ' + JSON.stringify(R.shot) + ', holds ' + (R.lane && R.lane.holds) + ', maxSpeed ' + R.moves.maxSpeed);
+  console.log(fail.length ? 'A37 FLANKER-LANE FAIL ' + fail.join(' | ') : 'A37 FLANKER-LANE PASS visible ' + R.best + ' s at ' + JSON.stringify(R.bestAt) + ', markers ' + JSON.stringify(R.markers) + ', miss ' + JSON.stringify(R.miss) + ', fired ' + R.firedInHold + ', shot ' + JSON.stringify(R.shot) + ', holds ' + (R.lane && R.lane.holds) + ', maxSpeed ' + R.moves.maxSpeed);
   try { await b.close(); } catch (_) {} try { srv.close(); } catch (_) {}
   process.exit(fail.length ? 1 : 0);
 })();

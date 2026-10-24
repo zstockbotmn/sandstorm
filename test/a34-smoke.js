@@ -36,6 +36,7 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
         const beatPending = (pick === 'truck' && !kinds.has('truck') || pick === 'rpg' && !kinds.has('rpg') || !!(SS.spPick && SS.spPick.followRpg && !kinds.has('rpg'))) && age < 80;
         const spare = !!(SS.truckPendingWave || calm || climaxLive || beatPending || (SS.rpgDueAt != null && sim < SS.rpgDueAt + 20));
         if (!spare && sim - lastKill > 2.0 && SS.debugKillNearest && (clears < 1 ? age > 8 : age > 6)) { SS.debugKillNearest(); lastKill = sim; }
+        out.hpMax = Math.max(out.hpMax || 0, +SS.player.health || 0, +SS.health || 0); // A37c: HP never above max (Tester read 163)
         if (!SS.player.alive) { out.died = +sim.toFixed(1); break; }
         if (kinds.has('truck') && kinds.has('rpg') && kinds.has('grenade')) break;
         if (clears >= 4 || sim >= 180) break;
@@ -75,6 +76,7 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
     }
     if (!(R.calm && R.calm.length)) warn.push('no calm log');
     if (R.died != null) fail.push('died ' + R.died);
+    if (!(R.hpMax <= 100)) fail.push('HP above max: ' + R.hpMax);
     if (R.errs && R.errs.length) fail.push('pageerr ' + R.errs[0]);
     R.fail = fail; R.warn = warn;
     fs.writeFileSync(out, JSON.stringify(R, null, 2));

@@ -132,6 +132,7 @@ export function createWeapon(camera, world, scene) {
   let kick = 0;
 
   function spawnPuff(point, normal) {
+    if (window.SS) window.SS.missPuffs = (window.SS.missPuffs | 0) + 1; // A37c: dust on world geometry (a miss), no hit tick
     let slot = puffs[0];
     for (let i = 0; i < puffs.length; i++) {
       if (puffs[i].life <= 0) { slot = puffs[i]; break; }

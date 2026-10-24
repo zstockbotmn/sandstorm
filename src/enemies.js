@@ -1,7 +1,7 @@
 const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.search); // tests: no auto spawns
 import * as THREE from 'three';
 import { art, SPLIT_ANIMS } from './art.js';
-import { doorSightClear } from './doorstop.js';
+import { doorSightClear, doorView, drawnHitDist } from './doorstop.js';
 import { LOCO2, createLoco, updateLoco, aimBody, clipYawRate, turnPlayback, yawRateStep, wrapPi, stepPhase, smooth01, MOVE_YAW_MAX, PLANT_YAW_MAX, TWIST_MAX, HEAD_YAW_MAX, PLANT_TWIST_MAX, TURN_ENTER, TURN_DONE } from './locomotion.js';
 // Last fighter only: after ~20 s on one ground cover, run to another. Off unless ?loco=2 or ?repos=1.
 const BODY_YAW_CAP = 270 * Math.PI / 180, TWIST_RATE = 240 * Math.PI / 180, HEAD_RATE = 300 * Math.PI / 180; // ?loco=2 facing rate caps (App PM: no whipping)
@@ -147,6 +147,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     g.lineJoin = 'round'; g.beginPath(); g.moveTo(4, 6); g.lineTo(28, 6); g.lineTo(16, 27); g.closePath();
     g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.stroke(); g.lineWidth = 2.5; g.strokeStyle = '#fff'; g.stroke(); g.fillStyle = '#ff2a1f'; g.fill();
     const t = new THREE.CanvasTexture(c); return new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, sizeAttenuation: false }); })();
+  const markerMatDim = markerMat.clone(); markerMatDim.opacity = 0.32; // A37c: eye line blocked by world geometry -> dimmed chevron
   // Hitboxes stay mesh.visible so shots connect; this material is what hides them.
   const ghostMat = new THREE.MeshBasicMaterial({ visible: false });
   // ?hitbox: debug overlay draws enemy hitboxes (wireframe, through walls).
@@ -1991,6 +1992,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
 
   function hitEnemy(enemy, part, point) {
     if (!enemy.alive) return;
+    try { flashEnemy(enemy); } catch (_) {}
     const dmg = part === 'head' ? HEAD_DMG : part === 'limb' ? LIMB_DMG : BODY_DMG;
     enemy.health -= dmg;
     if (HITS2) {
@@ -2193,6 +2195,13 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // lane it is the flanker (FLANKED tell, flank hits by the usual A14-A17 rules); at the fallback it is not.
   // SS.doorLane = { id, state, holds, log: [{ in, out, x, z }] }.
   const LANE_HOLD_S = [2.2, 2.9], LANE_MIN_FRAMES = 6, LANE_WAIT_S = [3.5, 5.5];
+  // A37c pacing (Tester A37: truck->RPG 23 s, climax past 152 s). A lane flank hit landing in the last seconds before the
+  // RPG's gates open adds the A14 6 s flank lull to the RPG (and the 12 s cxnade spacing to the climax after it). The lane
+  // does not START a visit while an RPG is pending and its gates open within LANE_BEAT_S (or already have).
+  const LANE_BEAT_S = 11;
+  function laneBeatSoon(sim) { const S = window.SS; if (!S || S.rpgDueAt == null || S.truckPendingWave) return false;
+    let open = S.rpgDueAt; if (S.setPieceAt != null) open = Math.max(open, S.setPieceAt + 15); if (S.truckBailAt != null && S.truckBailAt <= sim) open = Math.max(open, S.truckBailAt + 12); if (S.bigBeatCalmUntil != null) open = Math.max(open, S.bigBeatCalmUntil);
+    return open - sim < LANE_BEAT_S; }
   function laneRec(e) { const SSx = window.SS; if (!SSx || !e._lane) return; const L = e._lane; SSx.doorLane = { id: e.id, state: L.state, holds: L.holds, log: L.log, at: [+L.at.x.toFixed(2), +L.at.z.toFixed(2)], back: L.back ? [+L.back.x.toFixed(2), +L.back.z.toFixed(2)] : null }; }
   function laneArrive(e) {
     const L = e._lane, SSx = window.SS, sim = (SSx && SSx.simTime) || 0, gp = e.group.position;
@@ -2243,6 +2252,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
       return true;
     }
     if (L.state === 'wait' && sim >= L.until && e.phase !== 'relocate' && !e._repositioning && !(e.staggerT > 0)) {
+      if (laneBeatSoon(sim)) { L.until = sim + 1; L.beatWaits = (L.beatWaits | 0) + 1; if (SSx) SSx.laneBeatWaits = (SSx.laneBeatWaits | 0) + 1; return false; }
       try { parkCoverStep(e); } catch (_) {}
       startReposition(e, L.spot); e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run'; e._flankTellSim = null; // a new lane visit = a new flank attempt (new tell)
       const end = e.path && e.path[e.path.length - 1]; if (end) L.at.set(end.x, 0, end.z);
@@ -2250,6 +2260,41 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
     return false;
   }
+  // A37c (Tester A37: markers drawn over the pillar; App PM: NO marker over the pillar/doorframe, dim elsewhere). Per enemy,
+  // throttled ~120 ms: in a doorway hold, a chevron whose screen spot (centre or either edge) lies on drawn geometry within
+  // MK_NEAR m of the eye (pillar, jamb, lintel) is suppressed; any marker whose head+chest eye line is blocked is dimmed.
+  const MK_NEAR = 3.5, _mkP = new THREE.Vector3(), _mkR = new THREE.Vector3(), _mkQ = new THREE.Vector3();
+  function markerOcc(e, nowR) {
+    const m = e.marker, SSx = window.SS;
+    if (!e._mk || nowR - e._mk.t > 120) {
+      const c = camera.position, held = doorHeldNow(); let st = 'on';
+      m.getWorldPosition(_mkP);
+      if (held) {
+        _mkR.set(1, 0, 0).applyQuaternion(camera.quaternion); const d = _mkP.distanceTo(c), w = d * 0.035;
+        for (const k of [0, -1, 1]) { _mkQ.copy(_mkP).addScaledVector(_mkR, k * w); if (drawnHitDist(c, _mkQ) < MK_NEAR) { st = 'hid'; break; } }
+      }
+      if (st === 'on') { const gp = e.group.position;
+        const head = clearToEye(_mkQ.set(gp.x, gp.y + 1.6 * S, gp.z)) && (!held || drawnHitDist(c, _mkQ) === Infinity);
+        const chest = clearToEye(_mkQ.set(gp.x, gp.y + 1.2 * S, gp.z)) && (!held || drawnHitDist(c, _mkQ) === Infinity);
+        if (!head && !chest) st = 'dim'; }
+      e._mk = { t: nowR, st };
+    }
+    const st = e._mk.st;
+    if (st === 'hid') m.visible = false;
+    m.material = st === 'dim' ? markerMatDim : markerMat;
+    if (SSx) { const K = SSx.markerStats || (SSx.markerStats = { on: 0, dim: 0, hid: 0 }); K[st] += 1; }
+  }
+  // A37c (App PM: a hit must read differently from a miss): the hit enemy itself flashes (all drawn body meshes swap to a
+  // bright unlit material) for >= 120 ms and >= 1 painted frame; a miss only puffs dust on the cover (weapon.js) with no tick.
+  const hitFlashMat = new THREE.MeshBasicMaterial({ color: 0xfff0e0 });
+  function flashEnemy(e) {
+    const SSx = window.SS, now = performance.now(), f = (SSx && SSx.frameN) | 0;
+    if (e._flash) { e._flash.until = now + 120; e._flash.f0 = f; }
+    else { const ms = []; e.group.traverse((o) => { if (!o.isMesh || o.isSprite || !o.visible || Array.isArray(o.material)) return; const mt = o.material; if (!mt || mt === ghostMat || mt === matRim || mt.visible === false || mt.transparent) return; ms.push([o, mt]); });
+      if (!ms.length) return; for (const [o] of ms) o.material = hitFlashMat; e._flash = { ms, until: now + 120, f0: f }; }
+    if (SSx) SSx.hitFlashes = (SSx.hitFlashes | 0) + 1;
+  }
+  function flashTick(e) { const F = e._flash; if (!F) return; const SSx = window.SS; if (performance.now() < F.until || (((SSx && SSx.frameN) | 0) - F.f0) < 1) return; for (const [o, mt] of F.ms) if (o.material === hitFlashMat) o.material = mt; e._flash = null; }
   function doorPressureTick() {
     const SSx = window.SS; if (!SSx || !SSx.running) return;
     const sim = SSx.simTime || 0;
@@ -2267,6 +2312,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (cxPhase === 'tell' || cxPhase === 'active') return;
     if (!doorPressArmAt) { doorPressArmAt = sim + 3 + Math.random() * 3; return; }
     if (sim < doorPressArmAt) return;
+    if (laneBeatSoon(sim)) { doorPressArmAt = sim + 1; SSx.laneBeatWaits = (SSx.laneBeatWaits | 0) + 1; return; }
     const cam = camera.position;
     const door = SSx.cover && SSx.cover.door;
     const side = (door && door.side) || (cam.x >= 0 ? 1 : -1);
@@ -2276,22 +2322,28 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // just colliders) and near the peek centre - A36 put both behind the art facade, as markers that could not be shot.
     const want = (SSx.doorPeek && SSx.doorPeek.want != null) ? SSx.doorPeek.want : SSx.input.yaw;
     if (door) {
+      // A37c (Tester A37: lane spot sat over the pillar, ~190 px drag): only the STREET side of the default look counts -
+      // bearing measured outward from the peek centre (never toward the facade/pillar), >= 6 deg past the first clear ray
+      // doorstop.js found, <= 30 deg off centre (on screen, near centre-ish), preferring ~16 deg into the open street.
+      const dv = doorView(door), sgn = dv ? dv.out : street, phiW = dv ? dv.phi : Math.abs(want);
+      const minRel = Math.max(4, dv && dv.first != null ? (dv.first * 180 / Math.PI) + 6 - phiW * 180 / Math.PI : 4);
       let best = null, bs = 1e9;
-      for (const r of [5.5, 7, 8.5, 10, 12]) for (const off of [0, 8, -8, 16, -16, 24, -24, 32]) {
-        const a = want + off * Math.PI / 180;
+      for (const r of [5.5, 7, 8.5, 10, 12]) for (const off of [16, 12, 20, 8, 24, 28]) {
+        const a = want + sgn * off * Math.PI / 180;
         const px = cam.x + Math.sin(a) * r, pz = cam.z - Math.cos(a) * r;
         if (Math.abs(px) > 5.6) continue; // on the street (either half), not inside a facade
         const anchor = { pos: new THREE.Vector3(px, 0, pz), type: 'wall', open: true };
         let at = anchor.pos; try { at = tuckOf(standPos(anchor), anchor); } catch (_) {}
         if (Math.hypot(at.x - cam.x, at.z - cam.z) < 3.3 || inFrontArc(at)) continue;
-        const ang = Math.abs(Math.atan2(Math.sin(Math.atan2(at.x - cam.x, -(at.z - cam.z)) - want), Math.cos(Math.atan2(at.x - cam.x, -(at.z - cam.z)) - want)));
-        if (ang > 32 * Math.PI / 180) continue;
-        const s = ang * 10 + r * 0.05;
+        const b = Math.atan2(at.x - cam.x, -(at.z - cam.z)), rel = Math.atan2(Math.sin(b - want), Math.cos(b - want)) * sgn * 180 / Math.PI;
+        if (rel < minRel || rel > 30) continue;
+        const s = Math.abs(rel - 16) * 1 + r * 0.3;
         if (s >= bs) continue;
-        if (!doorSightClear(door, { x: at.x, y: 1.25, z: at.z }) || !doorSightClear(door, { x: at.x, y: 0.9, z: at.z })) continue;
+        if (!doorSightClear(door, { x: at.x, y: 1.25, z: at.z }) || !doorSightClear(door, { x: at.x, y: 0.9, z: at.z }) || !doorSightClear(door, { x: at.x, y: 0.35, z: at.z })) continue;
         if (!clearToEye(_losP.set(at.x, 1.25, at.z))) continue;
-        best = anchor; bs = s;
+        best = anchor; bs = s; best._rel = +rel.toFixed(1);
       }
+      SSx.doorLaneSpot = best ? { rel: best._rel, minRel: +minRel.toFixed(1), first: dv && dv.first != null ? +(dv.first * 180 / Math.PI).toFixed(1) : null } : { rel: null, minRel: +minRel.toFixed(1) };
       if (best) { spot = best; inView = true; }
     }
     if (!spot) hunt: for (const dz of [2.8, 3.8, 1.8, -4.2, -5.4, -3.2]) for (const ax of [4.4, 5.4, 3.6, 6.2]) {
@@ -3992,7 +4044,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     }
 
     const tempo = 1 + PRESSURE_TEMPO * pressure;
-    const pz = camera.position.z;
+    const pz = camera.position.z, nowMk = performance.now();
     let hold = false, engagedN = 0;
     if (LOCO2) notePlayerRound();
     for (let i = list.length - 1; i >= 0; i--) {
@@ -4061,6 +4113,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
       if (!(e.anchor && isElevated(e.anchor.type)) && !e.pinned) { const gp = e.group.position; if (gp.y > 0) gp.y = Math.max(0, gp.y - 6 * dt); else gp.y = 0; }
       if (e.art) { if (LOCO2) applyCoverStep(e); try { footIK(e, dt); } catch (err) { e.legs = []; reportErr('foot ik', err); } syncArt(e); } // IK after the body moved this frame; cover step before IK so the plant matches the peek
       if (e.marker) e.marker.visible = !(window.SS && window.SS.input && window.SS.input.scope) && Math.abs(e.group.position.z - pz) > 7;
+      if (e.marker && e.marker.visible) markerOcc(e, nowMk);
+      if (e._flash) flashTick(e);
       const dx = e.group.position.x - camera.position.x;
       const dy = e.group.position.y - camera.position.y;
       const dz = e.group.position.z - camera.position.z;

@@ -156,6 +156,26 @@ function xzDist(x, z, b) {
   return Math.hypot(dx, dz);
 }
 
+// A37c (App PM: pressure flank lane inside the default view, clear of the pillar): the street-clear aperture of the held
+// door for the enemy AI - firstClear = most down-street clear ray (rad, outward), phi = default peek (rad), out = yaw sign.
+export function doorView(door) {
+  if (!door) return null;
+  streetYaw(door);
+  const c = yawCache.get(door); if (!c) return null;
+  const out = -(door.side || 1);
+  return { yaw: c.yaw, phi: Math.abs(c.yaw), first: c.first, out, how: c.how };
+}
+// A37c: drawn-geometry hit distance from o to p (Infinity = clear; room-clip honoured). Mesh list cached ~1 s (markers).
+let _dmC = null, _dmT = 0;
+export function drawnHitDist(o, p) {
+  const n = performance.now(); if (!_dmC || n - _dmT > 1000) { _dmC = sightMeshes(); _dmT = n; }
+  const dx = p.x - o.x, dy = p.y - o.y, dz = p.z - o.z, d = Math.hypot(dx, dy, dz); if (d < 0.05) return Infinity;
+  const W = window.SS && window.SS.world;
+  _so.set(o.x, o.y, o.z); _sd.set(dx / d, dy / d, dz / d); _sr.set(_so, _sd); _sr.far = d - 0.2;
+  for (const h of _sr.intersectObjects(_dmC, false)) { if (clipped(h, W)) continue; return h.distance; }
+  return Infinity;
+}
+
 export function createDoorStop(camera, world, input, enemies, cover) {
   let rec = freshRec();
   let path = null;
