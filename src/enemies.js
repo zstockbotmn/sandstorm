@@ -2090,6 +2090,11 @@ export function createEnemies(scene, camera, world, weapon, player) {
   // is capped at DMG_CAP_HPS hp per second (token bucket, accrues on the slower of real and game time, holds one full
   // hit). A hit the bucket cannot pay for becomes a near miss (tracer/crack still), so the lone-enemy kill takes >= ~30 s.
   let fightSim0 = -1e9, lastShotSim = -1e9; // threat ramp clocks (game time)
+  // A36 (release suite: m1 / m1v / m1w / waves-passive): since A8 a ducked player was immune to front-arc fire and wave 1 has no
+  // flanks / grenades, so a passive player never died. A ducked player who has not fired this fight (>= PASSIVE_FIRST_S into it)
+  // or not for PASSIVE_IDLE_S keeps only the pre-A8 partial cover (x0.3 chance, x0.6 damage) and gets no fight regen. Engaged
+  // shooters keep A8's full front-arc cover; the doorway hold (own pressure flank, A35 soak) is exempt.
+  const PASSIVE_FIRST_S = 3, PASSIVE_IDLE_S = 25; let playerFireSim = -1e9, playerShots0 = 0;
   const LOW_HP_CHANCE = 0.3, LOW_HP_SLIVER = 6; // m1x: hit-chance floor once a hit would be lethal and the player is exposed
   const DMG_CAP_HPS = 2.8, DMG_CAP_BURST = 22; let dmgBucket = DMG_CAP_BURST, dmgBucketR = 0, dmgBucketSim = 0;
   function dmgBudget(nowS, simS) { const mul = cxPhase === 'active' ? [1.4, 1.6, 3.2][cxTier] : 1; /* A24: W4+ budget up so exposed climax bottoms 35-50 */ const hps = DMG_CAP_HPS * mul, burst = DMG_CAP_BURST * mul; /* A21: climax budget ~1.6x so an EXPOSED player can drop to ~35-50 */ if (dmgBucketR) dmgBucket = Math.min(burst, dmgBucket + hps * Math.max(0, Math.min(nowS - dmgBucketR, simS - dmgBucketSim))); dmgBucketR = nowS; dmgBucketSim = simS; return dmgBucket; }
@@ -2369,9 +2374,14 @@ export function createEnemies(scene, camera, world, weapon, player) {
     if (tS - lastShotSim > 15) fightSim0 = tS; lastShotSim = tS;
     const dryS = tS - Math.max(fightSim0, lastPlayerHitSim != null ? lastPlayerHitSim : -99);
     const ducked = !!(window.SS && window.SS.input && window.SS.input.cover);
+    { const sf = (weapon && weapon.shotsFired) | 0; if (sf !== playerShots0) { if (sf > playerShots0) playerFireSim = tS; playerShots0 = sf; } }
+    const passiveS = tS - Math.max(fightSim0, playerFireSim), doorNow = doorHeldNow() || !!(window.SS && window.SS.cover && window.SS.cover.kind === 'door');
+    const passiveDuck = ducked && !flankShot && !doorNow && ((playerFireSim < fightSim0 && passiveS >= PASSIVE_FIRST_S) || passiveS >= PASSIVE_IDLE_S);
+    if (window.SS) { window.SS.passive = { s: +passiveS.toFixed(1), on: passiveDuck }; if (passiveDuck) window.SS.passiveDuckSim = tS; }
     const pEx = pressureP();
     const slope = 0.05 + 0.02 * pEx, exposedCap = 0.5 + 0.12 * pEx;
     if (dryS > 3) chance = Math.max(chance, Math.min(ducked && !flankShot ? 0.14 : exposedCap, 0.10 + slope * (dryS - 3))); // A8: ducking now blocks the front arc outright, so the exposed ramp is a bit steeper (0.10 + slope/s, cap 0.5+0.12p) // A7: from 5 s / 0.035 (threat run: first hit at 26 game-s)
+    if (passiveDuck) chance = Math.max(chance, Math.min(0.3, 0.12 + 0.006 * passiveS)); // A36: a passive camper keeps bleeding (m1: stand-still death 60-90 s)
     if (cxPhase === 'active' && !ducked) chance = Math.max(chance, [0.2, 0.25, 0.65][cxTier]); // A22: by climax tier // A21 (a15 exposed: only 2 hits, HP 81 -> 62): an exposed player in the climax really bleeds (floor 35, cap 1.6x still apply)
     if (window.SS) window.SS.threat = { fightS: +(tS - fightSim0).toFixed(1), dryS: +dryS.toFixed(1), chance: +chance.toFixed(3), ducked, flankShot, flankReady };
     if (flankHit) chance = 1; // A16: a told flank shot in its window lands (each tell leads to a hit or an abort + reposition)
@@ -2379,7 +2389,8 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const simS = window.SS ? (window.SS.simTime || 0) : 0; // game-time clock (sim dt summed): at 1 fps game time runs slower than real time
     let hit = Math.random() < chance && player && player.alive && nowS - (lastPlayerHitS || 0) >= gap && simS - (lastPlayerHitSim || -99) >= gap; // spacing holds in BOTH real and game time
     // m1v grace: no damage for COVER_GRACE_S (real time) after first reaching cover in a run
-    if (hit && ducked && !flankShot) { hit = false; if (window.SS) window.SS.frontArcBlocked = (window.SS.frontArcBlocked | 0) + 1; } // A8: solid cover stops the front arc
+    if (hit && passiveDuck && window.SS) window.SS.passiveDuckHits = (window.SS.passiveDuckHits | 0) + 1; // A36: counted before the later sight/cap gates
+    if (hit && ducked && !flankShot && !passiveDuck) { hit = false; if (window.SS) window.SS.frontArcBlocked = (window.SS.frontArcBlocked | 0) + 1; } // A8: solid cover stops the front arc
     // 4e5b: count front-arc shots while ducked at the doorway (0 hits alone proves nothing)
     if (window.SS && window.SS.cover && window.SS.cover.kind === 'door' && duckedA8 && inFrontArc(enemy.group.position)) {
       const ds = window.SS.doorStop || (window.SS.doorStop = {}); const duck = ds.duck || (ds.duck = { front: 0, flank: 0, frontShots: 0 });
@@ -4085,7 +4096,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     mwWave = -1; mwContactSim = null; mwDone = false; mwPush = []; mwWaitWhy = ''; resetClimax(); payoffUntil = 0; lullShotSim = -1e9; /* A23 */ if (window.SS) { window.SS.midBeatLog = []; window.SS.waveContactLog = []; window.SS.midBeatAt = null; window.SS.climaxLog = []; window.SS.climaxSkips = []; window.SS.lastStandLog = []; lsWave = -1; lsId = null; lsMode = null; lsDone = false; lsStandUntil = 0; window.SS.fallbackLog = []; window.SS.assaultLog = []; window.SS.climaxAt = null; window.SS.lullUntil = null; window.SS.bigBeatCalmUntil = null; window.SS.doorPressure = null; } w4endArmed = false;
     prevHold = false; displayEngaged = 0; contactHintShown = false; burstIndex = 0; quietRunT = 0; quietRealAt = 0; radioWarned = false; if (window.SS) { window.SS.approach = 0; window.SS.radioWarnAt = 0; }
     squadReposS = -1e9; if (window.SS) { window.SS.reposLast = 0; window.SS.reposSquad = 0; }
-    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
+    waveClears = 0; dryKills = 0; lastDropT = performance.now(); lastPlayerHitS = 0; lastPlayerHitSim = -99; fightSim0 = -1e9; lastShotSim = -1e9; playerFireSim = -1e9; playerShots0 = (weapon && weapon.shotsFired) | 0; dmgBucket = DMG_CAP_BURST; dmgBucketR = 0; losT = 0; roofWave = false; waveSpawned = 0; waveTotal = 0; waveOpen = false; regenWaitT = 0;
     if (window.SS) { window.SS.waveClears = 0; window.SS.engaged = 0; window.SS.spawnsWhileEngaged = 0; window.SS.trucks = 0; window.SS.firstWave = null; window.SS.doorEnemy = { count: 0, last: null }; }
     if (window.SS) window.SS.bursting = false;
     if (HITS2 && hitZones) {

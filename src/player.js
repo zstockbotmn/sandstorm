@@ -75,6 +75,8 @@ export function createPlayer(camera, input, hud) {
     if (now - lastHitT < REGEN_DELAY_MS) return;
     let add;
     // A33: during big-beat calm only, fight regen is 1.5× so a Low frame still shows the bar climb. Reverts outside calm.
+    // A36: no fight regen while a passive camper is under fire (enemies.js passiveDuck); big-beat calm regen unchanged
+    if (fighting && !calm && window.SS && window.SS.passiveDuckSim != null && sim - window.SS.passiveDuckSim < 4) return;
     if (fighting) { if (sim - lastHitSim < FIGHT_DELAY_S) return; add = FIGHT_RATE * (calm ? 1.5 : 1) * sdt; }
     else add = REGEN_RATE * rdt;
     if (!(add > 0)) return;
@@ -98,7 +100,7 @@ export function createPlayer(camera, input, hud) {
     player.health = 100;
     player.alive = true;
     regenDelay = 0; lastHitT = -1e9; lastUpd = 0; lastHitSim = -1e9; lastSim = null;
-    if (window.SS) { window.SS.health = 100; window.SS.regenDuringCalm = false; window.SS.regenCalmLog = []; }
+    if (window.SS) { window.SS.health = 100; window.SS.regenDuringCalm = false; window.SS.regenCalmLog = []; window.SS.passiveDuckSim = null; window.SS.passiveDuckHits = 0; }
     if (hud) hud.setHealth(100);
   };
 
