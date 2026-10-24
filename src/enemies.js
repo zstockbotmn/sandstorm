@@ -2430,7 +2430,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     // only a told flank shot (flankHit, or the flanker's own hit >= 1.5 s after its tell) lands.
     const ownTold = !!(pendTells && pendTells.includes(enemy) && typeof enemy._flankTellSim === 'number' && simS - enemy._flankTellSim >= FLANK_TELL_S);
     { const SSg = window.SS, cv = SSg && SSg.cover, liveIn = SSg.coverStanceNow ? SSg.coverStanceNow() === 'ducked' : !!(cv && cv.state === 'in' && !(SSg.input && SSg.input.scope)); /* A23: the HUD badge's own stance */
-      if (hit && !flankHit && !ownTold && (liveIn || duckedA8)) { hit = false; SSg.coverGuardBlocked = (SSg.coverGuardBlocked | 0) + 1; const GL = SSg.coverGuardLog || (SSg.coverGuardLog = []); GL.push({ sim: +simS.toFixed(2), id: enemy.id, stale: liveIn !== duckedA8, elev: !!(enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.5 }); if (GL.length > 40) GL.shift(); } }
+      if (hit && !flankHit && !ownTold && !passiveDuck && (liveIn || duckedA8)) { hit = false; SSg.coverGuardBlocked = (SSg.coverGuardBlocked | 0) + 1; const GL = SSg.coverGuardLog || (SSg.coverGuardLog = []); GL.push({ sim: +simS.toFixed(2), id: enemy.id, stale: liveIn !== duckedA8, elev: !!(enemy.anchor && isElevated(enemy.anchor.type)) || enemy.group.position.y > 0.5 }); if (GL.length > 40) GL.shift(); } }
     if (hit) { lastPlayerHitS = nowS; lastPlayerHitSim = simS; }
     _aim.copy(camera.position);
     if (!hit) {
