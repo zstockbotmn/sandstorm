@@ -661,6 +661,7 @@ export function createWorld(scene, seed) {
       if (lo < hi) doorZ = lo + rng() * (hi - lo);
     }
     doors.push(doorZ);
+    if (pending) pending.front = doorFront(model, box, side, pending, doorZ);
     if (pending) { if (addRoom(seg, side, 0, 0, 0, 0, 0, pending.front, doorZ, pending)) { seg._roomDone = true; _roomsPlaced++; } else { const col = addInvisibleBox(seg, (pending.front + pending.back) * 0.5, (box.min.y + pending.top) * 0.5, (pending.z0 + pending.z1) * 0.5, Math.abs(pending.back - pending.front), pending.top - box.min.y, pending.z1 - pending.z0); col.name = 'building'; col.userData.building = true; } }
     if (seg._wins && WIN_TABLE && WIN_TABLE[name] && Array.isArray(WIN_TABLE[name].windows)) {
       const spec = WIN_TABLE[name];
@@ -829,6 +830,27 @@ export function createWorld(scene, seed) {
     }
   }
 
+  // A37: the art room front was the facade's MEDIAN depth (wallIn). On the FIX4 (W1+25-40 m) building the door-level relief
+  // sits ~0.6-0.9 m street-side of that, past the 0.28 m clip, so unclipped art mesh stood in the aperture and beside it and
+  // the doorway look (any yaw 0-75 deg outward) hit a wall/pillar 1-2.5 m away. Put the room front flush with the outermost
+  // art surface across the aperture itself, so the opening really opens onto the street wherever the room lands.
+  function doorFront(model, box, side, art, doorZ) {
+    const fx0 = side < 0 ? box.max.x : box.min.x, depthAll = box.max.x - box.min.x;
+    const W = Math.min(3.6, (art.z1 - art.z0) - 2.4), zc = Math.max(art.z0 + W / 2 + 0.3, Math.min(art.z1 - W / 2 - 0.3, doorZ));
+    const dir = new THREE.Vector3(side, 0, 0); let dmin = Infinity;
+    // door-height rows only (a low stoop/step under the eye does not block the look and must not drag the front out)
+    for (const y of [1.1, 1.8]) for (const dz of [-0.55, -0.3, 0, 0.3, 0.55]) {
+      _rc.set(new THREE.Vector3(fx0 - side * 0.5, y, zc + dz), dir); _rc.far = depthAll + 1;
+      const h = _rc.intersectObject(model, true)[0]; if (h) dmin = Math.min(dmin, Math.abs(h.point.x - fx0));
+    }
+    const cur = Math.abs(art.front - fx0);
+    if (!isFinite(dmin) || dmin >= cur - 0.1) return art.front;
+    const front = fx0 + side * Math.max(0, dmin - 0.05);
+    if (typeof window !== 'undefined' && window.SS) window.SS.roomFront = { was: +art.front.toFixed(2), now: +front.toFixed(2), z: +zc.toFixed(1) };
+    return front;
+  }
+  // A37: world point inside a room clip box (art mesh there is discarded in the shader) - for doorway sightline rays.
+  function inRoomClip(q) { for (const b of ROOMS.values()) if (q.x > b.min.x && q.x < b.max.x && q.y > b.min.y && q.y < b.max.y && q.z > b.min.z && q.z < b.max.z) return true; return false; }
   function addRoom(seg, side, cx, cz, depth, h, lot, facadeX, doorZ, art) {
     const c0 = seg.group.children.length;
     if (art && Math.abs(art.back - art.front) < 4.4) return false;
@@ -1138,5 +1160,5 @@ export function createWorld(scene, seed) {
     update(playerZ == null ? 0 : playerZ);
   }
 
-  return { update, reset, segments, colliders, shotList, sun, overlapCount, footFree };
+  return { update, reset, segments, colliders, shotList, sun, overlapCount, footFree, inRoomClip };
 }

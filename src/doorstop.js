@@ -70,14 +70,84 @@ function standOf(door) {
   return { x: door.x + door.side * 0.45, z: door.z + 0.6 - 0.35 };
 }
 
-// A35: street peek yaw — look OUT the opening toward street center ahead (FLANKED mid-frame).
-// A34 used +side*0.42/1.05 (~+22° into the room wall); Tester saw wall/pillar with flankers only at the far edge.
+// A37: the held doorway eye (cover.takeDoor target + unscoped lean), so sightlines start where the camera really sits.
+function eyeOf(door) {
+  const side = door.side || 1, jz = door.jamb ? door.jamb.min.z : door.z + 0.6;
+  return { x: door.x + side * (0.45 - 0.12), y: 1.28, z: jz - 0.55 * 0.55 };
+}
+
+// A35 aimed at a fixed street point (~1.2 m off the rail, 14 m ahead): a world-geometry assumption that only holds when the
+// opening is flush with an open facade. A36/FIX4 moved the forced room to another building where every yaw 0-75 deg outward
+// hit art facade 1-2.5 m away (Tester: wall + pillar, flankers behind it). A37: derive the yaw from the opening itself -
+// sweep from the opening normal (-side*90 deg) toward down-street and take the most down-street CENTER ray that actually
+// leaves through the aperture into the street (drawn meshes, room clip honoured), plus a margin; never shallower than
+// the A35 ~21 deg outward peek.
+const PEEK_MIN = 21 * Math.PI / 180, PEEK_EDGE = 7 * Math.PI / 180;
+const _sr = new THREE.Raycaster(), _so = new THREE.Vector3(), _sd = new THREE.Vector3();
+const yawCache = new WeakMap();
+// Only art/shell materials are discarded inside a room clip box; the room's own plaster jambs/lintel/props there are solid.
+function clipped(h, W) {
+  if (!W || !W.inRoomClip || !W.inRoomClip(h.point)) return false;
+  const m = Array.isArray(h.object.material) ? h.object.material[0] : h.object.material;
+  return !!(m && m.userData && m.userData.roomClip);
+}
+function sightMeshes() {
+  const S = window.SS, W = S && S.world; const out = [];
+  if (!W || !W.segments) return out;
+  for (const sg of W.segments) {
+    if (!sg || !sg.group || !sg.group.visible) continue;
+    sg.group.traverseVisible((o) => {
+      if (!o.isMesh || o.isSprite) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!m || m.transparent || m.visible === false || m.colorWrite === false) return;
+      out.push(o);
+    });
+  }
+  return out;
+}
+// Distance the ray from `eye` along yaw travels before hitting drawn world geometry (Infinity = clear to `far`).
+function sightDist(eye, yaw, far, meshes) {
+  const W = window.SS && window.SS.world;
+  _so.set(eye.x, eye.y, eye.z); _sd.set(Math.sin(yaw), 0, -Math.cos(yaw));
+  _sr.set(_so, _sd); _sr.far = far;
+  const hits = _sr.intersectObjects(meshes, false);
+  for (const h of hits) { if (clipped(h, W)) continue; return h.distance; }
+  return Infinity;
+}
+// Clear line from the held doorway eye to a world point (enemies.js: pressure flank must be SEEN, not behind the facade).
+export function doorSightClear(door, pt) {
+  const eye = eyeOf(door), dx = pt.x - eye.x, dy = (pt.y == null ? 1.25 : pt.y) - eye.y, dz = pt.z - eye.z, d = Math.hypot(dx, dy, dz);
+  if (d < 0.05) return true;
+  const W = window.SS && window.SS.world;
+  _so.set(eye.x, eye.y, eye.z); _sd.set(dx / d, dy / d, dz / d); _sr.set(_so, _sd); _sr.far = d - 0.35;
+  for (const h of _sr.intersectObjects(sightMeshes(), false)) { if (clipped(h, W)) continue; return false; }
+  return true;
+}
 function streetYaw(door) {
-  const stand = standOf(door);
-  // Aim at a point near the street rail ~14 m ahead so opening + street fighters sit centered.
-  const tx = (door.side || 1) * 1.2 - stand.x; // ~1.2 m off rail toward this facade (keep jamb in FOV)
-  const tz = -14;
-  return Math.atan2(tx, -tz);
+  const hit = yawCache.get(door);
+  if (hit) return hit.yaw;
+  const side = door.side || 1, out = -side, eye = eyeOf(door);
+  const meshes = sightMeshes();
+  // A ray "leaves to the street" once it is 1.5 m street-side of the door line (past jambs, reveal and facade relief).
+  const exitX = Math.abs(eye.x - (door.x - side * 1.5));
+  let first = null; const sweep = [];
+  if (meshes.length) {
+    for (let deg = 9; deg <= 88; deg += 3) {
+      const phi = deg * Math.PI / 180, need = Math.min(30, exitX / Math.sin(phi));
+      const d = sightDist(eye, out * phi, need + 0.5, meshes);
+      const ok = d >= need; sweep.push(ok ? 1 : 0);
+      // two consecutive clear rays (~6 deg of open aperture) so a single grazing ray past a jamb corner is not "the street"
+      if (ok && first == null && sweep.length >= 2 && sweep[sweep.length - 2]) first = phi - 3 * Math.PI / 180;
+    }
+  }
+  let phi, how;
+  if (first != null) { phi = Math.min(88 * Math.PI / 180, Math.max(PEEK_MIN, first + PEEK_EDGE)); how = 'sight'; }
+  else if (meshes.length) { phi = 80 * Math.PI / 180; how = 'normal'; } // nothing clear: face out along the opening normal
+  else { phi = Math.atan2(Math.abs(side * 1.2 - eye.x), 14); how = 'geom'; } // no meshes (headless edge): A35 formula
+  const yaw = out * phi;
+  yawCache.set(door, { yaw, how, first });
+  if (window.SS) window.SS.doorYaw = { yaw: +yaw.toFixed(3), deg: +(phi * 180 / Math.PI).toFixed(1), firstClearDeg: first == null ? null : +(first * 180 / Math.PI).toFixed(1), how, side, sweep: sweep.join('') };
+  return yaw;
 }
 
 function xzDist(x, z, b) {

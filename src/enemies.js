@@ -1,6 +1,7 @@
 const CALM = typeof location !== 'undefined' && /[?&]calm=1/.test(location.search); // tests: no auto spawns
 import * as THREE from 'three';
 import { art, SPLIT_ANIMS } from './art.js';
+import { doorSightClear } from './doorstop.js';
 import { LOCO2, createLoco, updateLoco, aimBody, clipYawRate, turnPlayback, yawRateStep, wrapPi, stepPhase, smooth01, MOVE_YAW_MAX, PLANT_YAW_MAX, TWIST_MAX, HEAD_YAW_MAX, PLANT_TWIST_MAX, TURN_ENTER, TURN_DONE } from './locomotion.js';
 // Last fighter only: after ~20 s on one ground cover, run to another. Off unless ?loco=2 or ?repos=1.
 const BODY_YAW_CAP = 270 * Math.PI / 180, TWIST_RATE = 240 * Math.PI / 180, HEAD_RATE = 300 * Math.PI / 180; // ?loco=2 facing rate caps (App PM: no whipping)
@@ -2202,8 +2203,30 @@ export function createEnemies(scene, camera, world, weapon, player) {
     const door = SSx.cover && SSx.cover.door;
     const side = (door && door.side) || (cam.x >= 0 ? 1 : -1);
     const street = -side; // free street side, opposite the facade — the parked leaf is the -z interior wall
-    let spot = null, loose = null;
-    hunt: for (const dz of [2.8, 3.8, 1.8, -4.2, -5.4, -3.2]) for (const ax of [4.4, 5.4, 3.6, 6.2]) {
+    let spot = null, loose = null, inView = false;
+    // A37: the pressure flanker must stand where the HELD doorway look actually sees it (drawn facade/pillars included, not
+    // just colliders) and near the peek centre - A36 put both behind the art facade, as markers that could not be shot.
+    const want = (SSx.doorPeek && SSx.doorPeek.want != null) ? SSx.doorPeek.want : SSx.input.yaw;
+    if (door) {
+      let best = null, bs = 1e9;
+      for (const r of [5.5, 7, 8.5, 10, 12]) for (const off of [0, 8, -8, 16, -16, 24, -24, 32]) {
+        const a = want + off * Math.PI / 180;
+        const px = cam.x + Math.sin(a) * r, pz = cam.z - Math.cos(a) * r;
+        if (Math.abs(px) > 5.6) continue; // on the street (either half), not inside a facade
+        const anchor = { pos: new THREE.Vector3(px, 0, pz), type: 'wall', open: true };
+        let at = anchor.pos; try { at = tuckOf(standPos(anchor), anchor); } catch (_) {}
+        if (Math.hypot(at.x - cam.x, at.z - cam.z) < 3.3 || inFrontArc(at)) continue;
+        const ang = Math.abs(Math.atan2(Math.sin(Math.atan2(at.x - cam.x, -(at.z - cam.z)) - want), Math.cos(Math.atan2(at.x - cam.x, -(at.z - cam.z)) - want)));
+        if (ang > 32 * Math.PI / 180) continue;
+        const s = ang * 10 + r * 0.05;
+        if (s >= bs) continue;
+        if (!doorSightClear(door, { x: at.x, y: 1.25, z: at.z }) || !doorSightClear(door, { x: at.x, y: 0.9, z: at.z })) continue;
+        if (!clearToEye(_losP.set(at.x, 1.25, at.z))) continue;
+        best = anchor; bs = s;
+      }
+      if (best) { spot = best; inView = true; }
+    }
+    if (!spot) hunt: for (const dz of [2.8, 3.8, 1.8, -4.2, -5.4, -3.2]) for (const ax of [4.4, 5.4, 3.6, 6.2]) {
       const pos = new THREE.Vector3(cam.x + street * ax, 0, cam.z + dz);
       const anchor = { pos, type: 'wall', open: true };
       let at = pos; try { at = tuckOf(standPos(anchor), anchor); } catch (_) {}
@@ -2221,7 +2244,7 @@ export function createEnemies(scene, camera, world, weapon, player) {
     startReposition(e, spot);
     e._flankMove = true; e._reposWhy = 'flank'; e.moveKind = 'run';
     doorPressId = e.id; doorPressN += 1; doorPressArmAt = 0;
-    SSx.doorPressure = { sim: +sim.toFixed(2), id: e.id, side: street > 0 ? 1 : -1, armed: true };
+    SSx.doorPressure = { sim: +sim.toFixed(2), id: e.id, side: street > 0 ? 1 : -1, armed: true, to: [+spot.pos.x.toFixed(1), +spot.pos.z.toFixed(1)], inView };
     slog('door', 'doorway pressure flank');
   }
   // A15: a flank hit consumes its tell; after FLANK_HITS_PER_FLANKER hits (or the wave cap) the flanker stops being one and
