@@ -19,6 +19,16 @@ const QS = process.env.SS_QS || '';
     // visible aim points from the animated skeleton (what the skin is drawn from this frame)
     window.__vis = (e, part) => { const B = e.bones, v = new THREE.Vector3(); if (part === 'head') { B.Head.getWorldPosition(v); const up = new THREE.Vector3(0, 1, 0).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion())); return v.addScaledVector(up, 0.1 * e.group.scale.y / (e.group.scale.y || 1)); }
       const a = B.Hips.getWorldPosition(new THREE.Vector3()), top = (e.spineTop || B.Spine).getWorldPosition(new THREE.Vector3()); return a.lerp(top, 0.55); };
+    // A38 (App PM: state waits, not fixed ms): a frame cap (12 per case, 4 per shot) bounds them. pose landed = the fighter's hit volumes and skin root have stopped moving
+    // (< 1 cm per painted frame over 2 frames, posture blend done); view settled = camera forward changed < 0.05 deg over 2 frames.
+    window.__settle = async (still, maxF, camOnly) => { const tmo = 60000; const t0 = performance.now(), V = SS.THREE.Vector3, f0 = SS.frameN | 0; let prev = null, ok = 0;
+      const snap = () => { const e = window.__e, a = []; if (e) for (const m of SS.weapon.targets) if (m.userData.enemy === e) a.push(m.getWorldPosition(new V())); return { v: a, f: SS.camera.getWorldDirection(new V()), n: SS.frameN | 0 }; };
+      while (performance.now() - t0 < tmo) { await new Promise((r) => setTimeout(r, 15)); const s = snap(); if (prev && s.n === prev.n) continue;
+        if (prev && (s.n - f0) >= 2) { let dv = 0; if (still && !camOnly) for (let i = 0; i < Math.min(s.v.length, prev.v.length); i++) dv = Math.max(dv, s.v[i].distanceTo(prev.v[i]));
+          const da = s.f.angleTo(prev.f) * 180 / Math.PI, e = window.__e, blend = !e || e._crouchW == null || Math.abs(e._crouchW - Math.round(e._crouchW)) < 0.01;
+          if ((!still || dv < 0.01) && (!still || da < 0.05) && blend) ok++; else ok = 0; if (ok >= 2) return { frames: s.n - f0, ms: Math.round(performance.now() - t0) }; if (s.n - f0 >= maxF) return { capped: true, frames: s.n - f0, ms: Math.round(performance.now() - t0) }; }
+        prev = s; }
+      return { timeout: true, frames: (SS.frameN | 0) - f0 }; };
     window.__skins = (e) => { const s = []; e.group.traverse((o) => { if (o.isSkinnedMesh && o.visible) s.push(o); }); return s; };
     window.__clear = (to) => { const c = SS.camera.position, d = to.clone().sub(c); const L = d.length(); ray.set(c, d.normalize()); const h = ray.intersectObjects(SS.world.shotList ? SS.world.shotList() : SS.world.colliders, false)[0]; return !h || h.distance > L + 0.2; };
     // silhouette coverage: rays through a grid over the skinned body; share that also hit one of this fighter's hit volumes
@@ -60,8 +70,8 @@ const QS = process.env.SS_QS || '';
       return { C, spot, d: +e.group.position.distanceTo(c).toFixed(1) }; }, C);
     if (!r.spot) { r.skip = 'no clear spot'; res.cases.push(r); if (!(C.where === 'roof' && C.dist === 65)) fail.push(C.where + ' ' + C.dist + ' m: no clear spot'); continue; }
     await p.evaluate(([fps, old]) => { window.__slowMs = fps ? Math.round(1000 / fps) : 0; SS.weapon.seenAim = old ? false : undefined; }, [C.fps || 0, OLD]);
-    await p.waitForTimeout(C.fps ? 2500 : 700); r.cover = await p.evaluate(() => __cover(window.__e)); r.shots = [];
-    for (const part of ['body', 'head']) for (let k = 0; k < 4; k++) { await p.evaluate((part) => { window.__part = part; }, part); await p.waitForTimeout(C.fps ? Math.round(1500 / C.fps) : 250);
+    r.settle = await p.evaluate((st) => __settle(st, 12), C.move === 'still'); r.cover = await p.evaluate(() => __cover(window.__e)); r.shots = [];
+    for (const part of ['body', 'head']) for (let k = 0; k < 4; k++) { await p.evaluate((part) => { window.__part = part; }, part); await p.evaluate((st) => __settle(st, 4), C.move === 'still');
       const s = await p.evaluate(() => { window.__h0 = SS.weapon.shotsFired; SS.input.pendingShots = (SS.input.pendingShots | 0) + 1; return SS.weapon.shotsFired; });
       await p.waitForFunction((n) => SS.weapon.shotsFired > n, s, { timeout: 8000, polling: 100 }).catch(() => {});
       r.shots.push(await p.evaluate((part) => { const L = SS.weapon.lastShot, h = L && L.hit; const miss = window.__lastMiss; // how far (m) the shot ray passed from the visible aim point of the shot's own frame
@@ -73,7 +83,7 @@ const QS = process.env.SS_QS || '';
     else if (r.ok < r.shots.length - 1) fail.push(tag + ': only ' + r.ok + '/' + r.shots.length + ' hit the aimed part');
     if (r.cover.covered < 0.8) fail.push(tag + ': hit volumes cover only ' + Math.round(r.cover.covered * 100) + '% of the visible body ' + JSON.stringify(r.cover)); }
   // m1x: shots fly along the view that was ON SCREEN; take the centre check on a still view (one more shot after the camera settled)
-  await p.waitForTimeout(1000); { const s0 = await p.evaluate(() => { SS.input.pendingShots = (SS.input.pendingShots | 0) + 1; return SS.weapon.shotsFired; }); await p.waitForFunction((n) => SS.weapon.shotsFired > n, s0, { timeout: 8000 }).catch(() => {}); await p.waitForTimeout(300); }
+  await p.evaluate(() => __settle(true, 12, true)); { const s0 = await p.evaluate(() => { SS.input.pendingShots = (SS.input.pendingShots | 0) + 1; return SS.weapon.shotsFired; }); await p.waitForFunction((n) => SS.weapon.shotsFired > n, s0, { timeout: 8000 }).catch(() => {}); res.centreSettle = await p.evaluate(() => __settle(true, 12, true)); }
   // the shot ray IS the crosshair: a point 50 m down the last shot ray projects to the screen centre, where the crosshair / scope reticle sit
   res.centre = await p.evaluate(() => { const L = SS.weapon.lastShot; SS.camera.updateMatrixWorld(); const q = L.origin.clone().addScaledVector(L.dir, 50).project(SS.camera); const ce = document.getElementById('crosshair'); ce.style.display = 'block'; ce.style.visibility = 'visible'; const ch = ce.getBoundingClientRect(); ce.style.display = ''; ce.style.visibility = ''; /* hidden while scoped: measure its anchor */ const rd = document.querySelector('#scope-overlay .rd'); const rr = rd ? rd.getBoundingClientRect() : null;
     return { ndc: [+q.x.toFixed(4), +q.y.toFixed(4)], cross: [+(ch.x + ch.width / 2 - innerWidth / 2).toFixed(1), +(ch.y + ch.height / 2 - innerHeight / 2).toFixed(1)], dot: rr && rr.width ? [+(rr.x + rr.width / 2 - innerWidth / 2).toFixed(1), +(rr.y + rr.height / 2 - innerHeight / 2).toFixed(1)] : null, canvas: [SS.renderer ? 0 : null] }; });
