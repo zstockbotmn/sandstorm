@@ -2,7 +2,7 @@
 // 1) ?door=1 — post-W1 hold at door; leafOpen >= 110deg; roomLit present; peek sees into room (not shut leaf).
 // 2) ?cxnade=1 — climax grenade fires; ducked no-yank; flushBeforeCx=0.
 // 3) ?door=1&cxnade=1 combined — climax grenade still fires this run (A29 human fail).
-// 4) camp nade — grenade-cover soak log + yank=false.
+// 4) camp nade in normal cover — A36: forced cover move (yank=true, Moving cover warning), never an instant kill.
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const D = path.resolve(__dirname, '../dist'); const PORT = 8849;
 const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.json': 'application/json', '.hdr': 'application/octet-stream' };
@@ -175,7 +175,8 @@ const BASE = '/?seed=7&loco=2&hits=2&repos=1&fx=3&debug&q=' + tier;
       if ((r.flushBeforeCx | 0) > 0) fail.push('combined: camping flush before climax');
       if (r.died != null) fail.push('combined: died at ' + r.died); if (r.errs && r.errs.length) fail.push('combined: page errors');
     }
-    // --- 4) ducked camping nade (no climax): no yank + grenade-cover soak ---
+    // --- 4) ducked camping nade in NORMAL cover (no climax): A36 App PM ruling - the grenade forces the announced cover move
+    //        even when ducked (no-yank + soak is doorway cover / climax only); never an instant kill ---
     {
       const { ctx, p, errs } = await boot('');
       const r = await p.evaluate(async () => {
@@ -201,7 +202,7 @@ const BASE = '/?seed=7&loco=2&hits=2&repos=1&fx=3&debug&q=' + tier;
         const t2 = performance.now(); const sim0 = SS.simTime || 0;
         while ((SS.simTime || 0) - sim0 < 6 && performance.now() - t2 < 180000) {
           SS.input.scope = false; SS.input.cover = true;
-          if (SS.hud && SS.hud.hintText) R.hint = SS.hud.hintText;
+          if (SS.hud && SS.hud.hintText) { R.hint = SS.hud.hintText; if (R.hint === 'GRENADE! Moving cover') R.hintMove = true; }
           if (SS.cover && SS.cover.state === 'moving' && SS.cover.lastMove === 'grenade') R.yank = true;
           if (SS.lastGrenade && SS.lastGrenade.hpBefore != null) break;
           await new Promise((r) => setTimeout(r, 100));
@@ -221,17 +222,12 @@ const BASE = '/?seed=7&loco=2&hits=2&repos=1&fx=3&debug&q=' + tier;
       if (r.noCover) fail.push('campNade: never reached IN COVER');
       else {
         if (!r.thrown) fail.push('campNade: debugGrenade failed');
-        if (r.yank) fail.push('campNade: Moving-cover yank while ducked');
-        if (r.cover && r.cover.state === 'moving' && r.cover.lastMove === 'grenade') fail.push('campNade: cover moving from grenade');
-        if (r.hint === 'GRENADE! Moving cover') fail.push('campNade: hint was Moving cover');
-        const dmg = r.lastGrenade && r.lastGrenade.dmg;
-        const src = r.lastGrenade && r.lastGrenade.src;
-        if (!(dmg > 0)) fail.push('campNade: no blast dmg ' + JSON.stringify(r.lastGrenade));
-        else if (src !== 'grenade-cover') fail.push('campNade: src ' + src + ' (want grenade-cover)');
-        else if (!(dmg >= 3 && dmg <= 25)) fail.push('campNade: soak dmg ' + dmg + ' out of mid-single..low-double');
-        if (!r.soak && !r.soakSrc) fail.push('campNade: missing grenade, cover log');
-        const hb = r.lastGrenade && r.lastGrenade.hpBefore, ha = r.lastGrenade && r.lastGrenade.hpAfter;
-        if (!(ha < hb)) fail.push('campNade: HP did not drop (' + hb + ' -> ' + ha + ')');
+        if (!r.yank) fail.push('campNade: no Moving-cover yank in normal cover while ducked (A36 PM: grenade must force a cover move)');
+        if (!r.hintMove) fail.push('campNade: no GRENADE! Moving cover warning (hint ' + r.hint + ')');
+        if (r.lastGrenade && r.lastGrenade.src === 'grenade-cover') fail.push('campNade: normal-cover soak/no-yank path used (doorway/climax only)');
+        const ha = r.lastGrenade && r.lastGrenade.hpAfter;
+        if (!r.lastGrenade) fail.push('campNade: no blast recorded');
+        else if (!(ha > 0)) fail.push('campNade: instant kill (' + r.lastGrenade.hpBefore + ' -> ' + ha + ')');
       }
       if (r.errs && r.errs.length) fail.push('campNade: page errors');
     }

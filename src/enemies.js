@@ -3623,8 +3623,10 @@ export function createEnemies(scene, camera, world, weapon, player) {
   }
   function skipGrenadeYank() {
     if (climaxStayExposed()) return true;
+    // A36 (App PM): no-yank + soak only for the climax grenade (above) and a ducked player in DOORWAY cover (A35 soak).
+    // In normal cover a grenade in blast range forces the announced cover move even when ducked (A29 skipped it anywhere).
     const cov = window.SS && window.SS.cover;
-    return !!(cov && cov.state === 'in' && window.SS.input && window.SS.input.cover);
+    return !!(cov && cov.state === 'in' && window.SS.input && window.SS.input.cover && (cov.kind === 'door' || doorHeldNow()));
   }
   function throwGrenade(e, stay) {
     const m = new THREE.Mesh(nadeGeo, nadeMat); m.castShadow = true; scene.add(m);
