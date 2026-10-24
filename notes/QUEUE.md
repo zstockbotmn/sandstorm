@@ -264,6 +264,13 @@ Root cause: A35 streetYaw aimed at a fixed street point (1.2 m off the rail, 14 
 Fix: world doorFront (art room front flush with the outermost art surface across the aperture: 7.75 -> 6.59); doorstop yaw derived from the opening (sweep normal->down-street, first clear centre ray through the aperture + 7 deg, min 21 deg; here 28 deg; recenter still only on room drift, 2 s grace); doorway pressure flanker spot must be visible from the held eye and within 32 deg of the peek centre. a35-yaw stricter: real FIX4 W1-relative placement, centre ray must reach the street, pressure flanker visible/on screen/<=35 deg (FAILS on the A36 build).
 Tests PASS (logs/a37, Low): a35-yaw (28 deg out, sight clear, flanker -10.7 deg visible, aheadW1 32.1), doorway-stop, a30-force (door/cxnade/combined/campNade), a34-smoke. 12-run triage plan (pA37/rerun-plan.sh) NOT run yet. No GH Pages, no publish.
 
+## A37b/c (App PM Oct 24 — DONE, internal preview only)
+DONE: tip cd1e937, build ss-ce06e59ff6, label 'internal preview A37', preview :8850. Tester A37 follow-up (flanker partial, feedback 3/5, "HP 163", truck->RPG ~23 s).
+HP 163: not HP - the bare #score (distance 63 + 100 kill pts) sits directly above the HP bar; every HP write clamps to 100. Fix: 'SCORE' label (CSS ::before, text unchanged); a34-smoke + a37-full assert HP <= 100.
+Pacing: crash 119.8 -> 15 s set-piece gate 134.8; the in-view pressure flanker's hit at 134.6 -> A14 6 s RPG flank lull -> RPG 140.6; climax cxnade gap 12 s -> ~152.6, just past the Tester's 152 s. Fix: lane / pressure arm start no visit while an RPG is pending and its gates open within 11 s. a37-full Low: boom->RPG 15.0 s before and after, climax nade reached.
+Lane: street side of the default look only (10-30 deg outward of centre, past doorstop first clear ray + 6 deg), hold 2.2-2.9 s firing, fall back out of sight, return. Markers: none over the pillar/doorframe during a hold (suppressed), dimmed when head+chest LOS blocked. Hit = double tick + body flash + flinch; miss = dust puff, no tick. Kill confirm text.
+Tests PASS (logs/a37, Low, one at a time): a37-flanker-lane, a35-yaw, doorway-stop, a30-force (4 legs), a34-smoke, a37-full (door+cxnade to climax). 12-run triage NOT run. No GH Pages, no publish.
+
 ## A31 (App PM Oct 23 — DONE)
 DONE: tip 3d0682f, build ss-197968570b, label 'internal preview A31', preview :8850. Tests PASS (logs/a31): doorway-stop Low; a30-force Low (door/cxnade/combined/camp); a31-variety Low (kinds grenade+truck+rpg, calm×2, spacing OK w/ grenade-rearm 12s, unstick 67/1004 logged). Code: director weights + early truck/RPG bias; doorway long-camp +15s; bigBeatCalm after RPG/truck; unstick rate-limit; brighter roomLit + roomWindow/roomShaft. Protects Immersion/Fun; no GH Pages.
 
