@@ -6,7 +6,7 @@ cd /workspace/sandstorm-step1 && node tools/build.js >/dev/null
 rm -rf /workspace/preview/step1 && cp -r dist /workspace/preview/step1
 python3 - <<'PY'
 p='/workspace/preview/step1/index.html'; s=open(p).read()
-inj="<script>window.__SS_LABEL='internal preview A36';/* internal preview A16: step-1/2/3/5 flags on by default (loco=2, repos=1, hits=2, fx=3, sp=5; rpg=1 stays OFF); an explicit value in the URL wins */(function(){var q=location.search,add=[];if(!/[?&]loco=/.test(q))add.push('loco=2');if(!/[?&]repos=/.test(q))add.push('repos=1');if(!/[?&]hits=/.test(q))add.push('hits=2');if(!/[?&]fx=/.test(q))add.push('fx=3');if(!/[?&]sp=/.test(q))add.push('sp=5');if(add.length){location.replace(location.pathname+(q?q+'&':'?')+add.join('&')+location.hash);}})();</script>"
+inj="<script>window.__SS_LABEL='internal preview A37';/* internal preview A16: step-1/2/3/5 flags on by default (loco=2, repos=1, hits=2, fx=3, sp=5; rpg=1 stays OFF); an explicit value in the URL wins */(function(){var q=location.search,add=[];if(!/[?&]loco=/.test(q))add.push('loco=2');if(!/[?&]repos=/.test(q))add.push('repos=1');if(!/[?&]hits=/.test(q))add.push('hits=2');if(!/[?&]fx=/.test(q))add.push('fx=3');if(!/[?&]sp=/.test(q))add.push('sp=5');if(add.length){location.replace(location.pathname+(q?q+'&':'?')+add.join('&')+location.hash);}})();</script>"
 s=s.replace('<head>','<head>'+inj,1); open(p,'w').write(s)
 PY
 pkill -f "http.server 8850" 2>/dev/null || true
