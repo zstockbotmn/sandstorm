@@ -14,11 +14,19 @@ import { createInteriorAtlas, createInteriorMaterial, createInteriorFallback, bu
 const BLD4 = typeof location === 'undefined' || !/[?&]bld=0\b/.test(location.search);
 const BLD4P = typeof location !== 'undefined' && /[?&]bld=4p\b/.test(location.search);
 const ROOMS_OFF = typeof location !== 'undefined' && /[?&]rooms=0\b/.test(location.search);
-// A29: ?door=1 / ?doorstop=1 — force ≥1 enterable room with door ~25–40 m ahead of spawn (z≈4 → door z ≈ -21…-36).
+// A29: ?door=1 / ?doorstop=1 — force ≥1 enterable room with door ~25–40 m ahead of the W1 contact point (A36; was spawn-relative).
 const FORCE_DOOR = typeof location !== 'undefined' && /[?&](?:door|doorstop)=1\b/.test(location.search);
 if (typeof window !== 'undefined' && window.SS) { window.SS.bld4roomsOff = ROOMS_OFF; window.SS.bld4Default = BLD4; window.SS.forceDoor = FORCE_DOOR; }
 let _roomsPlaced = 0; // A28: guarantee ≥1 room in the first ~60 m so doorway stop can fire after W1
-function doorBandZ(z) { return FORCE_DOOR && !_roomsPlaced && z < -20 && z > -42; } // spawn z≈4 → ahead ~24–46 m
+// A36 (App PM): the forced ?door=1 room band is relative to where W1 is fought, not to spawn. The opening walk (A36 FIX2)
+// is fps-independent and meets W1 at FIRST_CONTACT_S x walk speed (11 s x 3 m/s = 33 m; ?contact=<s> in test builds), so
+// the W1 point is known when the street is built; the door band sits ~25-40 m ahead of it (Low used to meet W1 at ~11 m,
+// which is why the A29 band was spawn-relative -25..-40 and High/fixed-fps runs passed it during W1).
+const DOOR_SPAWN_Z = 4, DOOR_WALK = 3.0;
+const DOOR_W1_D = (() => { let s = 11; try { const m = /[?&]contact=([0-9.]+)/.exec(location.search); if (m && (navigator.webdriver || /[?&]debug\b/.test(location.search))) s = +m[1]; } catch (_) {} return Math.max(6, s * DOOR_WALK); })();
+const DOOR_W1_Z = DOOR_SPAWN_Z - DOOR_W1_D; // ≈ -29 at the 11 s spec
+const DOOR_LO = DOOR_W1_Z - 40, DOOR_HI = DOOR_W1_Z - 25; // door z snaps into [W1-40, W1-25]
+function doorBandZ(z) { return FORCE_DOOR && !_roomsPlaced && z < DOOR_W1_Z - 21 && z > DOOR_W1_Z - 44; } // building centre band ~21–44 m past W1
 let winMat = null;
 function windowMaterial() {
   if (!winMat) {
@@ -649,7 +657,7 @@ export function createWorld(scene, seed) {
     let doorZ = box.min.z + (0.12 + rng() * 0.76) * spanZ;
     // A29: when forcing the early door room, snap door z into the 25–40 m band if the facade spans it.
     if (FORCE_DOOR && pending && !_roomsPlaced) {
-      const lo = Math.max(box.min.z + 1.2, -40), hi = Math.min(box.max.z - 1.2, -25);
+      const lo = Math.max(box.min.z + 1.2, DOOR_LO), hi = Math.min(box.max.z - 1.2, DOOR_HI);
       if (lo < hi) doorZ = lo + rng() * (hi - lo);
     }
     doors.push(doorZ);
@@ -998,7 +1006,7 @@ export function createWorld(scene, seed) {
       // A29 ?door=1: force room when building center is in the 25–40 m door band; else A28 ~60 m earlyForce.
       let doorZ = cz + (rng() - 0.5) * lot * 0.3;
       if (FORCE_DOOR && !_roomsPlaced && doorBandZ(cz)) {
-        const lo = Math.max(cz - lot * 0.35, -40), hi = Math.min(cz + lot * 0.35, -25);
+        const lo = Math.max(cz - lot * 0.35, DOOR_LO), hi = Math.min(cz + lot * 0.35, DOOR_HI);
         if (lo < hi) doorZ = lo + rng() * (hi - lo);
       }
       const earlyForce = BLD4 && !ROOMS_OFF && !_roomsPlaced && !seg._roomDone && lot >= 7 && depth >= 6 && (

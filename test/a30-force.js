@@ -72,8 +72,12 @@ const BASE = '/?seed=7&loco=2&hits=2&repos=1&fx=3&debug&q=' + tier;
         const rooms = [];
         for (const seg of (SS.world && SS.world.segments) || []) for (const p of seg.coverPoints || []) if (p.type === 'room' && p.door) rooms.push(p.door.z);
         R.roomPoints = rooms.length;
-        R.doorZ = rooms.length ? rooms.reduce((a, z) => (Math.abs(z + 30) < Math.abs(a + 30) ? z : a), rooms[0]) : null;
-        R.aheadFromSpawn = R.doorZ != null ? +(4 - R.doorZ).toFixed(1) : null; // spawn z≈4
+        // A36 (App PM): the forced band is 25-40 m ahead of where W1 is fought (fps-independent opening walk), not spawn.
+        R.w1d = SS.firstWave && SS.firstWave.d != null ? +(+SS.firstWave.d).toFixed(1) : null;
+        const w1Z = 4 - (R.w1d != null ? R.w1d : 0); // spawn z≈4
+        R.doorZ = rooms.length ? rooms.reduce((a, z) => (Math.abs(z - (w1Z - 32)) < Math.abs(a - (w1Z - 32)) ? z : a), rooms[0]) : null;
+        R.aheadFromSpawn = R.doorZ != null ? +(4 - R.doorZ).toFixed(1) : null;
+        R.aheadFromW1 = R.doorZ != null ? +(w1Z - R.doorZ).toFixed(1) : null;
         if (R.probe) { R.leafOpen = R.probe.leafOpen; R.doorOpenFlag = R.probe.doorOpenFlag; R.roomLit = R.probe.roomLit; R.roomLitRim = R.probe.roomLitRim; R.yaw = R.probe.yaw; R.cam = R.probe.cam; R.aperture = R.probe.aperture; }
         R.end = { sim: +(SS.simTime || 0).toFixed(1), dist: +(SS.distance || 0).toFixed(1), clears: SS.waveClears | 0 };
         return R;
@@ -82,7 +86,8 @@ const BASE = '/?seed=7&loco=2&hits=2&repos=1&fx=3&debug&q=' + tier;
       if (!(r.roomPoints > 0)) fail.push('door=1: no room points');
       if ((r.maxCount | 0) < 1) fail.push('door=1: doorway never armed');
       if (!r.held) fail.push('door=1: never held at doorway'); else if (r.held.kind !== 'door') fail.push('door=1: cover kind ' + r.held.kind);
-      if (r.aheadFromSpawn != null && (r.aheadFromSpawn < 20 || r.aheadFromSpawn > 50)) fail.push('door=1: nearest room ahead ' + r.aheadFromSpawn + 'm (want ~25–40)');
+      if (r.w1d == null) fail.push('door=1: no W1 record');
+      if (r.aheadFromW1 != null && (r.aheadFromW1 < 20 || r.aheadFromW1 > 50)) fail.push('door=1: nearest room ahead of W1 ' + r.aheadFromW1 + 'm (want ~25–40)');
       const joined = (r.logs || []).join(' | ');
       if (!/door arm/.test(joined) && !(r.doorDbg && /door arm/.test(r.doorDbg))) fail.push('door=1: missing door arm log');
       if (!/veer start/.test(joined) && !(r.doorDbg && /veer|DOORWAY/.test(r.doorDbg))) fail.push('door=1: missing veer start log');
